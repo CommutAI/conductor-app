@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+<h1>Test Page Works</h1>
+<p>If you see this, the server is working.</p>
+<script>
+  console.log('Script running');
+  fetch('/src/index.tsx')
+    .then(r => r.text())
+    .then(t => console.log('index.tsx loaded, length:', t.length))
+    .catch(e => console.error('Error loading index.tsx:', e));
+</script>
+</body>
+</html>

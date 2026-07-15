@@ -1,0 +1,8 @@
+{
+  "short_name": "Conductor",
+  "name": "CommutAI Conductor",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#F97316",
+  "background_color": "#FFF8F3"
+}
