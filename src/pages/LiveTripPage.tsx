@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import {
   ScanLine, StopCircle, Users, Wallet, AlertTriangle,
   CheckCircle, MapPin, List, History, AlertCircle, Wifi, WifiOff,
+  Ticket,
 } from 'lucide-react';
 import { useTrip } from '../context/TripContext';
 import { useAuth } from '../context/AuthContext';
@@ -361,6 +362,14 @@ const LiveTripPage: React.FC = () => {
             <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/history')}>
               <History size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
               <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>History</p>
+            </SoftCard>
+            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/fare-validation')}>
+              <Ticket size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Fare Validation</p>
+            </SoftCard>
+            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/passenger-destination')}>
+              <MapPin size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Destination</p>
             </SoftCard>
           </div>
 

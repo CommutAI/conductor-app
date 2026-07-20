@@ -32,6 +32,8 @@ import TripSummaryPage from './pages/TripSummaryPage';
 import ProfilePage from './pages/ProfilePage';
 import PassengerListPage from './pages/PassengerListPage';
 import TripHistoryPage from './pages/TripHistoryPage';
+import FareValidationPage from './pages/FareValidationPage';
+import PassengerDestinationPage from './pages/PassengerDestinationPage';
 
 setupIonicReact({
   mode: 'md',
@@ -60,6 +62,8 @@ const App: React.FC = () => {
                 {/* New pages — previously missing from routing */}
                 <Route exact path="/passengers" render={() => <ProtectedRoute component={PassengerListPage} />} />
                 <Route exact path="/history"    render={() => <ProtectedRoute component={TripHistoryPage} />} />
+                <Route exact path="/fare-validation" render={() => <ProtectedRoute component={FareValidationPage} />} />
+                <Route exact path="/passenger-destination" render={() => <ProtectedRoute component={PassengerDestinationPage} />} />
 
                 {/* Default redirect */}
                 <Route exact path="/">

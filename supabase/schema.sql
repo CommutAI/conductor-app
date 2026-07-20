@@ -38,6 +38,10 @@ DO $$ BEGIN
   CREATE TYPE cs_action_type AS ENUM ('complaint', 'inquiry', 'refund', 'lost_card', 'other');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN
+  CREATE TYPE passenger_type AS ENUM ('regular', 'student', 'senior_citizen', 'pwd');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_users (
@@ -114,6 +118,9 @@ CREATE TABLE IF NOT EXISTS qr_cards (
   status          qr_card_status NOT NULL DEFAULT 'active',
   allowed_routes  TEXT[]         DEFAULT '{}',
   passenger_id    UUID,          -- links to a registered passenger if applicable
+  passenger_type  passenger_type NOT NULL DEFAULT 'regular',
+  destination     TEXT,          -- registered destination for the passenger
+  route_id        UUID,          -- references routes(id)
   issued_by       UUID           REFERENCES staff_users (id),
   created_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
@@ -226,6 +233,35 @@ CREATE TABLE IF NOT EXISTS customer_service_logs (
 );
 
 
+-- ── 13. Routes ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS routes (
+  id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  terminal              TEXT         NOT NULL,
+  destination           TEXT         NOT NULL,
+  fare                  NUMERIC(10,2) NOT NULL,
+  distance_km           NUMERIC(10,2),
+  estimated_time_minutes INTEGER,
+  UNIQUE(terminal, destination)
+);
+
+
+-- ── 14. Fare Validations ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fare_validations (
+  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id          UUID         NOT NULL REFERENCES qr_cards (id),
+  conductor_id     UUID         NOT NULL REFERENCES staff_users (id),
+  route_id         UUID         NOT NULL REFERENCES routes (id),
+  fare             NUMERIC(10,2) NOT NULL,
+  discount         NUMERIC(10,2) DEFAULT 0,
+  final_fare       NUMERIC(10,2) NOT NULL,
+  balance_before   NUMERIC(10,2) NOT NULL,
+  balance_after    NUMERIC(10,2) NOT NULL,
+  validated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  status           TEXT         NOT NULL DEFAULT 'completed',
+  trip_id          UUID         REFERENCES trips (id)
+);
+
+
 -- ── 13. Helper Functions ──────────────────────────────────────────────────────
 
 -- Returns the active trip ID for the currently authenticated conductor
@@ -245,7 +281,7 @@ RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER AS $$
 $$;
 
 
--- ── 14. Row-Level Security ────────────────────────────────────────────────────
+-- ── 15. Row-Level Security ────────────────────────────────────────────────────
 -- Enable RLS on all tables that hold sensitive operational data.
 ALTER TABLE staff_users           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE buses                 ENABLE ROW LEVEL SECURITY;
@@ -259,6 +295,8 @@ ALTER TABLE gps_logs              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fare_irregularities   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE emergency_alerts      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_service_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE routes                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fare_validations      ENABLE ROW LEVEL SECURITY;
 
 -- Staff can view their own profile
 DO $$
@@ -476,6 +514,37 @@ BEGIN
   END IF;
 END $$;
 
+-- Routes readable by authenticated staff
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'routes' 
+    AND policyname = 'routes_read_authenticated'
+  ) THEN
+    CREATE POLICY "routes_read_authenticated"
+      ON routes FOR SELECT
+      USING (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
+-- Fare validations insertable and readable by authenticated staff
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'fare_validations' 
+    AND policyname = 'fare_validations_rw_authenticated'
+  ) THEN
+    CREATE POLICY "fare_validations_rw_authenticated"
+      ON fare_validations FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
 
 -- ── 15. Indexes for Performance ───────────────────────────────────────────────
 
@@ -510,6 +579,18 @@ CREATE INDEX IF NOT EXISTS idx_emergency_alerts_trip ON emergency_alerts(trip_id
 
 -- Speed up emergency alerts by status
 CREATE INDEX IF NOT EXISTS idx_emergency_alerts_status ON emergency_alerts(status);
+
+-- Speed up route lookups by terminal and destination
+CREATE INDEX IF NOT EXISTS idx_routes_terminal_destination ON routes(terminal, destination);
+
+-- Speed up fare validations by card
+CREATE INDEX IF NOT EXISTS idx_fare_validations_card ON fare_validations(card_id);
+
+-- Speed up fare validations by conductor
+CREATE INDEX IF NOT EXISTS idx_fare_validations_conductor ON fare_validations(conductor_id);
+
+-- Speed up fare validations by trip
+CREATE INDEX IF NOT EXISTS idx_fare_validations_trip ON fare_validations(trip_id);
 
 -- ── 16. Realtime Publications ─────────────────────────────────────────────────
 -- Enable Realtime for the tables subscribed to in the conductor app.
@@ -580,6 +661,17 @@ INSERT INTO buses (plate_number, route, seat_capacity, status) VALUES
   ('BUS-004', 'Manalo Fortich Terminal ↔ Agora Terminal', 35, 'active'),
   ('BUS-005', 'Manalo Fortich Terminal ↔ Agora Terminal', 35, 'maintenance')
 ON CONFLICT (plate_number) DO NOTHING;
+
+-- ── 19. Insert Route Data (from Manolo Fortich Terminal) ─────────────────────
+INSERT INTO routes (terminal, destination, fare, distance_km, estimated_time_minutes) VALUES
+  ('Manolo Fortich Terminal', 'Dicklum', 15.00, 5.2, 15),
+  ('Manolo Fortich Terminal', 'San Miguel', 20.00, 10.5, 25),
+  ('Manolo Fortich Terminal', 'Lunocan', 25.00, 15.8, 35),
+  ('Manolo Fortich Terminal', 'Alae', 30.00, 22.3, 45),
+  ('Manolo Fortich Terminal', 'Mambatangan', 40.00, 35.7, 60),
+  ('Manolo Fortich Terminal', 'Puerto', 50.00, 48.2, 75),
+  ('Manolo Fortich Terminal', 'Agora Terminal', 65.00, 62.5, 90)
+ON CONFLICT (terminal, destination) DO NOTHING;
 
 -- ── 17. Create Test Conductor User (for testing) ───────────────────────────────
 -- SIMPLE METHOD (bypasses trigger):
