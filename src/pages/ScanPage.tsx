@@ -90,6 +90,18 @@ const ScanPage: React.FC = () => {
   async function startScan() {
     setScanning(true);
     processingRef.current = false;
+    
+    // Wait for DOM to be ready
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const readerElement = document.getElementById('qr-reader');
+    if (!readerElement) {
+      console.error('QR reader element not found in DOM');
+      showNotification('Camera element not found. Please try again.', 'danger');
+      setScanning(false);
+      return;
+    }
+    
     try {
       const scanner = new Html5QrcodeScanner(
         'qr-reader',

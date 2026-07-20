@@ -57,8 +57,8 @@ const PassengerListPage: React.FC = () => {
           .from('boarded_passengers')
           .select(`
             id, passenger_id, boarded_at, card_id, temp_ticket_id,
-            qr_cards!inner(owner_name),
-            temporary_tickets!inner(fare_amount)
+            qr_cards(owner_name),
+            temporary_tickets(fare_amount)
           `)
           .eq('trip_id', currentTrip.id)
           .order('boarded_at', { ascending: false });
@@ -78,9 +78,9 @@ const PassengerListPage: React.FC = () => {
           .from('boarded_passengers')
           .select(`
             id, passenger_id, boarded_at, card_id, temp_ticket_id,
-            qr_cards!inner(owner_name),
-            temporary_tickets!inner(fare_amount),
-            trips!inner(route)
+            qr_cards(owner_name),
+            temporary_tickets(fare_amount),
+            trips(route)
           `)
           .order('boarded_at', { ascending: false })
           .limit(50);

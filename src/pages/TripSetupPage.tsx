@@ -25,6 +25,7 @@ import { useTrip } from '../context/TripContext';
 import '../styles/modern-transport.css';
 import Logo from '../components/Logo';
 import ProfileAvatar from '../components/ProfileAvatar';
+import BottomNav from '../components/layout/BottomNav';
 
 interface Bus {
   id: string;
@@ -452,6 +453,8 @@ const TripSetupPage: React.FC = () => {
         color={toastColor}
         position="top"
       />
+      
+      <BottomNav />
     </IonPage>
   );
 };
