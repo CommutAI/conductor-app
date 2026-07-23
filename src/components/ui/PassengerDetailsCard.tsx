@@ -8,11 +8,11 @@ import StatusBadge from '../ui/StatusBadge';
 interface PassengerDetailsProps {
   success: boolean;
   warning?: boolean;
-  passengerName?: string;
   cardNumber?: string;
   remainingBalance?: number;
   fareDeducted?: number;
   currentTrip?: string;
+  destination?: string;
   timestamp?: string;
   message?: string;
 }
@@ -20,11 +20,11 @@ interface PassengerDetailsProps {
 const PassengerDetailsCard: React.FC<PassengerDetailsProps> = ({
   success,
   warning = false,
-  passengerName,
   cardNumber,
   remainingBalance,
   fareDeducted,
   currentTrip,
+  destination,
   timestamp,
   message,
 }) => {
@@ -69,56 +69,58 @@ const PassengerDetailsCard: React.FC<PassengerDetailsProps> = ({
         <p className="passenger-details__message">{message}</p>
       )}
 
-      {passengerName && (
-        <SoftCard padding="md" className="passenger-details__profile">
-          <div className="passenger-details__profile-header">
-            <ProfileAvatar name={passengerName} size="lg" />
-            <div>
-              <p className="passenger-details__name">{passengerName}</p>
-              <StatusBadge variant={variant} dot>
-                {success ? 'Boarded' : warning ? 'Review' : 'Declined'}
-              </StatusBadge>
-            </div>
+      <SoftCard padding="md" className="passenger-details__profile">
+        <div className="passenger-details__profile-header">
+          <div>
+            <StatusBadge variant={variant} dot>
+              {success ? 'Validated' : warning ? 'Review' : 'Declined'}
+            </StatusBadge>
           </div>
+        </div>
 
-          <div className="passenger-details__grid">
-            {cardNumber && (
-              <div className="passenger-details__field">
-                <span className="passenger-details__field-label">QR Card</span>
-                <span className="passenger-details__field-value">{cardNumber}</span>
-              </div>
-            )}
-            {remainingBalance !== undefined && (
-              <div className="passenger-details__field">
-                <span className="passenger-details__field-label">Balance</span>
-                <span className={`passenger-details__field-value passenger-details__field-value--${success ? 'success' : 'danger'}`}>
-                  ₱{remainingBalance.toFixed(2)}
-                </span>
-              </div>
-            )}
-            {fareDeducted !== undefined && fareDeducted > 0 && (
-              <div className="passenger-details__field">
-                <span className="passenger-details__field-label">Fare Deducted</span>
-                <span className="passenger-details__field-value passenger-details__field-value--primary">
-                  ₱{fareDeducted.toFixed(2)}
-                </span>
-              </div>
-            )}
-            {currentTrip && (
-              <div className="passenger-details__field">
-                <span className="passenger-details__field-label">Route</span>
-                <span className="passenger-details__field-value">{currentTrip}</span>
-              </div>
-            )}
-            {timestamp && (
-              <div className="passenger-details__field passenger-details__field--full">
-                <span className="passenger-details__field-label">Timestamp</span>
-                <span className="passenger-details__field-value">{timestamp}</span>
-              </div>
-            )}
-          </div>
-        </SoftCard>
-      )}
+        <div className="passenger-details__grid">
+          {cardNumber && (
+            <div className="passenger-details__field">
+              <span className="passenger-details__field-label">QR Card</span>
+              <span className="passenger-details__field-value">{cardNumber}</span>
+            </div>
+          )}
+          {remainingBalance !== undefined && (
+            <div className="passenger-details__field">
+              <span className="passenger-details__field-label">Balance</span>
+              <span className={`passenger-details__field-value passenger-details__field-value--${success ? 'success' : 'danger'}`}>
+                ₱{remainingBalance.toFixed(2)}
+              </span>
+            </div>
+          )}
+          {fareDeducted !== undefined && fareDeducted > 0 && (
+            <div className="passenger-details__field">
+              <span className="passenger-details__field-label">Fare Deducted</span>
+              <span className="passenger-details__field-value passenger-details__field-value--primary">
+                ₱{fareDeducted.toFixed(2)}
+              </span>
+            </div>
+          )}
+          {currentTrip && (
+            <div className="passenger-details__field">
+              <span className="passenger-details__field-label">Route</span>
+              <span className="passenger-details__field-value">{currentTrip}</span>
+            </div>
+          )}
+          {destination && (
+            <div className="passenger-details__field">
+              <span className="passenger-details__field-label">Destination</span>
+              <span className="passenger-details__field-value">{destination}</span>
+            </div>
+          )}
+          {timestamp && (
+            <div className="passenger-details__field passenger-details__field--full">
+              <span className="passenger-details__field-label">Timestamp</span>
+              <span className="passenger-details__field-value">{timestamp}</span>
+            </div>
+          )}
+        </div>
+      </SoftCard>
     </motion.div>
   );
 };

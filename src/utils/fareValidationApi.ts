@@ -128,7 +128,6 @@ export async function getPassengerDestination(cardId: string): Promise<Passenger
 
   return {
     cardId: data.id,
-    passengerName: data.owner_name,
     destination: data.destination || 'Not set',
     fare: route?.fare || 0,
     balance: Number(data.balance),
@@ -150,7 +149,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
     if (cardError || !card) {
       return {
         success: false,
-        passengerName: '',
         passengerType: 'regular',
         destination: '',
         fare: 0,
@@ -174,7 +172,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
     if (routeError || !route) {
       return {
         success: false,
-        passengerName: card.owner_name,
         passengerType: card.passenger_type as PassengerType,
         destination: card.destination || 'Not set',
         fare: 0,
@@ -195,7 +192,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
     if (balanceBefore < fareCalc.finalFare) {
       return {
         success: false,
-        passengerName: card.owner_name,
         passengerType: card.passenger_type as PassengerType,
         destination: card.destination || 'Not set',
         fare: fareCalc.baseFare,
@@ -220,7 +216,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
     if (updateError) {
       return {
         success: false,
-        passengerName: card.owner_name,
         passengerType: card.passenger_type as PassengerType,
         destination: card.destination || 'Not set',
         fare: fareCalc.baseFare,
@@ -259,7 +254,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
 
       return {
         success: false,
-        passengerName: card.owner_name,
         passengerType: card.passenger_type as PassengerType,
         destination: card.destination || 'Not set',
         fare: fareCalc.baseFare,
@@ -274,7 +268,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
 
     return {
       success: true,
-      passengerName: card.owner_name,
       passengerType: card.passenger_type as PassengerType,
       destination: card.destination || 'Not set',
       fare: fareCalc.baseFare,
@@ -289,7 +282,6 @@ export async function validateFare(request: ValidateFareRequest): Promise<Valida
     console.error('Error validating fare:', error);
     return {
       success: false,
-      passengerName: '',
       passengerType: 'regular',
       destination: '',
       fare: 0,

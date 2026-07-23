@@ -14,7 +14,6 @@ export interface Route {
 export interface QRCard {
   id: string;
   card_uid: string;
-  owner_name: string;
   contact_number?: string;
   balance: number;
   status: 'active' | 'lost' | 'replaced' | 'deactivated';
@@ -50,7 +49,6 @@ export interface ValidateFareRequest {
 
 export interface ValidateFareResponse {
   success: boolean;
-  passengerName: string;
   passengerType: PassengerType;
   destination: string;
   fare: number;
@@ -64,7 +62,6 @@ export interface ValidateFareResponse {
 
 export interface PassengerDestinationResponse {
   cardId: string;
-  passengerName: string;
   destination: string;
   fare: number;
   balance: number;

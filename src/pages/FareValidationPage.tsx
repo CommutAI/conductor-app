@@ -1,68 +1,54 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { IonPage, IonContent, IonSelect, IonSelectOption, IonInput } from '@ionic/react';
+import React, { useState, useRef } from 'react';
+import { IonPage, IonContent, IonInput } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  ScanLine, CheckCircle, Wallet, MapPin, User, Ticket,
-  AlertCircle, ArrowRight, X
+  ScanLine, Wallet, CreditCard, AlertCircle, CheckCircle, ArrowRight,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useTrip } from '../context/TripContext';
 import { useOffline } from '../context/OfflineContext';
-import {
-  validateFare,
-  getQRCardByUID,
-  getRoutesByTerminal,
-  getPassengerDestination
-} from '../utils/fareValidationApi';
-import type {
-  ValidateFareRequest,
-  ValidateFareResponse,
-  Route,
-  QRCard,
-  PassengerType
-} from '../types/fareValidation';
+import { getQRCardByUID } from '../utils/fareValidationApi';
+import type { QRCard, PassengerType } from '../types/fareValidation';
 import { Html5QrcodeScanner, Html5QrcodeScannerState } from 'html5-qrcode';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
 import {
-  SoftCard, PrimaryButton, DashboardCard, AnimatedModal,
-  AppToast, StatusBadge
+  SoftCard, PrimaryButton, AnimatedModal,
+  AppToast, StatusBadge,
 } from '../components/ui';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getPassengerTypeLabel(type: PassengerType): string {
+  switch (type) {
+    case 'student': return 'Student';
+    case 'senior_citizen': return 'Senior Citizen';
+    case 'pwd': return 'PWD';
+    case 'regular': return 'Regular';
+    default: return 'Regular';
+  }
+}
+
+function getDiscountRate(type: PassengerType): number {
+  return type === 'regular' ? 0 : 0.20;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const FareValidationPage: React.FC = () => {
   const [scanning, setScanning] = useState(false);
-  const [selectedTerminal, setSelectedTerminal] = useState('Manolo Fortich Terminal');
-  const [routes, setRoutes] = useState<Route[]>([]);
-  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [scannedCard, setScannedCard] = useState<QRCard | null>(null);
-  const [validationResult, setValidationResult] = useState<ValidateFareResponse | null>(null);
-  const [showValidationModal, setShowValidationModal] = useState(false);
-  const [showResultModal, setShowResultModal] = useState(false);
   const [manualCardId, setManualCardId] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
 
-  const { profile } = useAuth();
-  const { currentTrip } = useTrip();
   const { isOnline } = useOffline();
   const history = useHistory();
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const processingRef = useRef(false);
-
-  useEffect(() => {
-    loadRoutes();
-    return () => { cleanupScanner(); };
-  }, [selectedTerminal]);
-
-  async function loadRoutes() {
-    const routesData = await getRoutesByTerminal(selectedTerminal);
-    setRoutes(routesData);
-    setSelectedRoute(null);
-  }
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning') {
     setToastMessage(message);
@@ -81,31 +67,36 @@ const FareValidationPage: React.FC = () => {
 
   async function startScan() {
     if (!isOnline) {
-      showNotification('Fare validation requires internet connection', 'danger');
+      showNotification('Card lookup requires internet connection', 'danger');
       return;
     }
 
     setScanning(true);
     processingRef.current = false;
-    
-    // Wait for DOM to be ready
+
     await new Promise(resolve => setTimeout(resolve, 100));
-    
+
     const readerElement = document.getElementById('qr-reader-fare');
     if (!readerElement) {
-      console.error('QR reader element not found in DOM');
       showNotification('Camera element not found. Please try again.', 'danger');
       setScanning(false);
       return;
     }
-    
+
     try {
+      // Responsive qrbox: 70% of the shorter viewport edge, capped at 280 px
+      const shortEdge = Math.min(window.innerWidth, window.innerHeight);
+      const boxSize = Math.min(Math.round(shortEdge * 0.7), 280);
+
       const scanner = new Html5QrcodeScanner(
         'qr-reader-fare',
         {
-          fps: 10,
-          qrbox: { width: 280, height: 280 },
+          fps: 12,
+          qrbox: { width: boxSize, height: boxSize },
           aspectRatio: 1.0,
+          videoConstraints: {
+            facingMode: { ideal: 'environment' }, // prefer back camera
+          },
         },
         false
       );
@@ -139,30 +130,15 @@ const FareValidationPage: React.FC = () => {
       const card = await getQRCardByUID(cardUID);
       if (!card) {
         showNotification('QR card not found', 'danger');
-        setLoading(false);
         return;
       }
-
       if (card.status !== 'active') {
         showNotification(`Card is ${card.status}`, 'danger');
-        setLoading(false);
         return;
       }
-
       setScannedCard(card);
-      
-      // Get passenger destination info
-      const destInfo = await getPassengerDestination(card.id);
-      if (destInfo && destInfo.destination && destInfo.destination !== 'Not set') {
-        // Find matching route
-        const matchingRoute = routes.find(r => r.destination === destInfo.destination);
-        if (matchingRoute) {
-          setSelectedRoute(matchingRoute);
-        }
-      }
-
-      setShowValidationModal(true);
-      showNotification('Card scanned successfully', 'success');
+      setShowCardModal(true);
+      showNotification('Card found', 'success');
     } catch (error) {
       console.error('Error scanning card:', error);
       showNotification('Error processing card', 'danger');
@@ -177,25 +153,20 @@ const FareValidationPage: React.FC = () => {
       showNotification('Please enter a card ID', 'warning');
       return;
     }
-
     setLoading(true);
     try {
       const card = await getQRCardByUID(manualCardId.trim());
       if (!card) {
         showNotification('QR card not found', 'danger');
-        setLoading(false);
         return;
       }
-
       if (card.status !== 'active') {
         showNotification(`Card is ${card.status}`, 'danger');
-        setLoading(false);
         return;
       }
-
       setScannedCard(card);
-      setShowValidationModal(true);
-      showNotification('Card found successfully', 'success');
+      setShowCardModal(true);
+      showNotification('Card found', 'success');
     } catch (error) {
       console.error('Error looking up card:', error);
       showNotification('Error processing card', 'danger');
@@ -204,121 +175,46 @@ const FareValidationPage: React.FC = () => {
     }
   }
 
-  async function confirmValidation() {
-    if (!scannedCard || !selectedRoute || !profile) {
-      showNotification('Missing required information', 'danger');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const request: ValidateFareRequest = {
-        cardId: scannedCard.id,
-        terminal: selectedTerminal,
-        conductorId: profile.id
-      };
-
-      const result = await validateFare(request);
-      setValidationResult(result);
-      setShowValidationModal(false);
-      setShowResultModal(true);
-
-      if (result.success) {
-        showNotification('Fare validated successfully', 'success');
-      } else {
-        showNotification(result.error || 'Validation failed', 'danger');
-      }
-    } catch (error) {
-      console.error('Error validating fare:', error);
-      showNotification('Error validating fare', 'danger');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function closeValidationModal() {
-    setShowValidationModal(false);
+  function closeCardModal() {
+    setShowCardModal(false);
     setScannedCard(null);
-    setSelectedRoute(null);
     setManualCardId('');
+    setShowManualInput(false);
   }
 
-  function closeResultModal() {
-    setShowResultModal(false);
-    setValidationResult(null);
-    setScannedCard(null);
-    setSelectedRoute(null);
-  }
-
-  function getPassengerTypeLabel(type: PassengerType): string {
-    switch (type) {
-      case 'student': return 'Student';
-      case 'senior_citizen': return 'Senior Citizen';
-      case 'pwd': return 'PWD';
-      case 'regular': return 'Regular';
-      default: return 'Regular';
-    }
-  }
-
-  function getPassengerTypeColor(type: PassengerType): string {
-    switch (type) {
-      case 'student': return 'var(--color-primary)';
-      case 'senior_citizen': return 'var(--color-warning)';
-      case 'pwd': return 'var(--color-success)';
-      case 'regular': return 'var(--text-secondary)';
-      default: return 'var(--text-secondary)';
-    }
-  }
+  const discount = scannedCard ? getDiscountRate(scannedCard.passenger_type) : 0;
 
   return (
     <IonPage>
       <PageHeader
         showBack
         onBack={() => history.push('/live-trip')}
-        title="Fare Validation"
-        subtitle="Validate passenger fares"
+        title="Card Balance Checker"
+        subtitle="Look up passenger card info"
       />
       <OfflineBanner />
 
       <IonContent className="app-page-bg">
         <div className="scanner-page">
-          {/* Terminal Selection */}
-          <SoftCard style={{ marginBottom: 20 }}>
-            <h4 className="heading-small" style={{ marginBottom: 12 }}>Select Terminal</h4>
-            <IonSelect
-              value={selectedTerminal}
-              onIonChange={(e: CustomEvent<{ value: string }>) => setSelectedTerminal(e.detail.value)}
-              interface="popover"
-            >
-              <IonSelectOption value="Manolo Fortich Terminal">Manolo Fortich Terminal</IonSelectOption>
-            </IonSelect>
-          </SoftCard>
 
-          {/* Route Selection */}
-          {routes.length > 0 && (
-            <SoftCard style={{ marginBottom: 20 }}>
-              <h4 className="heading-small" style={{ marginBottom: 12 }}>Select Destination</h4>
-              <IonSelect
-                value={selectedRoute?.id}
-                placeholder="Choose destination"
-                onIonChange={(e: CustomEvent<{ value: string }>) => {
-                  const route = routes.find(r => r.id === e.detail.value);
-                  setSelectedRoute(route || null);
-                }}
-                interface="popover"
-              >
-                {routes.map(route => (
-                  <IonSelectOption key={route.id} value={route.id}>
-                    {route.destination} - ₱{route.fare.toFixed(2)}
-                  </IonSelectOption>
-                ))}
-              </IonSelect>
-            </SoftCard>
-          )}
+          {/* ── Redirect tip ───────────────────────────────────────────── */}
+          <SoftCard style={{ marginBottom: 20, background: 'var(--color-primary-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <CheckCircle size={18} color="var(--color-primary)" style={{ marginTop: 2, flexShrink: 0 }} />
+              <div>
+                <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                  Fare collection happens during scanning
+                </p>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Use the QR Scanner to board/alight passengers and collect fares. This page checks card balance and passenger type only.
+                </p>
+              </div>
+            </div>
+          </SoftCard>
 
           {!scanning ? (
             <>
-              {/* Scanner Hero */}
+              {/* Hero */}
               <div className="scanner-hero">
                 <div className="scanner-hero__glow" />
                 <div className="scanner-hero__content">
@@ -331,31 +227,28 @@ const FareValidationPage: React.FC = () => {
                     </div>
                     <div className="scanner-frame__line" />
                     <motion.div
-                      style={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
+                      style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       animate={{ scale: [1, 1.05, 1] }}
                       transition={{ duration: 2, repeat: Infinity }}
                     >
-                      <Ticket size={64} color="rgba(255,255,255,0.9)" strokeWidth={1.5} />
+                      <CreditCard size={64} color="rgba(255,255,255,0.9)" strokeWidth={1.5} />
                     </motion.div>
                   </div>
                   <h2 style={{ color: 'white', fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>
-                    Fare Validation
+                    Card Balance Checker
                   </h2>
                   <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9rem', margin: 0, textAlign: 'center', fontWeight: 500 }}>
-                    Scan passenger QR card to validate fare
+                    Scan a QR card to view balance and passenger type
                   </p>
                 </div>
               </div>
 
-              <PrimaryButton 
-                onClick={startScan} 
-                fullWidth 
-                icon={<ScanLine size={22} />} 
+              <PrimaryButton
+                onClick={startScan}
+                fullWidth
+                icon={<ScanLine size={22} />}
                 style={{ marginBottom: 16 }}
-                disabled={!selectedRoute}
+                disabled={!isOnline}
               >
                 Scan QR Card
               </PrimaryButton>
@@ -387,27 +280,12 @@ const FareValidationPage: React.FC = () => {
                   </PrimaryButton>
                 </SoftCard>
               )}
-
-              <SoftCard style={{ background: 'var(--color-primary-subtle)' }}>
-                <h4 className="heading-small" style={{ marginBottom: 12 }}>How It Works</h4>
-                <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.8 }}>
-                  <li>Select your current terminal</li>
-                  <li>Choose the passenger's destination</li>
-                  <li>Scan the passenger's QR card</li>
-                  <li>Review fare calculation with discounts</li>
-                  <li>Confirm to deduct fare from card balance</li>
-                </ul>
-              </SoftCard>
             </>
           ) : (
             <>
               <SoftCard style={{ marginBottom: 16, textAlign: 'center' }}>
-                <p className="heading-small" style={{ marginBottom: 4 }}>
-                  Camera Active
-                </p>
-                <p className="text-secondary" style={{ margin: 0 }}>
-                  Position QR code in the camera view
-                </p>
+                <p className="heading-small" style={{ marginBottom: 4 }}>Camera Active</p>
+                <p className="text-secondary" style={{ margin: 0 }}>Position QR code in the camera view</p>
               </SoftCard>
 
               <div className="scanner-active-view">
@@ -422,193 +300,93 @@ const FareValidationPage: React.FC = () => {
         </div>
       </IonContent>
 
-      {/* Validation Confirmation Modal */}
-      <AnimatedModal isOpen={showValidationModal} onClose={closeValidationModal} showClose={true}>
-        {scannedCard && selectedRoute && (
-          <div style={{ padding: '20px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      {/* ── Card Info Modal ─────────────────────────────────────────────── */}
+      <AnimatedModal isOpen={showCardModal} onClose={closeCardModal} showClose={true}>
+        {scannedCard && (
+          <div style={{ padding: '8px 0' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
               <div style={{
-                width: 48, height: 48, borderRadius: '50%',
+                width: 52, height: 52, borderRadius: '50%',
                 background: 'var(--color-primary-subtle)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <User size={24} color="var(--color-primary)" />
+                <CreditCard size={24} color="var(--color-primary)" />
               </div>
               <div>
-                <h3 className="heading-small" style={{ margin: '0 0 4px' }}>{scannedCard.owner_name}</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <StatusBadge 
-                    variant={scannedCard.passenger_type === 'regular' ? 'neutral' : 'primary'}
-                    style={{ fontSize: '0.75rem' }}
-                  >
-                    {getPassengerTypeLabel(scannedCard.passenger_type)}
-                  </StatusBadge>
-                  {scannedCard.passenger_type !== 'regular' && (
-                    <span style={{ fontSize: '0.8rem', color: 'var(--color-success)', fontWeight: 600 }}>
-                      20% Discount Applied
-                    </span>
-                  )}
-                </div>
+                <StatusBadge
+                  variant={scannedCard.passenger_type === 'regular' ? 'neutral' : 'primary'}
+                  style={{ fontSize: '0.8rem', marginBottom: 4 }}
+                >
+                  {getPassengerTypeLabel(scannedCard.passenger_type)}
+                </StatusBadge>
+                {discount > 0 && (
+                  <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--color-success)', fontWeight: 700 }}>
+                    {(discount * 100).toFixed(0)}% Discount Eligible
+                  </p>
+                )}
               </div>
             </div>
 
-            <SoftCard style={{ marginBottom: 16, background: 'var(--color-primary-subtle)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <MapPin size={18} color="var(--color-primary)" />
-                <span className="heading-small">Route Information</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>From</p>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{selectedTerminal}</p>
-                </div>
-                <ArrowRight size={20} color="var(--text-secondary)" />
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>To</p>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{selectedRoute.destination}</p>
-                </div>
-              </div>
-            </SoftCard>
-
-            <SoftCard style={{ marginBottom: 16 }}>
-              <h4 className="heading-small" style={{ marginBottom: 12 }}>Fare Breakdown</h4>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Base Fare</span>
-                <span style={{ fontWeight: 600 }}>₱{selectedRoute.fare.toFixed(2)}</span>
-              </div>
-              {scannedCard.passenger_type !== 'regular' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Discount (20%)</span>
-                  <span style={{ fontWeight: 600, color: 'var(--color-success)' }}>-₱{(selectedRoute.fare * 0.20).toFixed(2)}</span>
-                </div>
-              )}
-              <div style={{ 
-                display: 'flex', justifyContent: 'space-between', 
-                paddingTop: 12, borderTop: '1px solid var(--border-color)',
-                fontSize: '1.1rem', fontWeight: 700
-              }}>
-                <span>Final Fare</span>
-                <span style={{ color: 'var(--color-primary)' }}>
-                  ₱{(selectedRoute.fare * (scannedCard.passenger_type === 'regular' ? 1 : 0.8)).toFixed(2)}
-                </span>
-              </div>
-            </SoftCard>
-
-            <SoftCard style={{ marginBottom: 20 }}>
+            {/* Balance */}
+            <SoftCard style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Wallet size={20} color="var(--text-secondary)" />
                   <span className="heading-small">Card Balance</span>
                 </div>
-                <span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                <span style={{
+                  fontSize: '1.6rem', fontWeight: 800,
+                  color: scannedCard.balance > 50 ? 'var(--color-success)' : scannedCard.balance > 20 ? '#A16207' : 'var(--color-danger)',
+                }}>
                   ₱{scannedCard.balance.toFixed(2)}
                 </span>
               </div>
+              {scannedCard.balance <= 20 && (
+                <div style={{
+                  marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                  background: scannedCard.balance <= 0 ? 'var(--color-danger-subtle)' : 'var(--color-warning-subtle)',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <AlertCircle size={15} color={scannedCard.balance <= 0 ? 'var(--color-danger)' : '#A16207'} />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: scannedCard.balance <= 0 ? 'var(--color-danger)' : '#A16207' }}>
+                    {scannedCard.balance <= 0 ? 'No balance — cannot board' : 'Low balance'}
+                  </span>
+                </div>
+              )}
             </SoftCard>
 
-            <PrimaryButton
-              onClick={confirmValidation}
-              fullWidth
-              disabled={loading || scannedCard.balance < (selectedRoute.fare * (scannedCard.passenger_type === 'regular' ? 1 : 0.8))}
-            >
-              {loading ? 'Processing...' : 'Confirm Fare Deduction'}
-            </PrimaryButton>
-
-            {scannedCard.balance < (selectedRoute.fare * (scannedCard.passenger_type === 'regular' ? 1 : 0.8)) && (
-              <div style={{
-                marginTop: 12, padding: 12, borderRadius: 8,
-                background: 'var(--color-danger-subtle)',
-                display: 'flex', alignItems: 'center', gap: 8
-              }}>
-                <AlertCircle size={18} color="var(--color-danger)" />
-                <span style={{ fontSize: '0.85rem', color: 'var(--color-danger)', fontWeight: 600 }}>
-                  Insufficient balance
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-      </AnimatedModal>
-
-      {/* Result Modal */}
-      <AnimatedModal isOpen={showResultModal} onClose={closeResultModal} showClose={false}>
-        {validationResult && (
-          <div style={{ padding: '20px 0', textAlign: 'center' }}>
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              background: validationResult.success ? 'var(--color-success-subtle)' : 'var(--color-danger-subtle)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px'
-            }}>
-              {validationResult.success ? (
-                <CheckCircle size={40} color="var(--color-success)" />
-              ) : (
-                <AlertCircle size={40} color="var(--color-danger)" />
-              )}
-            </div>
-
-            <h2 className="heading-small" style={{ fontSize: '1.5rem', marginBottom: 8 }}>
-              {validationResult.success ? 'Fare Validated!' : 'Validation Failed'}
-            </h2>
-
-            {validationResult.success ? (
-              <>
-                <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>
-                  {validationResult.passengerName}'s fare has been deducted
+            {/* Destination */}
+            {scannedCard.destination && (
+              <SoftCard style={{ marginBottom: 14, background: 'var(--color-primary-subtle)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <ArrowRight size={18} color="var(--color-primary)" />
+                  <span className="heading-small">Registered Destination</span>
+                </div>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--color-primary)' }}>
+                  {scannedCard.destination}
                 </p>
-
-                <SoftCard style={{ marginBottom: 16, textAlign: 'left' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Passenger</span>
-                    <span style={{ fontWeight: 600 }}>{validationResult.passengerName}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Destination</span>
-                    <span style={{ fontWeight: 600 }}>{validationResult.destination}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Base Fare</span>
-                    <span style={{ fontWeight: 600 }}>₱{validationResult.fare.toFixed(2)}</span>
-                  </div>
-                  {validationResult.discount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Discount</span>
-                      <span style={{ fontWeight: 600, color: 'var(--color-success)' }}>-₱{validationResult.discount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div style={{ 
-                    display: 'flex', justifyContent: 'space-between', 
-                    paddingTop: 12, borderTop: '1px solid var(--border-color)',
-                    fontWeight: 700
-                  }}>
-                    <span>Final Fare</span>
-                    <span style={{ color: 'var(--color-primary)' }}>₱{validationResult.finalFare.toFixed(2)}</span>
-                  </div>
-                </SoftCard>
-
-                <SoftCard style={{ marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Wallet size={20} color="var(--text-secondary)" />
-                      <span className="heading-small">Balance</span>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>₱{validationResult.balanceBefore.toFixed(2)} → </span>
-                      <span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-success)' }}>
-                        ₱{validationResult.balanceAfter.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </SoftCard>
-              </>
-            ) : (
-              <p style={{ color: 'var(--color-danger)', marginBottom: 20 }}>
-                {validationResult.error}
-              </p>
+              </SoftCard>
             )}
 
-            <PrimaryButton onClick={closeResultModal} fullWidth>
-              {validationResult.success ? 'Validate Another' : 'Try Again'}
+            {/* Passenger type & status */}
+            <SoftCard style={{ marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <p style={{ margin: '0 0 4px', fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>TYPE</p>
+                  <p style={{ margin: 0, fontWeight: 700 }}>{getPassengerTypeLabel(scannedCard.passenger_type)}</p>
+                </div>
+                <div>
+                  <p style={{ margin: '0 0 4px', fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>STATUS</p>
+                  <StatusBadge variant={scannedCard.status === 'active' ? 'success' : 'danger'}>
+                    {scannedCard.status}
+                  </StatusBadge>
+                </div>
+              </div>
+            </SoftCard>
+
+            <PrimaryButton onClick={closeCardModal} fullWidth>
+              Done
             </PrimaryButton>
           </div>
         )}

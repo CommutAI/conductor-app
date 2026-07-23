@@ -2,6 +2,8 @@ import React from 'react';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Route, Redirect } from 'react-router-dom';
+import { addIcons } from 'ionicons';
+import { close } from 'ionicons/icons';
 
 /* Ionic core CSS */
 import '@ionic/react/css/core.css';
@@ -33,11 +35,14 @@ import ProfilePage from './pages/ProfilePage';
 import PassengerListPage from './pages/PassengerListPage';
 import TripHistoryPage from './pages/TripHistoryPage';
 import FareValidationPage from './pages/FareValidationPage';
-import PassengerDestinationPage from './pages/PassengerDestinationPage';
 
 setupIonicReact({
   mode: 'md',
   animated: true,
+});
+
+addIcons({
+  'close': close,
 });
 
 const App: React.FC = () => {
@@ -63,7 +68,6 @@ const App: React.FC = () => {
                 <Route exact path="/passengers" render={() => <ProtectedRoute component={PassengerListPage} />} />
                 <Route exact path="/history"    render={() => <ProtectedRoute component={TripHistoryPage} />} />
                 <Route exact path="/fare-validation" render={() => <ProtectedRoute component={FareValidationPage} />} />
-                <Route exact path="/passenger-destination" render={() => <ProtectedRoute component={PassengerDestinationPage} />} />
 
                 {/* Default redirect */}
                 <Route exact path="/">

@@ -42,6 +42,10 @@ DO $$ BEGIN
   CREATE TYPE passenger_type AS ENUM ('regular', 'student', 'senior_citizen', 'pwd');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN
+  CREATE TYPE emergency_type AS ENUM ('medical', 'accident', 'security', 'mechanical', 'other');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_users (
@@ -176,6 +180,7 @@ CREATE TABLE IF NOT EXISTS boarded_passengers (
   card_id         UUID        REFERENCES qr_cards (id),
   temp_ticket_id  UUID        REFERENCES temporary_tickets (id),
   boarded_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  alighted_at     TIMESTAMPTZ, -- timestamp when passenger alighted (for destination validation)
   CONSTRAINT chk_boarding_source CHECK (
     card_id IS NOT NULL OR temp_ticket_id IS NOT NULL
   )
@@ -208,15 +213,16 @@ CREATE TABLE IF NOT EXISTS fare_irregularities (
 
 -- ── 11. Emergency Alerts ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS emergency_alerts (
-  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  trip_id       UUID        NOT NULL REFERENCES trips (id) ON DELETE CASCADE,
-  conductor_id  UUID        NOT NULL REFERENCES staff_users (id),
-  bus_id        UUID        REFERENCES buses (id),
+  id            UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id       UUID            NOT NULL REFERENCES trips (id) ON DELETE CASCADE,
+  conductor_id  UUID            NOT NULL REFERENCES staff_users (id),
+  bus_id        UUID            REFERENCES buses (id),
   lat           FLOAT8,
   lng           FLOAT8,
-  status        TEXT        NOT NULL DEFAULT 'active',  -- 'active' | 'acknowledged' | 'resolved'
+  status        TEXT            NOT NULL DEFAULT 'active',  -- 'active' | 'acknowledged' | 'resolved'
+  type          emergency_type  NOT NULL DEFAULT 'other',
   notes         TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
   acknowledged_at TIMESTAMPTZ,
   resolved_at   TIMESTAMPTZ
 );
@@ -241,6 +247,8 @@ CREATE TABLE IF NOT EXISTS routes (
   fare                  NUMERIC(10,2) NOT NULL,
   distance_km           NUMERIC(10,2),
   estimated_time_minutes INTEGER,
+  destination_lat       FLOAT8,      -- GPS latitude of destination
+  destination_lng       FLOAT8,      -- GPS longitude of destination
   UNIQUE(terminal, destination)
 );
 
@@ -663,14 +671,14 @@ INSERT INTO buses (plate_number, route, seat_capacity, status) VALUES
 ON CONFLICT (plate_number) DO NOTHING;
 
 -- ── 19. Insert Route Data (from Manolo Fortich Terminal) ─────────────────────
-INSERT INTO routes (terminal, destination, fare, distance_km, estimated_time_minutes) VALUES
-  ('Manolo Fortich Terminal', 'Dicklum', 15.00, 5.2, 15),
-  ('Manolo Fortich Terminal', 'San Miguel', 20.00, 10.5, 25),
-  ('Manolo Fortich Terminal', 'Lunocan', 25.00, 15.8, 35),
-  ('Manolo Fortich Terminal', 'Alae', 30.00, 22.3, 45),
-  ('Manolo Fortich Terminal', 'Mambatangan', 40.00, 35.7, 60),
-  ('Manolo Fortich Terminal', 'Puerto', 50.00, 48.2, 75),
-  ('Manolo Fortich Terminal', 'Agora Terminal', 65.00, 62.5, 90)
+INSERT INTO routes (terminal, destination, fare, distance_km, estimated_time_minutes, destination_lat, destination_lng) VALUES
+  ('Manolo Fortich Terminal', 'Dicklum', 15.00, 5.2, 15, 8.4321, 124.6543),
+  ('Manolo Fortich Terminal', 'San Miguel', 20.00, 10.5, 25, 8.4456, 124.6789),
+  ('Manolo Fortich Terminal', 'Lunocan', 25.00, 15.8, 35, 8.4589, 124.7012),
+  ('Manolo Fortich Terminal', 'Alae', 30.00, 22.3, 45, 8.4723, 124.7234),
+  ('Manolo Fortich Terminal', 'Mambatangan', 40.00, 35.7, 60, 8.4856, 124.7456),
+  ('Manolo Fortich Terminal', 'Puerto', 50.00, 48.2, 75, 8.4989, 124.7678),
+  ('Manolo Fortich Terminal', 'Agora Terminal', 65.00, 62.5, 90, 8.5123, 124.7890)
 ON CONFLICT (terminal, destination) DO NOTHING;
 
 -- ── 17. Create Test Conductor User (for testing) ───────────────────────────────

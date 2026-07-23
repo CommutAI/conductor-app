@@ -5,18 +5,20 @@ import {
   IonAlert,
   IonFab,
   IonFabButton,
+  IonActionSheet,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ScanLine, StopCircle, Users, Wallet, AlertTriangle,
-  CheckCircle, MapPin, List, History, AlertCircle, Wifi, WifiOff,
-  Ticket,
+  CheckCircle, MapPin, History, AlertCircle, Wifi, WifiOff,
+  CreditCard,
 } from 'lucide-react';
 import { useTrip } from '../context/TripContext';
 import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
 import { supabase } from '../supabaseClient';
+import { calculateDistance, isWithinProximity, getProximityStatus } from '../utils/gpsUtils';
 import ProfileAvatar from '../components/ProfileAvatar';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
@@ -37,6 +39,10 @@ const LiveTripPage: React.FC = () => {
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
   const [gpsStatus, setGpsStatus] = useState<'active' | 'inactive' | 'searching'>('searching');
   const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState<'medical' | 'accident' | 'security' | 'mechanical' | 'other'>('other');
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [destinationAlerts, setDestinationAlerts] = useState<any[]>([]);
+  const [notifiedPassengers, setNotifiedPassengers] = useState<Set<string>>(new Set());
 
   const { currentTrip, currentBus, validatedCount, fareCollected } = useTrip();
   const { profile } = useAuth();
@@ -86,13 +92,94 @@ const LiveTripPage: React.FC = () => {
   async function updateGPSLocation(lat: number, lng: number) {
     if (!currentTrip) return;
     try {
+      setCurrentLocation({ lat, lng });
       await supabase.from('trips').update({
         current_lat: lat,
         current_lng: lng,
         gps_updated_at: new Date().toISOString(),
       }).eq('id', currentTrip.id);
+      
+      // Check for passenger destination proximity
+      await checkDestinationProximity(lat, lng);
     } catch (err) {
       console.error('Error updating GPS location:', err);
+    }
+  }
+
+  async function checkDestinationProximity(currentLat: number, currentLng: number) {
+    if (!currentTrip) return;
+    
+    try {
+      // Get boarded passengers with their destination info
+      const { data: boardedData } = await supabase
+        .from('boarded_passengers')
+        .select(`
+          id,
+          card_id,
+          passenger_id,
+          qr_cards!inner(destination, route_id, routes(destination, destination_lat, destination_lng))
+        `)
+        .eq('trip_id', currentTrip.id);
+
+      if (!boardedData || boardedData.length === 0) return;
+
+      const newAlerts: any[] = [];
+      
+      for (const boarded of boardedData) {
+        const card = boarded.qr_cards as any;
+        const route = card.routes as any;
+        
+        // Skip if no destination set or already notified
+        if (!card.destination || !route || !route.destination_lat || !route.destination_lng) continue;
+        if (notifiedPassengers.has(boarded.id)) continue;
+        
+        // Check proximity
+        const isNear = isWithinProximity(
+          currentLat,
+          currentLng,
+          route.destination_lat,
+          route.destination_lng,
+          0.5 // 500 meters threshold
+        );
+        
+        if (isNear) {
+          const distance = calculateDistance(
+            currentLat,
+            currentLng,
+            route.destination_lat,
+            route.destination_lng
+          );
+          
+          const proximityStatus = getProximityStatus(distance);
+          
+          newAlerts.push({
+            id: boarded.id,
+            passengerName: 'Passenger',
+            destination: card.destination,
+            distance: distance.toFixed(2),
+            status: proximityStatus.status,
+            message: proximityStatus.message,
+            color: proximityStatus.color,
+            timestamp: new Date().toISOString()
+          });
+          
+          // Mark as notified
+          setNotifiedPassengers(prev => new Set([...prev, boarded.id]));
+        }
+      }
+      
+      if (newAlerts.length > 0) {
+        setDestinationAlerts(prev => [...newAlerts, ...prev]);
+        
+        // Show toast notification for first alert
+        const firstAlert = newAlerts[0];
+        showNotification(
+          `${firstAlert.passengerName} approaching ${firstAlert.destination}`,
+          firstAlert.color === 'success' ? 'success' : 'warning'
+        );
+      }
+    } catch (err) {
+      console.error('Error checking destination proximity:', err);
     }
   }
 
@@ -108,10 +195,12 @@ const LiveTripPage: React.FC = () => {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
             status: 'active',
+            type: selectedEmergencyType,
             created_at: new Date().toISOString(),
           });
           showNotification('Emergency alert sent! Admin notified.', 'success');
           setShowEmergencyAlert(false);
+          setSelectedEmergencyType('other');
         }, () => {
           showNotification('Could not get GPS location. Emergency alert sent without location.', 'warning');
         });
@@ -121,10 +210,12 @@ const LiveTripPage: React.FC = () => {
           conductor_id: profile.id,
           bus_id: currentBus?.id,
           status: 'active',
+          type: selectedEmergencyType,
           created_at: new Date().toISOString(),
         });
         showNotification('Emergency alert sent! Admin notified.', 'success');
         setShowEmergencyAlert(false);
+        setSelectedEmergencyType('other');
       }
     } catch {
       showNotification('Failed to send emergency alert', 'danger');
@@ -314,6 +405,54 @@ const LiveTripPage: React.FC = () => {
             </div>
           </SoftCard>
 
+          {/* Destination Alerts */}
+          {destinationAlerts.length > 0 && (
+            <SoftCard style={{ marginBottom: 24, background: 'var(--color-primary-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MapPin size={20} color="var(--color-primary)" />
+                  <h3 className="heading-medium">Destination Alerts</h3>
+                </div>
+                <StatusBadge variant="primary">{destinationAlerts.length} approaching</StatusBadge>
+              </div>
+
+              {destinationAlerts.slice(0, 5).map((alert) => (
+                <div key={alert.id} className="transport-list-item" style={{ background: 'rgba(255,255,255,0.5)' }}>
+                  <MapPin size={20} color={alert.color === 'success' ? 'var(--color-success)' : '#A16207'} />
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 2px', fontWeight: 700, fontSize: '0.9rem' }}>
+                      {alert.destination}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {alert.distance}km away
+                    </p>
+                  </div>
+                  <StatusBadge variant={alert.color === 'success' ? 'success' : 'warning'}>
+                    {alert.status === 'arrived' ? 'Arrived' : alert.status === 'near' ? 'Near' : 'Approaching'}
+                  </StatusBadge>
+                </div>
+              ))}
+            </SoftCard>
+          )}
+
+          {/* Quick Actions */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/scan')}>
+              <ScanLine size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Scan QR</p>
+            </SoftCard>
+            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/history')}>
+              <History size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>History</p>
+            </SoftCard>
+          </div>
+
+          <button type="button" className="emergency-btn" onClick={() => setShowEmergencyAlert(true)}>
+            <AlertCircle size={28} />
+            <span style={{ fontSize: '1.1rem', fontWeight: 800 }}>EMERGENCY</span>
+            <span style={{ fontSize: '0.85rem', opacity: 0.9 }}>Send GPS & Notify Admin</span>
+          </button>
+
           {/* Recent Activity */}
           {loading ? (
             <LoadingSkeleton variant="list" count={3} />
@@ -352,32 +491,6 @@ const LiveTripPage: React.FC = () => {
               )}
             </SoftCard>
           )}
-
-          {/* Quick Actions */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/passengers')}>
-              <List size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Passengers</p>
-            </SoftCard>
-            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/history')}>
-              <History size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>History</p>
-            </SoftCard>
-            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/fare-validation')}>
-              <Ticket size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Fare Validation</p>
-            </SoftCard>
-            <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => history.push('/passenger-destination')}>
-              <MapPin size={24} color="var(--color-primary)" style={{ margin: '0 auto 8px' }} />
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Destination</p>
-            </SoftCard>
-          </div>
-
-          <button type="button" className="emergency-btn" onClick={() => setShowEmergencyAlert(true)}>
-            <AlertCircle size={28} />
-            <span style={{ fontSize: '1.1rem', fontWeight: 800 }}>EMERGENCY</span>
-            <span style={{ fontSize: '0.85rem', opacity: 0.9 }}>Send GPS & Notify Admin</span>
-          </button>
         </div>
       </IonContent>
 
@@ -400,14 +513,56 @@ const LiveTripPage: React.FC = () => {
         ]}
       />
 
-      <IonAlert
+      <IonActionSheet
         isOpen={showEmergencyAlert}
         onDidDismiss={() => setShowEmergencyAlert(false)}
-        header="Emergency Alert"
-        message="This will send your GPS location to the admin immediately. Are you sure?"
+        header="Select Emergency Type"
+        subHeader="This will send your GPS location to the admin"
         buttons={[
-          { text: 'Cancel', role: 'cancel' },
-          { text: 'Send Alert', handler: sendEmergencyAlert },
+          {
+            text: '🏥 Medical',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('medical');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🚗 Accident',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('accident');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🛡️ Security',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('security');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🔧 Mechanical',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('mechanical');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '📋 Other',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('other');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: 'Cancel',
+            role: 'cancel',
+          },
         ]}
       />
 
