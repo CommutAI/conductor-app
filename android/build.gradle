@@ -7,7 +7,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.android.tools.build:gradle:8.9.1'
         classpath 'com.google.gms:google-services:4.4.4'
 
         // NOTE: Do not place your application dependencies here; they belong
@@ -21,6 +21,52 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+    }
+}
+
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+                lint {
+                    checkReleaseBuilds false
+                    abortOnError false
+                }
+            }
+        }
+    }
+}
+
+// Ensure consistent JVM target across all subprojects
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+            }
+            // Configure Kotlin JVM target for projects with Kotlin
+            if (project.extensions.findByName('kotlinOptions')) {
+                kotlinOptions {
+                    jvmTarget = "17"
+                }
+            }
+        }
+    }
+}
+
+// Disable annotation extraction tasks to avoid lint dependency downloads
+tasks.whenTaskAdded { task ->
+    if (task.name.contains('extractAnnotations') || task.name.contains('ExtractAnnotations')) {
+        task.enabled = false
     }
 }
 

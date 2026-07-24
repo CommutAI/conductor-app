@@ -12,7 +12,6 @@ import {
 import { 
   busOutline, 
   playCircleOutline, 
-  logOutOutline, 
   calendarOutline, 
   timeOutline,
   locationOutline,
@@ -23,7 +22,6 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
 import '../styles/modern-transport.css';
-import Logo from '../components/Logo';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 
@@ -41,12 +39,11 @@ const TripSetupPage: React.FC = () => {
   const [loadingBuses, setLoadingBuses] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showLogoutAlert, setShowLogoutAlert] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
 
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const { setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected } = useTrip();
   const history = useHistory();
 
@@ -139,32 +136,6 @@ const TripSetupPage: React.FC = () => {
           background: 'white',
           borderBottom: '1px solid #E5E7EB',
         }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            marginBottom: '16px',
-          }}>
-            <Logo size="sm" />
-            
-            <button
-              onClick={() => setShowLogoutAlert(true)}
-              style={{
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '8px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <IonIcon icon={logOutOutline} style={{ fontSize: '18px', color: '#EF4444' }} />
-              <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#EF4444' }}>Logout</span>
-            </button>
-          </div>
 
           {/* Profile Section */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -433,17 +404,6 @@ const TripSetupPage: React.FC = () => {
           </div>
         </div>
       </IonContent>
-
-      <IonAlert
-        isOpen={showLogoutAlert}
-        onDidDismiss={() => setShowLogoutAlert(false)}
-        header="Sign Out"
-        message="Are you sure you want to sign out?"
-        buttons={[
-          { text: 'Cancel', role: 'cancel' },
-          { text: 'Sign Out', handler: () => signOut() },
-        ]}
-      />
 
       <IonToast
         isOpen={showToast}

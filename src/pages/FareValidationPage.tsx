@@ -8,7 +8,8 @@ import {
 import { useOffline } from '../context/OfflineContext';
 import { getQRCardByUID } from '../utils/fareValidationApi';
 import type { QRCard, PassengerType } from '../types/fareValidation';
-import { Html5QrcodeScanner, Html5QrcodeScannerState } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
+import { stripQrShadedRegion } from '../utils/qrScannerUi';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
 import {
@@ -47,8 +48,9 @@ const FareValidationPage: React.FC = () => {
 
   const { isOnline } = useOffline();
   const history = useHistory();
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
+  const stripShadedRegionRef = useRef<(() => void) | null>(null);
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning') {
     setToastMessage(message);
@@ -57,8 +59,11 @@ const FareValidationPage: React.FC = () => {
   }
 
   async function cleanupScanner() {
+    stripShadedRegionRef.current?.();
+    stripShadedRegionRef.current = null;
     try {
-      if (scannerRef.current && scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+      if (scannerRef.current) {
+        await scannerRef.current.stop();
         await scannerRef.current.clear();
       }
     } catch { /* ignore */ }
@@ -84,33 +89,34 @@ const FareValidationPage: React.FC = () => {
     }
 
     try {
-      // Responsive qrbox: 70% of the shorter viewport edge, capped at 280 px
-      const shortEdge = Math.min(window.innerWidth, window.innerHeight);
-      const boxSize = Math.min(Math.round(shortEdge * 0.7), 280);
+      // Clear any existing scanner first
+      await cleanupScanner();
 
-      const scanner = new Html5QrcodeScanner(
-        'qr-reader-fare',
-        {
-          fps: 12,
-          qrbox: { width: boxSize, height: boxSize },
-          aspectRatio: 1.0,
-          videoConstraints: {
-            facingMode: { ideal: 'environment' }, // prefer back camera
-          },
-        },
-        false
-      );
-      scannerRef.current = scanner;
-      scanner.render(
-        async (decodedText) => {
+      const qrCode = new Html5Qrcode('qr-reader-fare');
+      scannerRef.current = qrCode;
+
+      // Omit qrbox — prevents html5-qrcode white corner injection; app overlay handles UI.
+      const config = {
+        fps: 10,
+        aspectRatio: 1.0,
+      };
+
+      await qrCode.start(
+        { facingMode: 'environment' },
+        config,
+        async (decodedText: string) => {
+          console.log('QR code detected:', decodedText);
           if (processingRef.current) return;
           processingRef.current = true;
           await cleanupScanner();
           setScanning(false);
           await handleCardScan(decodedText);
         },
-        () => {}
+        (errorMessage: string) => {
+          // Silently ignore scan errors
+        }
       );
+      stripShadedRegionRef.current = stripQrShadedRegion('qr-reader-fare');
       showNotification('Camera started — scan passenger QR card', 'success');
     } catch (err) {
       console.error('Camera error:', err);
@@ -288,8 +294,10 @@ const FareValidationPage: React.FC = () => {
                 <p className="text-secondary" style={{ margin: 0 }}>Position QR code in the camera view</p>
               </SoftCard>
 
-              <div className="scanner-active-view">
-                <div id="qr-reader-fare" />
+              <div className="scanner-active-card">
+                <div className="scanner-viewport">
+                  <div id="qr-reader-fare" />
+                </div>
               </div>
 
               <PrimaryButton onClick={stopScan} variant="danger" fullWidth style={{ marginTop: 16 }}>

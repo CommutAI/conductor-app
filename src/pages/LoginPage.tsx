@@ -69,7 +69,7 @@ const LoginPage: React.FC = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              style={{ textAlign: 'center', marginBottom: 'auto', paddingTop: 40 }}
+              style={{ textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
             >
               <Logo size="xl" />
               <h1 style={{

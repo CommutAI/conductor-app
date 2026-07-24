@@ -1017,10 +1017,11 @@ ion-content.orange-geometric-bg {
 .scanner-control-btn--active { background: rgba(255,255,255,0.4); }
 
 .scanner-active-view {
-  background: var(--bg-secondary);
+  background: transparent;
   border-radius: var(--card-radius);
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
+  border: none;
 }
 
 .scanner-type-btn {
@@ -1034,12 +1035,23 @@ ion-content.orange-geometric-bg {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scanner-type-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-medium);
 }
 
 .scanner-type-btn--active {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
   color: var(--color-primary);
+}
+
+.scanner-type-btn--active:hover {
+  background: var(--color-primary-subtle);
+  border-color: var(--color-primary);
 }
 
 .scanner-type-btn:active {
@@ -1132,12 +1144,19 @@ ion-content.orange-geometric-bg {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: white;
+  background: var(--bg-secondary);
   box-shadow: var(--shadow-sm);
   transition: transform var(--transition-base);
 }
 
 .settings-toggle--on .settings-toggle__thumb { transform: translateX(22px); }
+
+/* Prevent white background on hover */
+.settings-toggle:hover .settings-toggle__thumb,
+.settings-toggle:focus .settings-toggle__thumb,
+.settings-toggle:active .settings-toggle__thumb {
+  background: var(--bg-secondary);
+}
 
 /* ─── Animated Modal ────────────────────────────────────────────────────────── */
 .animated-modal__content { padding: 24px 24px calc(32px + env(safe-area-inset-bottom, 0px)); }
@@ -1360,31 +1379,114 @@ ion-content.orange-geometric-bg {
 .delay-6 { animation-delay: 0.3s; }
 
 /* ── QR reader base overrides ─────────────────────────────────────────────── */
+.scanner-active-card {
+  background: #000;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.scanner-active-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  background: #000;
+}
+
+.scanner-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: min(85vw, 360px);
+  background: #000;
+  overflow: hidden;
+  border-radius: 0 0 16px 16px;
+}
+
 #qr-reader,
 #qr-reader-fare {
+  position: absolute !important;
+  inset: 0 !important;
   width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
   border-radius: 0 !important;
   overflow: hidden !important;
   border: none !important;
   background: #000 !important;
-  min-height: 240px;
-  position: relative;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Video fills the container fluid, preserves aspect ratio */
+/* Video fills the container completely */
 #qr-reader video,
 #qr-reader-fare video {
   width: 100% !important;
-  height: auto !important;
-  max-height: 70vh;
+  height: 100% !important;
   object-fit: cover;
   display: block;
+  background: #000 !important;
 }
 
 #qr-reader__scan_region,
 #qr-reader-fare__scan_region {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
   border-radius: 0 !important;
-  overflow: hidden;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+/*
+ * html5-qrcode injects #qr-shaded-region with white (#ffffff) corner brackets
+ * via inline styles when qrbox is set — hide entirely; app renders its own frame.
+ */
+#qr-shaded-region,
+#qr-shaded-region > div,
+#qr-reader [style*="background-color: rgb(255, 255, 255)"],
+#qr-reader-fare [style*="background-color: rgb(255, 255, 255)"],
+#qr-reader [style*="background-color:#ffffff"],
+#qr-reader-fare [style*="background-color:#ffffff"],
+#qr-reader [style*="background-color: #ffffff"],
+#qr-reader-fare [style*="background-color: #ffffff"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* No white flash on hover / focus / active (DevTools responsive inspect) */
+#qr-reader:hover,
+#qr-reader-fare:hover,
+#qr-reader:focus,
+#qr-reader-fare:focus,
+#qr-reader:active,
+#qr-reader-fare:active,
+#qr-reader *:hover,
+#qr-reader-fare *:hover,
+#qr-reader *:focus,
+#qr-reader-fare *:focus,
+#qr-reader *:active,
+#qr-reader-fare *:active {
+  background-color: transparent !important;
+}
+
+#qr-reader video:hover,
+#qr-reader-fare video:hover,
+#qr-reader video:focus,
+#qr-reader-fare video:focus {
+  background: #000 !important;
+}
+
+#qr-reader__dashboard,
+#qr-reader-fare__dashboard,
+#qr-reader__dashboard_section,
+#qr-reader-fare__dashboard_section {
+  display: none !important;
 }
 
 /* Compact phones (≤360 dp wide) — tighter scanner page */
@@ -1393,23 +1495,25 @@ ion-content.orange-geometric-bg {
   .scanner-hero { min-height: 220px; }
   .scanner-hero__content { padding: 24px 16px; min-height: 220px; }
   .scanner-frame { width: 160px; height: 160px; }
-  #qr-reader video,
-  #qr-reader-fare video { max-height: 55vw; }
+  .scanner-viewport { max-height: min(80vw, 280px); }
+  
+  /* Prevent white background on small screens */
+  .settings-toggle__thumb {
+    background: var(--bg-secondary) !important;
+  }
 }
 
 /* Standard Android phones (361–480 dp) */
 @media (min-width: 361px) and (max-width: 480px) {
   .scanner-page { padding: 16px 12px; }
-  #qr-reader video,
-  #qr-reader-fare video { max-height: 60vw; }
+  .scanner-viewport { max-height: min(82vw, 320px); }
 }
 
 /* Large phones / small tablets (481–768 dp) */
 @media (min-width: 481px) and (max-width: 768px) {
   .scanner-hero { min-height: 280px; }
   .scanner-frame { width: 220px; height: 220px; }
-  #qr-reader video,
-  #qr-reader-fare video { max-height: 55vw; }
+  .scanner-viewport { max-height: min(75vw, 360px); }
 }
 
 /* Tablets (769 dp+) — keep scanner centred and capped */
@@ -1417,10 +1521,7 @@ ion-content.orange-geometric-bg {
   .scanner-page { max-width: 560px; margin: 0 auto; }
   .scanner-hero { min-height: 320px; }
   .scanner-frame { width: 240px; height: 240px; }
-  #qr-reader,
-  #qr-reader-fare { max-width: 560px; margin: 0 auto; }
-  #qr-reader video,
-  #qr-reader-fare video { max-height: 480px; }
+  .scanner-viewport { max-height: 360px; }
 }
 
 /* The html5-qrcode lib injects its own camera-start button; hide it */
@@ -1429,20 +1530,24 @@ ion-content.orange-geometric-bg {
 #html5-qrcode-button-file-selection,
 #html5-qrcode-button-file-selection-with-id,
 #qr-reader__dashboard_section_swaplink,
-#qr-reader-fare__dashboard_section_swaplink,
+#qr-reader-fare__dashboard_section_swaplink {
+  display: none !important;
+}
+
+/* Keep the dashboard visible but style it appropriately */
 #qr-reader__dashboard_section_fsr,
 #qr-reader-fare__dashboard_section_fsr,
 #qr-reader__status_span,
-#qr-reader-fare__status_span,
-#qr-reader__dashboard,
-#qr-reader-fare__dashboard { display: none !important; }
+#qr-reader-fare__status_span {
+  display: none !important;
+}
 
 /* Login hero */
 .login-hero {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFFFFF;
+  background: var(--bg-primary);
   position: relative;
   overflow: hidden;
 }
@@ -1461,15 +1566,16 @@ ion-content.orange-geometric-bg {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 48px 24px 32px;
+  justify-content: flex-start;
+  padding: 32px 24px 32px;
 }
 
 .login-form-card {
   background: var(--bg-secondary);
-  border-radius: 28px 28px 0 0;
-  padding: 32px 24px calc(32px + env(safe-area-inset-bottom, 0px));
-  margin-top: auto;
-  box-shadow: 0 -8px 32px rgba(0,0,0,0.1);
+  border-radius: 28px;
+  padding: 32px 24px;
+  margin-top: 16px;
+  box-shadow: var(--shadow-lg);
 }
 
 /* Bus selector */

@@ -1,0 +1,5 @@
+- [x] Remove `kotlinOptions` from `app/build.gradle`
+- [x] Clean up redundant blocks in `app/build.gradle`
+- [x] Run Gradle sync to verify fix
+- [x] Upgrade AGP to 8.9.1 in root `build.gradle`
+- [x] Run Gradle sync to verify AAR metadata fix

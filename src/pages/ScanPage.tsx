@@ -12,7 +12,9 @@ import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
 import { processScan, ScanResult } from '../utils/scanProcessor';
 import { OfflineStorage } from '../utils/offlineStorage';
-import { Html5QrcodeScanner, Html5QrcodeScannerState } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
+import { stripQrShadedRegion } from '../utils/qrScannerUi';
+import { Camera } from '@capacitor/camera';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
 import {
@@ -81,9 +83,10 @@ const ScanPage: React.FC = () => {
   const { profile } = useAuth();
   const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useOffline();
   const history = useHistory();
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
   const processingRef = useRef(false);
+  const stripShadedRegionRef = useRef<(() => void) | null>(null);
 
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
 
@@ -104,8 +107,11 @@ const ScanPage: React.FC = () => {
   }
 
   async function cleanupScanner() {
+    stripShadedRegionRef.current?.();
+    stripShadedRegionRef.current = null;
     try {
-      if (scannerRef.current && scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+      if (scannerRef.current) {
+        await scannerRef.current.stop();
         await scannerRef.current.clear();
       }
     } catch { /* ignore */ }
@@ -116,7 +122,7 @@ const ScanPage: React.FC = () => {
     setScanState('scanning');
     processingRef.current = false;
 
-    await new Promise(resolve => setTimeout(resolve, 120));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const readerEl = document.getElementById('qr-reader');
     if (!readerEl) {
@@ -126,38 +132,42 @@ const ScanPage: React.FC = () => {
       return;
     }
 
-    const shortEdge = Math.min(window.innerWidth, window.innerHeight);
-    const boxSize = Math.min(Math.round(shortEdge * 0.7), 280);
-
-    console.log('Starting camera with boxSize:', boxSize);
+    console.log('Starting camera');
 
     try {
-      const scanner = new Html5QrcodeScanner(
-        'qr-reader',
-        {
-          fps: 12,
-          qrbox: { width: boxSize, height: boxSize },
-          aspectRatio: 1.0,
-          showTorchButtonIfSupported: true,
-          videoConstraints: { facingMode: { ideal: 'environment' } },
-        },
-        false
-      );
-      scannerRef.current = scanner;
-      console.log('Scanner created, rendering...');
-      scanner.render(
-        async (decodedText) => {
+      // Clear any existing scanner first
+      await cleanupScanner();
+
+      const qrCode = new Html5Qrcode('qr-reader');
+      scannerRef.current = qrCode;
+      
+      // Omit qrbox — it makes html5-qrcode inject white corner brackets (#ffffff).
+      // The custom green scan-frame overlay handles the viewfinder UI instead.
+      const config = {
+        fps: 10,
+        aspectRatio: 1.0,
+      };
+
+      await qrCode.start(
+        { facingMode: 'environment' },
+        config,
+        async (decodedText: string) => {
+          console.log('QR code detected:', decodedText);
           if (processingRef.current) return;
           processingRef.current = true;
-          await cleanupScanner();
+          // Pause scanner instead of stopping it
+          try {
+            await qrCode.pause();
+          } catch { /* ignore pause errors */ }
           setScanState('processing');
           await handleRawScan(decodedText);
         },
-        (errorMessage) => {
-          console.log('Camera scan error:', errorMessage);
+        (errorMessage: string) => {
+          // Silently ignore scan errors
         }
       );
-      console.log('Scanner render called');
+      stripShadedRegionRef.current = stripQrShadedRegion('qr-reader');
+      console.log('Camera started successfully');
     } catch (err) {
       console.error('QR camera error:', err);
       showNotification(`Camera error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'danger');
@@ -178,7 +188,18 @@ const ScanPage: React.FC = () => {
     setSelectedDestination('');
     setFailedMsg('');
     processingRef.current = false;
-    await startCamera();
+    // Resume scanner if available, otherwise restart
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.resume();
+        setScanState('scanning');
+      } catch (err) {
+        console.error('Resume failed, restarting:', err);
+        await startCamera();
+      }
+    } else {
+      await startCamera();
+    }
   }
 
   // ── Core scan handler ─────────────────────────────────────────────────────
@@ -389,7 +410,18 @@ const ScanPage: React.FC = () => {
       setSuccessAmount(0);
       setSuccessBalance(null);
       processingRef.current = false;
-      startCamera();
+      // Resume scanner instead of restarting
+      if (scannerRef.current) {
+        try {
+          scannerRef.current.resume();
+          setScanState('scanning');
+        } catch (err) {
+          console.error('Resume failed, restarting:', err);
+          startCamera();
+        }
+      } else {
+        startCamera();
+      }
     }, 2500);
   }
 
@@ -562,11 +594,11 @@ const ScanPage: React.FC = () => {
           {isActiveView && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
 
-              {/* ── Camera / Overlay Card ─────────────────────────────── */}
-              <SoftCard style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+              {/* ── Camera / Overlay ─────────────────────────────── */}
+              <div className="scanner-active-card">
 
                 {/* Card header bar */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px' }}>
+                <div className="scanner-active-card__header">
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     background: scanType === 'alighting' ? 'var(--color-warning-subtle)' : 'var(--color-success-subtle)',
@@ -585,7 +617,7 @@ const ScanPage: React.FC = () => {
                 </div>
 
                 {/* Viewport */}
-                <div style={{ position: 'relative', background: '#000', overflow: 'hidden' }}>
+                <div className="scanner-viewport">
 
                   {/* ── Camera feed (scanning state) ── */}
                   <div
@@ -594,6 +626,7 @@ const ScanPage: React.FC = () => {
                       opacity: scanState === 'scanning' ? 1 : 0,
                       transition: 'opacity 0.3s',
                       pointerEvents: scanState === 'scanning' ? 'auto' : 'none',
+                      background: 'transparent',
                     }}
                   />
 
@@ -621,18 +654,17 @@ const ScanPage: React.FC = () => {
                         {/* Scan beam */}
                         <motion.div
                           style={{
-                            position: 'absolute', left: 0, right: 0, height: 2,
+                            position: 'absolute', left: 0, right: 0, height: 3,
                             background: 'linear-gradient(90deg, transparent, #22C55E, transparent)',
-                            boxShadow: '0 0 8px 2px rgba(34,197,94,0.8)',
+                            boxShadow: '0 0 10px 3px rgba(34,197,94,0.8)',
                             top: 0,
                           }}
-                          animate={{ top: ['0px', `${boxSize - 2}px`, '0px'] }}
+                          animate={{ top: ['0px', `${boxSize}px`, '0px'] }}
                           transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
                         />
                       </div>
                     </div>
                   )}
-                  {scanState === 'scanning' && <div style={{ minHeight: 260 }} />}
 
                   {/* ── Processing ── */}
                   {(scanState === 'processing' || scanState === 'committing') && (
@@ -720,7 +752,7 @@ const ScanPage: React.FC = () => {
                     </span>
                   </div>
                 )}
-              </SoftCard>
+              </div>
 
               {/* ══════════════════════════════════════════════════════════
                   DESTINATION PICKER (onboarding, after scan)
