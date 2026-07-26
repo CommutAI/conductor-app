@@ -61,9 +61,28 @@ export async function processScan(
     if (card.allowed_routes && card.allowed_routes.length > 0 && busRoute) {
       const hasRouteRestriction = card.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
       if (hasRouteRestriction) {
-        if (!card.allowed_routes.includes(busRoute)) {
+        console.log('Card allowed_routes:', card.allowed_routes);
+        console.log('Current bus route:', busRoute);
+        
+        // Normalize both for comparison (trim, case-insensitive, remove special chars)
+        const normalizeRoute = (route: string) => route.trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+        const normalizedBusRoute = normalizeRoute(busRoute);
+        
+        const isAllowed = card.allowed_routes.some((allowedRoute: string) => {
+          const normalizedAllowed = normalizeRoute(allowedRoute);
+          // Allow partial match (e.g., "manalo fortich" matches "manolo fortich")
+          const busWords = normalizedBusRoute.split(' ');
+          const allowedWords = normalizedAllowed.split(' ');
+          const matchCount = busWords.filter(word => allowedWords.some(aw => aw.includes(word) || word.includes(aw))).length;
+          const similarity = matchCount / Math.max(busWords.length, allowedWords.length);
+          return similarity >= 0.5; // At least 50% word similarity
+        });
+        
+        if (!isAllowed) {
+          console.log('Route mismatch - card not allowed on this route');
           return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
         }
+        console.log('Route match confirmed');
       }
     }
 
@@ -118,16 +137,25 @@ export async function processScan(
     const fare = DEFAULT_FARE;
 
     if (scanType === 'onboarding') {
+      console.log('Starting onboarding for card:', card.id, 'destination:', currentDestination);
+      
       // On boarding: store the conductor-selected destination on the card record
       // so it can be verified on alighting
       const updatePayload: Record<string, unknown> = {};
       if (currentDestination) updatePayload.destination = currentDestination;
 
       if (Object.keys(updatePayload).length > 0) {
-        await supabase.from('qr_cards').update(updatePayload).eq('id', card.id);
+        console.log('Updating card with:', updatePayload);
+        const { error: updateErr } = await supabase.from('qr_cards').update(updatePayload).eq('id', card.id);
+        if (updateErr) {
+          console.error('Card update error:', updateErr);
+          return { status: 'error', message: `Failed to update card: ${updateErr.message}` };
+        }
+        console.log('Card updated successfully');
       }
 
       // Insert a boarding transaction (amount = 0, fare paid on alighting)
+      console.log('Creating boarding transaction');
       const { error: txErr } = await supabase.from('transactions').insert({
         card_id: card.id,
         trip_id: tripId,
@@ -136,17 +164,26 @@ export async function processScan(
         channel: 'qr_card',
         staff_id: conductorId,
       });
-      if (txErr) return { status: 'error', message: txErr.message };
-
-      // Mark passenger as boarded
-      if (card.passenger_id) {
-        await supabase.from('boarded_passengers').insert({
-          trip_id: tripId,
-          passenger_id: card.passenger_id,
-          card_id: card.id,
-          boarded_at: new Date().toISOString(),
-        });
+      if (txErr) {
+        console.error('Transaction error:', txErr);
+        return { status: 'error', message: `Failed to create transaction: ${txErr.message}` };
       }
+      console.log('Transaction created successfully');
+
+      // Mark passenger as boarded (always insert, even without passenger_id)
+      console.log('Marking as boarded, passenger_id:', card.passenger_id);
+      const { error: boardErr } = await supabase.from('boarded_passengers').insert({
+        trip_id: tripId,
+        passenger_id: card.passenger_id,
+        card_id: card.id,
+        boarded_at: new Date().toISOString(),
+      });
+      if (boardErr) {
+        console.error('Boarding error:', boardErr);
+        return { status: 'error', message: `Failed to mark as boarded: ${boardErr.message}` };
+      }
+      console.log('Boarded successfully');
+
       // Return current balance (no deduction yet)
       return { status: 'qr_pass', newBalance: card.balance, fare: 0, passengerId: card.passenger_id, destination: currentDestination || card.destination };
     } else {
@@ -160,7 +197,7 @@ export async function processScan(
         .from('qr_cards')
         .update({ balance: card.balance - fare })
         .eq('id', card.id);
-      if (balErr) return { status: 'error', message: balErr.message };
+      if (balErr) return { status: 'error', message: `Failed to deduct fare: ${balErr.message}` };
 
       // Insert fare transaction
       const { error: txErr } = await supabase.from('transactions').insert({
@@ -171,14 +208,15 @@ export async function processScan(
         channel: 'qr_card',
         staff_id: conductorId,
       });
-      if (txErr) return { status: 'error', message: txErr.message };
+      if (txErr) return { status: 'error', message: `Failed to create fare transaction: ${txErr.message}` };
 
       // Mark passenger as alighted
-      await supabase
+      const { error: alightErr } = await supabase
         .from('boarded_passengers')
         .update({ alighted_at: new Date().toISOString() })
         .eq('card_id', card.id)
         .eq('trip_id', tripId);
+      if (alightErr) return { status: 'error', message: `Failed to mark as alighted: ${alightErr.message}` };
 
       return { status: 'qr_pass', newBalance: card.balance - fare, fare, passengerId: card.passenger_id, destination: card.destination };
     }
@@ -198,9 +236,28 @@ export async function processScan(
     if (ticket.allowed_routes && ticket.allowed_routes.length > 0 && busRoute) {
       const hasRouteRestriction = ticket.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
       if (hasRouteRestriction) {
-        if (!ticket.allowed_routes.includes(busRoute)) {
+        console.log('Ticket allowed_routes:', ticket.allowed_routes);
+        console.log('Current bus route:', busRoute);
+        
+        // Normalize both for comparison (trim, case-insensitive, remove special chars)
+        const normalizeRoute = (route: string) => route.trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+        const normalizedBusRoute = normalizeRoute(busRoute);
+        
+        const isAllowed = ticket.allowed_routes.some((allowedRoute: string) => {
+          const normalizedAllowed = normalizeRoute(allowedRoute);
+          // Allow partial match (e.g., "manalo fortich" matches "manolo fortich")
+          const busWords = normalizedBusRoute.split(' ');
+          const allowedWords = normalizedAllowed.split(' ');
+          const matchCount = busWords.filter(word => allowedWords.some(aw => aw.includes(word) || word.includes(aw))).length;
+          const similarity = matchCount / Math.max(busWords.length, allowedWords.length);
+          return similarity >= 0.5; // At least 50% word similarity
+        });
+        
+        if (!isAllowed) {
+          console.log('Route mismatch - ticket not allowed on this route');
           return { status: 'ticket_wrong_trip', expectedRoute: ticket.allowed_routes.join(', ') };
         }
+        console.log('Route match confirmed for ticket');
       }
     }
 
@@ -267,7 +324,7 @@ export async function processScan(
         })
         .eq('id', ticket.id);
 
-      if (ticketErr) return { status: 'error', message: ticketErr.message };
+      if (ticketErr) return { status: 'error', message: `Failed to validate ticket: ${ticketErr.message}` };
 
       // Insert a boarding transaction (fare = 0, collected on alighting)
       const { error: txErr } = await supabase.from('transactions').insert({
@@ -279,17 +336,17 @@ export async function processScan(
         staff_id: conductorId,
       });
 
-      if (txErr) return { status: 'error', message: txErr.message };
+      if (txErr) return { status: 'error', message: `Failed to create ticket transaction: ${txErr.message}` };
 
-      // Mark passenger as boarded
-      if (ticket.passenger_id) {
-        await supabase.from('boarded_passengers').insert({
-          trip_id: tripId,
-          passenger_id: ticket.passenger_id,
-          temp_ticket_id: ticket.id,
-          boarded_at: new Date().toISOString(),
-        });
-      }
+      // Mark passenger as boarded (always insert, even without passenger_id)
+      const { error: boardErr } = await supabase.from('boarded_passengers').insert({
+        trip_id: tripId,
+        passenger_id: ticket.passenger_id,
+        temp_ticket_id: ticket.id,
+        boarded_at: new Date().toISOString(),
+      });
+      if (boardErr) return { status: 'error', message: `Failed to mark ticket as boarded: ${boardErr.message}` };
+
       // Return fareAmount = 0 (deducted on alighting)
       return { status: 'ticket_validated', fareAmount: 0, passengerId: ticket.passenger_id, destination: currentDestination || ticket.destination };
     } else {
@@ -302,14 +359,16 @@ export async function processScan(
         channel: 'temp_ticket',
         staff_id: conductorId,
       });
-      if (txErr) return { status: 'error', message: txErr.message };
+      if (txErr) return { status: 'error', message: `Failed to create fare transaction: ${txErr.message}` };
 
       // Mark passenger as alighted
-      await supabase
+      const { error: alightErr } = await supabase
         .from('boarded_passengers')
         .update({ alighted_at: new Date().toISOString() })
         .eq('temp_ticket_id', ticket.id)
         .eq('trip_id', tripId);
+      if (alightErr) return { status: 'error', message: `Failed to mark ticket as alighted: ${alightErr.message}` };
+
       return { status: 'ticket_validated', fareAmount: ticket.fare_amount, passengerId: ticket.passenger_id, destination: ticket.destination };
     }
   }

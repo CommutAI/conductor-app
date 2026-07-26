@@ -204,9 +204,9 @@ const ScanPage: React.FC = () => {
             return;
           }
 
-          // Debounce: ignore if same code scanned within 2 seconds
+          // Debounce: ignore if same code scanned within 500ms (prevents rapid duplicate detections)
           const now = Date.now();
-          if (decodedText === lastScanCodeRef.current && (now - lastScanTimeRef.current) < 2000) {
+          if (decodedText === lastScanCodeRef.current && (now - lastScanTimeRef.current) < 500) {
             console.log('Ignoring duplicate scan within debounce window');
             return;
           }
@@ -255,6 +255,7 @@ const ScanPage: React.FC = () => {
     processingRef.current = false;
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
+    cameraReadyRef.current = false;
   }
 
   async function retryCamera() {
@@ -316,6 +317,12 @@ const ScanPage: React.FC = () => {
         return;
       }
 
+      if (!currentTrip) {
+        setFailedMsg('No active trip found');
+        setScanState('failed');
+        return;
+      }
+
       // Try QR card first
       const { data: card, error: cardError } = await supabase
         .from('qr_cards')
@@ -341,6 +348,25 @@ const ScanPage: React.FC = () => {
         }
         if (card.balance < DEFAULT_FARE) {
           setFailedMsg(`Insufficient balance ₱${card.balance.toFixed(2)} — need ₱${DEFAULT_FARE}`);
+          setScanState('failed');
+          return;
+        }
+
+        // Check if already boarded on this trip (prevent duplicate onboarding scans)
+        console.log('Checking for duplicate boarding for card:', card.id, 'on trip:', currentTrip.id);
+        const { data: boardedPassenger, error: boardCheckError } = await supabase
+          .from('boarded_passengers')
+          .select('id, alighted_at')
+          .eq('trip_id', currentTrip.id)
+          .eq('card_id', card.id)
+          .maybeSingle();
+
+        console.log('Boarded passenger check result:', boardedPassenger);
+        console.log('Boarded passenger check error:', boardCheckError);
+
+        if (boardedPassenger && !boardedPassenger.alighted_at) {
+          console.log('Duplicate scan detected - card already boarded');
+          setFailedMsg('Already boarded on this trip');
           setScanState('failed');
           return;
         }
@@ -381,6 +407,25 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           return;
         }
+
+        // Check if already boarded on this trip (prevent duplicate onboarding scans)
+        console.log('Checking for duplicate boarding for ticket:', ticket.id, 'on trip:', currentTrip.id);
+        const { data: boardedTicket, error: ticketBoardCheckError } = await supabase
+          .from('boarded_passengers')
+          .select('id, alighted_at')
+          .eq('trip_id', currentTrip.id)
+          .eq('temp_ticket_id', ticket.id)
+          .maybeSingle();
+
+        console.log('Boarded ticket check result:', boardedTicket);
+        console.log('Boarded ticket check error:', ticketBoardCheckError);
+
+        if (boardedTicket && !boardedTicket.alighted_at) {
+          console.log('Duplicate scan detected - ticket already boarded');
+          setFailedMsg('Already boarded on this trip');
+          setScanState('failed');
+          return;
+        }
         
         setPendingScan({
           code: scannedCode,
@@ -406,16 +451,41 @@ const ScanPage: React.FC = () => {
 
   /** After user picks destination in onboarding — commit the boarding */
   async function commitBoarding() {
-    if (!pendingScan || !selectedDestination || !currentTrip || !profile) return;
+    console.log('commitBoarding called');
+    console.log('pendingScan:', pendingScan);
+    console.log('selectedDestination:', selectedDestination);
+    console.log('currentTrip:', currentTrip);
+    console.log('profile:', profile);
+    
+    if (!pendingScan || !selectedDestination || !currentTrip || !profile) {
+      console.error('Missing required data for boarding:', {
+        hasPendingScan: !!pendingScan,
+        hasSelectedDestination: !!selectedDestination,
+        hasCurrentTrip: !!currentTrip,
+        hasProfile: !!profile
+      });
+      setFailedMsg('Missing required data for boarding');
+      setScanState('failed');
+      return;
+    }
     await commitBoardingWithDestination(pendingScan.code, selectedDestination);
   }
 
   /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
   async function commitBoardingWithDestination(code: string, destination: string) {
-    if (!currentTrip || !profile) return;
+    if (!currentTrip || !profile) {
+      console.error('Missing currentTrip or profile in commitBoardingWithDestination');
+      setFailedMsg('Missing trip or profile data');
+      setScanState('failed');
+      return;
+    }
     setScanState('committing');
 
     try {
+      console.log('Committing boarding with code:', code, 'destination:', destination);
+      console.log('Current trip ID:', currentTrip.id);
+      console.log('Profile ID:', profile.id);
+      console.log('Bus route:', currentBus?.route);
       const result = await processScan(
         code,
         currentTrip.id,
@@ -424,38 +494,86 @@ const ScanPage: React.FC = () => {
         'onboarding',
         destination
       );
+      console.log('Process scan result:', result);
+      console.log('Result status:', result.status);
+      console.log('Result message:', (result as any).message);
 
-      if (result.status === 'qr_pass') {
-        setValidatedCount(validatedCount + 1);
-        setBoardedCount(c => c + 1);
-        setSuccessMsg(`Boarded → ${destination}`);
-        setSuccessAmount(0);
-        setSuccessBalance(result.newBalance);
-        setPendingScan(null);
-        setScanState('success');
-        scheduleNextScan();
-      } else if (result.status === 'ticket_validated') {
-        setValidatedCount(validatedCount + 1);
-        setBoardedCount(c => c + 1);
-        setSuccessMsg(`Ticket boarded → ${destination}`);
-        setSuccessAmount(0);
-        setSuccessBalance(null);
-        setPendingScan(null);
-        setScanState('success');
-        scheduleNextScan();
-      } else if (result.status === 'duplicate_scan') {
-        setFailedMsg('Already boarded on this trip');
-        setScanState('failed');
-      } else if (result.status === 'error') {
-        setFailedMsg(result.message || 'Boarding failed');
-        setScanState('failed');
-      } else {
-        setFailedMsg('Boarding failed - unknown error');
-        setScanState('failed');
+      switch (result.status) {
+        case 'qr_pass':
+          setValidatedCount(validatedCount + 1);
+          setBoardedCount(c => c + 1);
+          setSuccessMsg(`Boarded → ${destination}`);
+          setSuccessAmount(0);
+          setSuccessBalance(result.newBalance);
+          setPendingScan(null);
+          setScanState('success');
+          // Stop camera after successful boarding - don't auto-rescan
+          setTimeout(() => {
+            stopCamera();
+          }, 2000);
+          break;
+        case 'ticket_validated':
+          setValidatedCount(validatedCount + 1);
+          setBoardedCount(c => c + 1);
+          setSuccessMsg(`Ticket boarded → ${destination}`);
+          setSuccessAmount(0);
+          setSuccessBalance(null);
+          setPendingScan(null);
+          setScanState('success');
+          // Stop camera after successful boarding - don't auto-rescan
+          setTimeout(() => {
+            stopCamera();
+          }, 2000);
+          break;
+        case 'duplicate_scan':
+          setFailedMsg('Already boarded on this trip');
+          setScanState('failed');
+          break;
+        case 'qr_fail_balance':
+          setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${result.fare}`);
+          setScanState('failed');
+          break;
+        case 'qr_inactive':
+          setFailedMsg('Card is inactive');
+          setScanState('failed');
+          break;
+        case 'qr_wrong_trip':
+          setFailedMsg(`Wrong route. Card is for: ${result.expectedRoute}`);
+          setScanState('failed');
+          break;
+        case 'qr_fake':
+          setFailedMsg(`Invalid QR: ${result.reason}`);
+          setScanState('failed');
+          break;
+        case 'ticket_already_used':
+          setFailedMsg('Ticket already used');
+          setScanState('failed');
+          break;
+        case 'ticket_expired':
+          setFailedMsg('Ticket expired');
+          setScanState('failed');
+          break;
+        case 'ticket_wrong_trip':
+          setFailedMsg(`Wrong route. Ticket is for: ${result.expectedRoute}`);
+          setScanState('failed');
+          break;
+        case 'not_found':
+          setFailedMsg('QR code not recognised');
+          setScanState('failed');
+          break;
+        case 'error':
+          setFailedMsg(result.message || 'Boarding failed');
+          setScanState('failed');
+          break;
+        default:
+          console.error('Unexpected result status:', (result as any).status);
+          setFailedMsg('Boarding failed - unexpected error');
+          setScanState('failed');
+          break;
       }
     } catch (err) {
       console.error('Boarding error:', err);
-      setFailedMsg('Boarding failed. Try again.');
+      setFailedMsg(`Boarding error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
   }
@@ -510,11 +628,12 @@ const ScanPage: React.FC = () => {
         setFailedMsg('QR code not recognised');
         setScanState('failed');
       } else {
-        setFailedMsg('Alighting failed - unknown error');
+        setFailedMsg('Alighting failed - unexpected error');
         setScanState('failed');
       }
-    } catch {
-      setFailedMsg('Scan processing failed. Try again.');
+    } catch (err) {
+      console.error('Alighting error:', err);
+      setFailedMsg(`Alighting error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
   }
