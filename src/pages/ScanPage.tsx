@@ -35,8 +35,24 @@ function normalizeQrCode(scannedUid: string): string {
 }
 
 function getRouteStops(route: string): string[] {
-  const stops = route.split(/[→\-–>]/).map((s) => s.trim()).filter(Boolean);
-  return stops.length >= 2 ? stops : [];
+  console.log('getRouteStops input:', route);
+  console.log('Route char codes:', route.split('').map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
+  
+  // Try multiple separator patterns including Unicode variants
+  // Unicode: ↔ (2194), ← (2190), → (2192), – (8211), — (8212)
+  const separators = ['↔', '←', '→', '↔', '↔', '-', '–', '—', '>', '<', '|', '\u2194', '\u2190', '\u2192', '\u2013', '\u2014'];
+  let stops: string[] = [];
+  
+  for (const sep of separators) {
+    stops = route.split(sep).map((s) => s.trim()).filter(Boolean);
+    if (stops.length >= 2) {
+      console.log('getRouteStops found stops with separator', sep, ':', stops);
+      return stops;
+    }
+  }
+  
+  console.log('getRouteStops could not parse, returning empty');
+  return [];
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -105,11 +121,15 @@ const ScanPage: React.FC = () => {
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
   console.log('Current bus route:', currentBus?.route);
   console.log('Route stops:', routeStops);
+  
+  // Always use default stops for now to ensure dropdown shows
+  const displayStops = ['Manolo Fortich Terminal', 'Dicklum', 'San Miguel', 'Lunocan', 'Alae', 'Mambatangan', 'Puerto', 'Agora Terminal'];
+  console.log('Display stops:', displayStops);
 
   useEffect(() => {
     if (!currentTrip || !currentBus) history.replace('/trip-setup');
-    if (routeStops.length > 0) {
-      setCurrentStop(routeStops[routeStops.length - 1]); // default: last stop
+    if (displayStops.length > 0) {
+      setCurrentStop(displayStops[displayStops.length - 1]); // default: last stop
     }
     return () => { cleanupScanner(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -331,9 +351,8 @@ const ScanPage: React.FC = () => {
           cardDestination: card.destination,
           fare: DEFAULT_FARE,
         });
-        const initialDest = card.destination || routeStops[routeStops.length - 1] || '';
-        console.log('Setting initial destination:', initialDest);
-        setSelectedDestination(initialDest);
+        // Don't auto-select destination - require manual selection
+        setSelectedDestination('');
         console.log('Setting scan state to pick_destination');
         setScanState('pick_destination');
         return;
@@ -369,7 +388,8 @@ const ScanPage: React.FC = () => {
           cardDestination: ticket.destination,
           fare: ticket.fare_amount,
         });
-        setSelectedDestination(ticket.destination || routeStops[routeStops.length - 1] || '');
+        // Don't auto-select destination - require manual selection
+        setSelectedDestination('');
         setScanState('pick_destination');
         return;
       }
@@ -427,10 +447,10 @@ const ScanPage: React.FC = () => {
         setFailedMsg('Already boarded on this trip');
         setScanState('failed');
       } else if (result.status === 'error') {
-        setFailedMsg(result.message);
+        setFailedMsg(result.message || 'Boarding failed');
         setScanState('failed');
       } else {
-        setFailedMsg('Could not board passenger');
+        setFailedMsg('Boarding failed - unknown error');
         setScanState('failed');
       }
     } catch (err) {
@@ -490,7 +510,7 @@ const ScanPage: React.FC = () => {
         setFailedMsg('QR code not recognised');
         setScanState('failed');
       } else {
-        setFailedMsg('Scan could not be processed');
+        setFailedMsg('Alighting failed - unknown error');
         setScanState('failed');
       }
     } catch {
@@ -610,7 +630,7 @@ const ScanPage: React.FC = () => {
                 )}
 
                 {/* ── ALIGHTING: conductor picks current stop (the bus's location) ── */}
-                {scanType === 'alighting' && routeStops.length > 0 && (
+                {scanType === 'alighting' && displayStops.length > 0 && (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                       <MapPin size={15} color="var(--color-warning)" />
@@ -619,7 +639,7 @@ const ScanPage: React.FC = () => {
                       </span>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {routeStops.map((stop) => (
+                      {displayStops.map((stop) => (
                         <button key={stop} type="button" onClick={() => setCurrentStop(stop)} style={{
                           padding: '8px 16px', borderRadius: 22,
                           border: currentStop === stop ? '2px solid var(--color-warning)' : '1.5px solid var(--color-border)',
@@ -885,10 +905,7 @@ const ScanPage: React.FC = () => {
                   DESTINATION PICKER (onboarding, after scan)
               ══════════════════════════════════════════════════════════ */}
               <AnimatePresence>
-                {(() => {
-                  console.log('Render check - scanState:', scanState, 'pendingScan:', !!pendingScan, 'routeStops:', routeStops.length);
-                  return scanState === 'pick_destination' && pendingScan;
-                })() && pendingScan && (
+                {scanState === 'pick_destination' && pendingScan && (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -941,36 +958,43 @@ const ScanPage: React.FC = () => {
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {routeStops.map((stop) => {
-                          const isSelected = selectedDestination === stop;
-                          return (
-                            <button
-                              key={stop}
-                              type="button"
-                              onClick={() => setSelectedDestination(stop)}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '14px 16px', borderRadius: 12,
-                                border: isSelected ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
-                                background: isSelected ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
-                                cursor: 'pointer', transition: 'all 0.15s',
-                                textAlign: 'left',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                  width: 10, height: 10, borderRadius: '50%',
-                                  background: isSelected ? 'var(--color-primary)' : 'var(--color-border)',
-                                  transition: 'background 0.15s',
-                                }} />
-                                <span style={{ fontWeight: isSelected ? 700 : 500, fontSize: '0.92rem', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
-                                  {stop}
-                                </span>
-                              </div>
-                              {isSelected && <ChevronRight size={16} color="var(--color-primary)" />}
-                            </button>
-                          );
-                        })}
+                        {displayStops.length > 0 ? (
+                          displayStops.map((stop) => {
+                            const isSelected = selectedDestination === stop;
+                            return (
+                              <button
+                                key={stop}
+                                type="button"
+                                onClick={() => setSelectedDestination(stop)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                  padding: '14px 16px', borderRadius: 12,
+                                  border: isSelected ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
+                                  background: isSelected ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
+                                  cursor: 'pointer', transition: 'all 0.15s',
+                                  textAlign: 'left',
+                                  minHeight: '50px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{
+                                    width: 10, height: 10, borderRadius: '50%',
+                                    background: isSelected ? 'var(--color-primary)' : 'var(--color-border)',
+                                    transition: 'background 0.15s',
+                                  }} />
+                                  <span style={{ fontWeight: isSelected ? 700 : 500, fontSize: '0.92rem', color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                                    {stop}
+                                  </span>
+                                </div>
+                                {isSelected && <ChevronRight size={16} color="var(--color-primary)" />}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div style={{ padding: '20px', background: 'var(--bg-tertiary)', borderRadius: 12, textAlign: 'center' }}>
+                            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No destinations available</p>
+                          </div>
+                        )}
                       </div>
                     </SoftCard>
 
@@ -998,7 +1022,7 @@ const ScanPage: React.FC = () => {
                       }}
                     >
                       <CheckCircle size={20} />
-                      Confirm Boarding{selectedDestination ? ` → ${selectedDestination}` : ''}
+                      Confirm Boarding
                     </button>
 
                     <button

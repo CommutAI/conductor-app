@@ -56,24 +56,17 @@ export async function processScan(
     }
 
     // Check if card is allowed on this route
+    // Cards with "type:XXX" format are allowed on any route (passenger type restrictions)
+    // Cards with specific route names must match the current bus route
     if (card.allowed_routes && card.allowed_routes.length > 0 && busRoute) {
-      if (!card.allowed_routes.includes(busRoute)) {
-        return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
+      const hasRouteRestriction = card.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
+      if (hasRouteRestriction) {
+        if (!card.allowed_routes.includes(busRoute)) {
+          return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
+        }
       }
     }
 
-    // For alighting, validate that the card's stored destination matches the selected alighting stop
-    if (scanType === 'alighting' && currentDestination) {
-      if (card.destination && card.destination.toLowerCase().trim() !== currentDestination.toLowerCase().trim()) {
-        await supabase.from('fare_irregularities').insert({
-          trip_id: tripId,
-          type: 'other',
-          description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
-          detected_at: new Date().toISOString(),
-        });
-        return { status: 'error', message: `Destination mismatch. Card is for: ${card.destination}` };
-      }
-    }
     // Check if passenger is already boarded (for onboarding) or not boarded (for alighting)
     const { data: boardedPassenger } = await supabase
       .from('boarded_passengers')
@@ -83,15 +76,37 @@ export async function processScan(
       .maybeSingle();
 
     if (scanType === 'onboarding') {
+      // Prevent duplicate boarding - check if already boarded and not yet alighted
       if (boardedPassenger && !boardedPassenger.alighted_at) {
         return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
       }
     } else if (scanType === 'alighting') {
+      // First check if passenger is boarded on this trip
       if (!boardedPassenger) {
         return { status: 'error', message: 'Passenger not boarded on this trip' };
       }
+      // Check if already alighted (duplicate scan)
       if (boardedPassenger.alighted_at) {
         return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
+      }
+      // Then validate destination matches (only if passenger is boarded)
+      if (currentDestination && card.destination) {
+        const normalizedCardDest = card.destination.toLowerCase().trim();
+        const normalizedCurrentDest = currentDestination.toLowerCase().trim();
+        // Allow partial match for flexibility (e.g., "Agora" matches "Agora Terminal")
+        const isDestinationMatch = normalizedCardDest === normalizedCurrentDest || 
+                                   normalizedCardDest.includes(normalizedCurrentDest) ||
+                                   normalizedCurrentDest.includes(normalizedCardDest);
+        
+        if (!isDestinationMatch) {
+          await supabase.from('fare_irregularities').insert({
+            trip_id: tripId,
+            type: 'other',
+            description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
+            detected_at: new Date().toISOString(),
+          });
+          return { status: 'error', message: `Destination mismatch. Card is for: ${card.destination}` };
+        }
       }
     }
 
@@ -178,24 +193,17 @@ export async function processScan(
 
   if (ticket) {
     // Check if ticket is allowed on this route
+    // Tickets with "type:XXX" format are allowed on any route (passenger type restrictions)
+    // Tickets with specific route names must match the current bus route
     if (ticket.allowed_routes && ticket.allowed_routes.length > 0 && busRoute) {
-      if (!ticket.allowed_routes.includes(busRoute)) {
-        return { status: 'ticket_wrong_trip', expectedRoute: ticket.allowed_routes.join(', ') };
+      const hasRouteRestriction = ticket.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
+      if (hasRouteRestriction) {
+        if (!ticket.allowed_routes.includes(busRoute)) {
+          return { status: 'ticket_wrong_trip', expectedRoute: ticket.allowed_routes.join(', ') };
+        }
       }
     }
 
-    // For alighting, validate destination matches the selected alighting stop
-    if (scanType === 'alighting' && currentDestination) {
-      if (ticket.destination && ticket.destination.toLowerCase().trim() !== currentDestination.toLowerCase().trim()) {
-        await supabase.from('fare_irregularities').insert({
-          trip_id: tripId,
-          type: 'other',
-          description: `Destination mismatch: Ticket destination ${ticket.destination} vs alighting stop ${currentDestination}`,
-          detected_at: new Date().toISOString(),
-        });
-        return { status: 'error', message: `Destination mismatch. Ticket is for: ${ticket.destination}` };
-      }
-    }
     // Check if ticket is already boarded/alighted
     const { data: boardedTicket } = await supabase
       .from('boarded_passengers')
@@ -205,6 +213,7 @@ export async function processScan(
       .maybeSingle();
 
     if (scanType === 'onboarding') {
+      // Prevent duplicate boarding - check if already validated and boarded on this trip
       if (ticket.status === 'validated') {
         if (ticket.trip_id === tripId && boardedTicket && !boardedTicket.alighted_at) {
           return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
@@ -212,11 +221,32 @@ export async function processScan(
         return { status: 'ticket_already_used' };
       }
     } else if (scanType === 'alighting') {
+      // First check if ticket is boarded on this trip
       if (!boardedTicket) {
         return { status: 'error', message: 'Ticket not boarded on this trip' };
       }
+      // Check if already alighted (duplicate scan)
       if (boardedTicket.alighted_at) {
         return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
+      }
+      // Then validate destination matches (only if ticket is boarded)
+      if (currentDestination && ticket.destination) {
+        const normalizedTicketDest = ticket.destination.toLowerCase().trim();
+        const normalizedCurrentDest = currentDestination.toLowerCase().trim();
+        // Allow partial match for flexibility
+        const isDestinationMatch = normalizedTicketDest === normalizedCurrentDest || 
+                                   normalizedTicketDest.includes(normalizedCurrentDest) ||
+                                   normalizedCurrentDest.includes(normalizedTicketDest);
+        
+        if (!isDestinationMatch) {
+          await supabase.from('fare_irregularities').insert({
+            trip_id: tripId,
+            type: 'other',
+            description: `Destination mismatch: Ticket destination ${ticket.destination} vs alighting stop ${currentDestination}`,
+            detected_at: new Date().toISOString(),
+          });
+          return { status: 'error', message: `Destination mismatch. Ticket is for: ${ticket.destination}` };
+        }
       }
     }
 
