@@ -1,5 +1,15 @@
 import { supabase } from '../supabaseClient';
 
+/**
+ * Normalizes QR code strings by replacing special dash characters with regular hyphens.
+ * This handles cases where QR codes contain en dashes (–), em dashes (—), or other dash variants
+ * that should be treated as regular hyphens for database lookup.
+ */
+function normalizeQrCode(scannedUid: string): string {
+  return scannedUid
+    .replace(/[\u2013\u2014\u2015\u2212\uFF0D]/g, '-'); // en dash, em dash, horizontal bar, minus sign, fullwidth hyphen-minus
+}
+
 export type ScanResult =
   | { status: 'qr_pass'; newBalance: number; fare: number; passengerId?: string; destination?: string }
   | { status: 'qr_fail_balance'; balance: number; fare: number }
@@ -29,11 +39,14 @@ export async function processScan(
   scanType: 'onboarding' | 'alighting' = 'onboarding',
   currentDestination?: string
 ): Promise<ScanResult> {
+  // Normalize the scanned UID to handle special dash characters
+  const normalizedUid = normalizeQrCode(scannedUid);
+
   // ── 1. Check for QR card ──────────────────────────────────────────────────
   const { data: card } = await supabase
     .from('qr_cards')
     .select('id, balance, status, passenger_id, allowed_routes, destination')
-    .eq('card_uid', scannedUid)
+    .eq('card_uid', normalizedUid)
     .maybeSingle();
 
   if (card) {
@@ -160,7 +173,7 @@ export async function processScan(
   const { data: ticket } = await supabase
     .from('temporary_tickets')
     .select('id, ticket_uid, fare_amount, status, trip_id, passenger_id, allowed_routes, destination')
-    .eq('ticket_uid', scannedUid)
+    .eq('ticket_uid', normalizedUid)
     .maybeSingle();
 
   if (ticket) {

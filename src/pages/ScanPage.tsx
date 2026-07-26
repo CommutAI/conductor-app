@@ -24,6 +24,16 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Normalizes QR code strings by replacing special dash characters with regular hyphens.
+ * This handles cases where QR codes contain en dashes (–), em dashes (—), or other dash variants
+ * that should be treated as regular hyphens for database lookup.
+ */
+function normalizeQrCode(scannedUid: string): string {
+  return scannedUid
+    .replace(/[\u2013\u2014\u2015\u2212\uFF0D]/g, '-'); // en dash, em dash, horizontal bar, minus sign, fullwidth hyphen-minus
+}
+
 function getRouteStops(route: string): string[] {
   const stops = route.split(/[→\-–>]/).map((s) => s.trim()).filter(Boolean);
   return stops.length >= 2 ? stops : [];
@@ -34,10 +44,9 @@ function getRouteStops(route: string): string[] {
 type ScanState =
   | 'idle'
   | 'scanning'
+  | 'detected'
   | 'processing'
-  // onboarding-specific: scan succeeded, now pick destination
   | 'pick_destination'
-  // committing the boarding after destination picked
   | 'committing'
   | 'success'
   | 'failed';
@@ -70,11 +79,13 @@ const ScanPage: React.FC = () => {
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<string>('');
 
+
   // Final result info
   const [successMsg, setSuccessMsg] = useState('');
   const [successAmount, setSuccessAmount] = useState(0);
   const [successBalance, setSuccessBalance] = useState<number | null>(null);
   const [failedMsg, setFailedMsg] = useState('');
+  const [debugScannedCode, setDebugScannedCode] = useState('');
 
   const [boardedCount, setBoardedCount] = useState(0);
   const [alightedCount, setAlightedCount] = useState(0);
@@ -87,8 +98,13 @@ const ScanPage: React.FC = () => {
   const cardInputRef = useRef<HTMLInputElement>(null);
   const processingRef = useRef(false);
   const stripShadedRegionRef = useRef<(() => void) | null>(null);
+  const cameraReadyRef = useRef(false);
+  const lastScanTimeRef = useRef(0);
+  const lastScanCodeRef = useRef('');
 
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
+  console.log('Current bus route:', currentBus?.route);
+  console.log('Route stops:', routeStops);
 
   useEffect(() => {
     if (!currentTrip || !currentBus) history.replace('/trip-setup');
@@ -121,6 +137,7 @@ const ScanPage: React.FC = () => {
   const startCamera = useCallback(async () => {
     setScanState('scanning');
     processingRef.current = false;
+    cameraReadyRef.current = false;
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -141,32 +158,67 @@ const ScanPage: React.FC = () => {
       const qrCode = new Html5Qrcode('qr-reader');
       scannerRef.current = qrCode;
       
-      // Omit qrbox — it makes html5-qrcode inject white corner brackets (#ffffff).
-      // The custom green scan-frame overlay handles the viewfinder UI instead.
+      // Add qrbox for better detection - define scan area
       const config = {
         fps: 10,
         aspectRatio: 1.0,
+        qrbox: { width: 250, height: 250 },
       };
 
       await qrCode.start(
         { facingMode: 'environment' },
         config,
-        async (decodedText: string) => {
+        async (decodedText: string, decodedResult: any) => {
           console.log('QR code detected:', decodedText);
+          console.log('Full result:', decodedResult);
+
+          // Ignore scans during camera startup (first 2 seconds)
+          if (!cameraReadyRef.current) {
+            console.log('Ignoring scan - camera not ready');
+            return;
+          }
+
+          // Validate QR code format - should be alphanumeric with reasonable length
+          if (!decodedText || decodedText.length < 5 || decodedText.length > 100) {
+            console.log('Invalid QR code format:', decodedText);
+            return;
+          }
+
+          // Debounce: ignore if same code scanned within 2 seconds
+          const now = Date.now();
+          if (decodedText === lastScanCodeRef.current && (now - lastScanTimeRef.current) < 2000) {
+            console.log('Ignoring duplicate scan within debounce window');
+            return;
+          }
+
           if (processingRef.current) return;
           processingRef.current = true;
-          // Pause scanner instead of stopping it
-          try {
-            await qrCode.pause();
-          } catch { /* ignore pause errors */ }
-          setScanState('processing');
-          await handleRawScan(decodedText);
+          lastScanTimeRef.current = now;
+          lastScanCodeRef.current = decodedText;
+
+          // Show detection animation first
+          setScanState('detected');
+          // Then process after short delay
+          setTimeout(async () => {
+            setScanState('processing');
+            await handleRawScan(decodedText);
+          }, 500);
         },
         (errorMessage: string) => {
-          // Silently ignore scan errors
+          // Log errors for debugging
+          if (errorMessage && !errorMessage.includes('No barcode') && !errorMessage.includes('NotFoundException')) {
+            console.log('Scan error:', errorMessage);
+          }
         }
       );
       stripShadedRegionRef.current = stripQrShadedRegion('qr-reader');
+      
+      // Mark camera as ready after 2 seconds to prevent false detections
+      setTimeout(() => {
+        cameraReadyRef.current = true;
+        console.log('Camera ready for scanning');
+      }, 2000);
+      
       console.log('Camera started successfully');
     } catch (err) {
       console.error('QR camera error:', err);
@@ -181,6 +233,8 @@ const ScanPage: React.FC = () => {
     setPendingScan(null);
     setSelectedDestination('');
     processingRef.current = false;
+    lastScanTimeRef.current = 0;
+    lastScanCodeRef.current = '';
   }
 
   async function retryCamera() {
@@ -188,18 +242,9 @@ const ScanPage: React.FC = () => {
     setSelectedDestination('');
     setFailedMsg('');
     processingRef.current = false;
-    // Resume scanner if available, otherwise restart
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.resume();
-        setScanState('scanning');
-      } catch (err) {
-        console.error('Resume failed, restarting:', err);
-        await startCamera();
-      }
-    } else {
-      await startCamera();
-    }
+    lastScanTimeRef.current = 0;
+    lastScanCodeRef.current = '';
+    setScanState('scanning');
   }
 
   // ── Core scan handler ─────────────────────────────────────────────────────
@@ -230,17 +275,43 @@ const ScanPage: React.FC = () => {
     }
   }
 
-  /** For onboarding: peek at the card/ticket and show destination picker */
+  /** For onboarding: auto-confirm boarding with card destination or default */
   async function handleOnboardingPreScan(scannedCode: string) {
     try {
+      console.log('Processing scanned code:', scannedCode);
+      setDebugScannedCode(scannedCode);
       const { supabase } = await import('../supabaseClient');
 
+      // Normalize the scanned UID to handle special dash characters
+      const normalizedCode = normalizeQrCode(scannedCode);
+      console.log('Normalized code:', normalizedCode);
+
+      // Check if user is authenticated
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Auth session:', session ? 'Active' : 'None');
+
+      if (!session) {
+        setFailedMsg('Not authenticated. Please login again.');
+        setScanState('failed');
+        return;
+      }
+
       // Try QR card first
-      const { data: card } = await supabase
+      const { data: card, error: cardError } = await supabase
         .from('qr_cards')
         .select('id, balance, status, allowed_routes, destination')
-        .eq('card_uid', scannedCode)
+        .eq('card_uid', normalizedCode)
         .maybeSingle();
+
+      console.log('Card lookup result:', card);
+      console.log('Card lookup error:', cardError);
+
+      if (cardError) {
+        console.error('Database query error:', cardError);
+        setFailedMsg(`Database error: ${cardError.message}`);
+        setScanState('failed');
+        return;
+      }
 
       if (card) {
         if (card.status !== 'active') {
@@ -253,23 +324,37 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           return;
         }
+        
         setPendingScan({
           code: scannedCode,
           balance: card.balance,
           cardDestination: card.destination,
           fare: DEFAULT_FARE,
         });
-        setSelectedDestination(card.destination || routeStops[routeStops.length - 1] || '');
+        const initialDest = card.destination || routeStops[routeStops.length - 1] || '';
+        console.log('Setting initial destination:', initialDest);
+        setSelectedDestination(initialDest);
+        console.log('Setting scan state to pick_destination');
         setScanState('pick_destination');
         return;
       }
 
       // Try temporary ticket
-      const { data: ticket } = await supabase
+      const { data: ticket, error: ticketError } = await supabase
         .from('temporary_tickets')
         .select('id, ticket_uid, fare_amount, status, destination')
-        .eq('ticket_uid', scannedCode)
+        .eq('ticket_uid', normalizedCode)
         .maybeSingle();
+
+      console.log('Ticket lookup result:', ticket);
+      console.log('Ticket lookup error:', ticketError);
+
+      if (ticketError) {
+        console.error('Database query error:', ticketError);
+        setFailedMsg(`Database error: ${ticketError.message}`);
+        setScanState('failed');
+        return;
+      }
 
       if (ticket) {
         if (ticket.status === 'validated' || ticket.status === 'expired') {
@@ -277,9 +362,10 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           return;
         }
+        
         setPendingScan({
           code: scannedCode,
-          balance: ticket.fare_amount, // not a balance, reusing field for display
+          balance: ticket.fare_amount,
           cardDestination: ticket.destination,
           fare: ticket.fare_amount,
         });
@@ -288,10 +374,12 @@ const ScanPage: React.FC = () => {
         return;
       }
 
-      setFailedMsg('QR code not recognised');
+      console.log('No matching card or ticket found for:', scannedCode);
+      setFailedMsg(`QR code not recognised`);
       setScanState('failed');
     } catch (err) {
-      setFailedMsg('Scan read failed. Try again.');
+      console.error('Scan processing error:', err);
+      setFailedMsg(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
   }
@@ -299,22 +387,28 @@ const ScanPage: React.FC = () => {
   /** After user picks destination in onboarding — commit the boarding */
   async function commitBoarding() {
     if (!pendingScan || !selectedDestination || !currentTrip || !profile) return;
+    await commitBoardingWithDestination(pendingScan.code, selectedDestination);
+  }
+
+  /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
+  async function commitBoardingWithDestination(code: string, destination: string) {
+    if (!currentTrip || !profile) return;
     setScanState('committing');
 
     try {
       const result = await processScan(
-        pendingScan.code,
+        code,
         currentTrip.id,
         profile.id,
         currentBus?.route,
         'onboarding',
-        selectedDestination
+        destination
       );
 
       if (result.status === 'qr_pass') {
         setValidatedCount(validatedCount + 1);
         setBoardedCount(c => c + 1);
-        setSuccessMsg(`Boarded → ${selectedDestination}`);
+        setSuccessMsg(`Boarded → ${destination}`);
         setSuccessAmount(0);
         setSuccessBalance(result.newBalance);
         setPendingScan(null);
@@ -323,7 +417,7 @@ const ScanPage: React.FC = () => {
       } else if (result.status === 'ticket_validated') {
         setValidatedCount(validatedCount + 1);
         setBoardedCount(c => c + 1);
-        setSuccessMsg(`Ticket boarded → ${selectedDestination}`);
+        setSuccessMsg(`Ticket boarded → ${destination}`);
         setSuccessAmount(0);
         setSuccessBalance(null);
         setPendingScan(null);
@@ -339,7 +433,8 @@ const ScanPage: React.FC = () => {
         setFailedMsg('Could not board passenger');
         setScanState('failed');
       }
-    } catch {
+    } catch (err) {
+      console.error('Boarding error:', err);
       setFailedMsg('Boarding failed. Try again.');
       setScanState('failed');
     }
@@ -410,18 +505,7 @@ const ScanPage: React.FC = () => {
       setSuccessAmount(0);
       setSuccessBalance(null);
       processingRef.current = false;
-      // Resume scanner instead of restarting
-      if (scannerRef.current) {
-        try {
-          scannerRef.current.resume();
-          setScanState('scanning');
-        } catch (err) {
-          console.error('Resume failed, restarting:', err);
-          startCamera();
-        }
-      } else {
-        startCamera();
-      }
+      setScanState('scanning');
     }, 2500);
   }
 
@@ -666,6 +750,33 @@ const ScanPage: React.FC = () => {
                     </div>
                   )}
 
+                  {/* ── Detected animation ── */}
+                  {scanState === 'detected' && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      style={{ position: 'absolute', inset: 0, background: 'rgba(34,197,94,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 220, padding: '20px' }}
+                    >
+                      <motion.div
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.8, 1, 0.8] }}
+                        transition={{ duration: 0.5, repeat: 2 }}
+                      >
+                        <CheckCircle size={64} color="#22C55E" strokeWidth={3} />
+                      </motion.div>
+                      <span style={{ color: '#22C55E', fontWeight: 800, fontSize: '1.1rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+                        QR Code Detected!
+                      </span>
+                      {/* Display scanned QR code in detected state */}
+                      {debugScannedCode && (
+                        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.9)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
+                          <span style={{ color: '#22C55E', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>SCANNED QR:</span>
+                          <span style={{ color: '#1a1a1a', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 500, wordBreak: 'break-all' }}>{debugScannedCode}</span>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
                   {/* ── Processing ── */}
                   {(scanState === 'processing' || scanState === 'committing') && (
                     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, minHeight: 220 }}>
@@ -690,6 +801,14 @@ const ScanPage: React.FC = () => {
                       </motion.div>
                       <span style={{ color: 'white', fontWeight: 800, fontSize: '1.15rem', textAlign: 'center' }}>Success!</span>
                       <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '0.88rem', textAlign: 'center' }}>{successMsg}</span>
+
+                      {/* Display scanned QR code */}
+                      {debugScannedCode && (
+                        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.9)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
+                          <span style={{ color: '#15803d', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>SCANNED QR:</span>
+                          <span style={{ color: '#1a1a1a', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 500, wordBreak: 'break-all' }}>{debugScannedCode}</span>
+                        </div>
+                      )}
 
                       {/* Balance display */}
                       {successBalance !== null && (
@@ -725,7 +844,15 @@ const ScanPage: React.FC = () => {
                         <XCircle size={52} color="white" />
                       </motion.div>
                       <span style={{ color: 'white', fontWeight: 800, fontSize: '1.05rem', textAlign: 'center' }}>Scan Failed</span>
-                      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500, fontSize: '0.82rem', textAlign: 'center', maxWidth: 240 }}>{failedMsg}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '0.88rem', textAlign: 'center' }}>{failedMsg}</span>
+                      
+                      {/* Debug: Show scanned code */}
+                      {debugScannedCode && (
+                        <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
+                          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>Scanned:</span>
+                          <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>{debugScannedCode}</span>
+                        </div>
+                      )}
                       <button type="button" onClick={retryCamera} style={{
                         marginTop: 8, padding: '10px 28px', borderRadius: 24, border: '2px solid white',
                         background: 'transparent', color: 'white', fontWeight: 700, fontSize: '0.9rem',
@@ -758,7 +885,10 @@ const ScanPage: React.FC = () => {
                   DESTINATION PICKER (onboarding, after scan)
               ══════════════════════════════════════════════════════════ */}
               <AnimatePresence>
-                {scanState === 'pick_destination' && pendingScan && (
+                {(() => {
+                  console.log('Render check - scanState:', scanState, 'pendingScan:', !!pendingScan, 'routeStops:', routeStops.length);
+                  return scanState === 'pick_destination' && pendingScan;
+                })() && pendingScan && (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -782,6 +912,11 @@ const ScanPage: React.FC = () => {
                           <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                             Current balance · Fare ₱{pendingScan.fare.toFixed(2)}
                           </p>
+                          {/* Display scanned QR code */}
+                          <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.5)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-success)', textTransform: 'uppercase' }}>QR:</span>
+                            <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-primary)', fontWeight: 500, wordBreak: 'break-all' }}>{pendingScan.code}</span>
+                          </div>
                         </div>
                         {/* Remaining after fare */}
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>

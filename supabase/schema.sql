@@ -27,7 +27,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE transaction_type AS ENUM ('fare_validation', 'balance_topup', 'card_issuance');
+  CREATE TYPE transaction_type AS ENUM ('fare_validation', 'balance_topup', 'card_issuance', 'boarding');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -141,7 +141,8 @@ CREATE TABLE IF NOT EXISTS temporary_tickets (
   trip_id         UUID          REFERENCES trips (id),
   issued_by       UUID          REFERENCES staff_users (id),
   issued_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  validated_at    TIMESTAMPTZ
+  validated_at    TIMESTAMPTZ,
+  destination     TEXT          -- destination for the passenger
 );
 
 

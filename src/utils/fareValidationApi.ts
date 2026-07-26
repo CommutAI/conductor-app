@@ -11,6 +11,16 @@ import type {
   FareCalculationResult
 } from '../types/fareValidation';
 
+/**
+ * Normalizes QR code strings by replacing special dash characters with regular hyphens.
+ * This handles cases where QR codes contain en dashes (–), em dashes (—), or other dash variants
+ * that should be treated as regular hyphens for database lookup.
+ */
+function normalizeQrCode(scannedUid: string): string {
+  return scannedUid
+    .replace(/[\u2013\u2014\u2015\u2212\uFF0D]/g, '-'); // en dash, em dash, horizontal bar, minus sign, fullwidth hyphen-minus
+}
+
 // Fare calculation logic
 export function calculateFare(baseFare: number, passengerType: PassengerType): FareCalculationResult {
   const discountPercentage = getDiscountPercentage(passengerType);
@@ -83,10 +93,11 @@ export async function getRoutesByTerminal(terminal: string): Promise<Route[]> {
 
 // Get QR card by UID
 export async function getQRCardByUID(cardUID: string): Promise<QRCard | null> {
+  const normalizedUID = normalizeQrCode(cardUID);
   const { data, error } = await supabase
     .from('qr_cards')
     .select('*')
-    .eq('card_uid', cardUID)
+    .eq('card_uid', normalizedUID)
     .single();
 
   if (error || !data) {
