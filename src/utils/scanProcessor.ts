@@ -10,13 +10,32 @@ function normalizeQrCode(scannedUid: string): string {
     .replace(/[\u2013\u2014\u2015\u2212\uFF0D]/g, '-'); // en dash, em dash, horizontal bar, minus sign, fullwidth hyphen-minus
 }
 
+/**
+ * Calculates the distance between two GPS coordinates using the Haversine formula.
+ * Returns distance in meters.
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
 export type ScanResult =
-  | { status: 'qr_pass'; newBalance: number; fare: number; passengerId?: string; destination?: string }
-  | { status: 'qr_fail_balance'; balance: number; fare: number }
+  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string }
+  | { status: 'qr_fail_balance'; balance: number; fare: number; baggageFee?: number; totalFare?: number }
   | { status: 'qr_inactive' }
   | { status: 'qr_wrong_trip'; expectedRoute: string }
   | { status: 'qr_fake'; reason: string }
-  | { status: 'ticket_validated'; fareAmount: number; passengerId?: string; destination?: string }
+  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string }
   | { status: 'ticket_already_used' }
   | { status: 'ticket_expired' }
   | { status: 'ticket_wrong_trip'; expectedRoute: string }
@@ -37,7 +56,8 @@ export async function processScan(
   conductorId: string,
   busRoute?: string,
   scanType: 'onboarding' | 'alighting' = 'onboarding',
-  currentDestination?: string
+  currentDestination?: string,
+  baggageFee?: number
 ): Promise<ScanResult> {
   // Normalize the scanned UID to handle special dash characters
   const normalizedUid = normalizeQrCode(scannedUid);
@@ -135,6 +155,7 @@ export async function processScan(
 
     // Fare is deducted on ALIGHTING (not onboarding)
     const fare = DEFAULT_FARE;
+    const totalFare = fare + (baggageFee || 0);
 
     if (scanType === 'onboarding') {
       console.log('Starting onboarding for card:', card.id, 'destination:', currentDestination);
@@ -187,15 +208,18 @@ export async function processScan(
       // Return current balance (no deduction yet)
       return { status: 'qr_pass', newBalance: card.balance, fare: 0, passengerId: card.passenger_id, destination: currentDestination || card.destination };
     } else {
-      // On alighting: check balance and deduct fare
-      if (card.balance < fare) {
-        return { status: 'qr_fail_balance', balance: card.balance, fare };
+      // On alighting: deduct fare and mark as alighted
+      if (card.balance < totalFare) {
+        return { status: 'qr_fail_balance', balance: card.balance, fare, baggageFee, totalFare };
       }
+
+      // Use the destination stored on the card during onboarding
+      const destination = card.destination || currentDestination;
 
       // Deduct balance
       const { error: balErr } = await supabase
         .from('qr_cards')
-        .update({ balance: card.balance - fare })
+        .update({ balance: card.balance - totalFare })
         .eq('id', card.id);
       if (balErr) return { status: 'error', message: `Failed to deduct fare: ${balErr.message}` };
 
@@ -210,6 +234,19 @@ export async function processScan(
       });
       if (txErr) return { status: 'error', message: `Failed to create fare transaction: ${txErr.message}` };
 
+      // Insert baggage fee transaction if applicable
+      if (baggageFee && baggageFee > 0) {
+        const { error: baggageTxErr } = await supabase.from('transactions').insert({
+          card_id: card.id,
+          trip_id: tripId,
+          type: 'baggage_fee',
+          amount: baggageFee,
+          channel: 'qr_card',
+          staff_id: conductorId,
+        });
+        if (baggageTxErr) return { status: 'error', message: `Failed to create baggage fee transaction: ${baggageTxErr.message}` };
+      }
+
       // Mark passenger as alighted
       const { error: alightErr } = await supabase
         .from('boarded_passengers')
@@ -218,7 +255,7 @@ export async function processScan(
         .eq('trip_id', tripId);
       if (alightErr) return { status: 'error', message: `Failed to mark as alighted: ${alightErr.message}` };
 
-      return { status: 'qr_pass', newBalance: card.balance - fare, fare, passengerId: card.passenger_id, destination: card.destination };
+      return { status: 'qr_pass', newBalance: card.balance - totalFare, fare, baggageFee, totalFare, passengerId: card.passenger_id, destination };
     }
   }
 
@@ -351,6 +388,10 @@ export async function processScan(
       return { status: 'ticket_validated', fareAmount: 0, passengerId: ticket.passenger_id, destination: currentDestination || ticket.destination };
     } else {
       // On alighting: collect fare and mark as alighted
+      const destination = ticket.destination || currentDestination;
+      const totalTicketFare = ticket.fare_amount + (baggageFee || 0);
+
+      // Collect fare and mark as alighted
       const { error: txErr } = await supabase.from('transactions').insert({
         temp_ticket_id: ticket.id,
         trip_id: tripId,
@@ -361,6 +402,19 @@ export async function processScan(
       });
       if (txErr) return { status: 'error', message: `Failed to create fare transaction: ${txErr.message}` };
 
+      // Insert baggage fee transaction if applicable
+      if (baggageFee && baggageFee > 0) {
+        const { error: baggageTxErr } = await supabase.from('transactions').insert({
+          temp_ticket_id: ticket.id,
+          trip_id: tripId,
+          type: 'baggage_fee',
+          amount: baggageFee,
+          channel: 'temp_ticket',
+          staff_id: conductorId,
+        });
+        if (baggageTxErr) return { status: 'error', message: `Failed to create baggage fee transaction: ${baggageTxErr.message}` };
+      }
+
       // Mark passenger as alighted
       const { error: alightErr } = await supabase
         .from('boarded_passengers')
@@ -369,7 +423,7 @@ export async function processScan(
         .eq('trip_id', tripId);
       if (alightErr) return { status: 'error', message: `Failed to mark ticket as alighted: ${alightErr.message}` };
 
-      return { status: 'ticket_validated', fareAmount: ticket.fare_amount, passengerId: ticket.passenger_id, destination: ticket.destination };
+      return { status: 'ticket_validated', fareAmount: ticket.fare_amount, baggageFee, totalFare: totalTicketFare, passengerId: ticket.passenger_id, destination };
     }
   }
 

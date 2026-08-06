@@ -47,4 +47,8 @@
     <!-- Vibration — used for haptic scan feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Location — required for GPS-based alighting verification -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
 </manifest>

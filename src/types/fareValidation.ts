@@ -83,4 +83,20 @@ export interface FareCalculationResult {
   discountAmount: number;
   finalFare: number;
   passengerType: PassengerType;
+  baggageFee?: number;
+  totalFare?: number; // baseFare + baggageFee (after discount)
+}
+
+export interface BaggageFee {
+  id: string;
+  category: string;
+  max_weight_kg: number;
+  fee: number;
+  remarks?: string;
+}
+
+export interface BaggageSelection {
+  category: string;
+  fee: number;
+  weight: number;
 }

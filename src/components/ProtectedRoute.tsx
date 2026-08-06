@@ -3,6 +3,7 @@ import { Redirect } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTrip } from '../context/TripContext';
 import Logo from './Logo';
 
 interface ProtectedRouteProps {
@@ -11,8 +12,9 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component }) => {
   const { session, profile, loading } = useAuth();
+  const { isRestoringTrip } = useTrip();
 
-  if (loading) {
+  if (loading || isRestoringTrip) {
     return (
       <div className="login-hero" style={{ minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div
@@ -23,7 +25,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component })
           <Logo size="lg" />
           <Loader2 size={36} color="white" style={{ animation: 'spin 0.8s linear infinite' }} />
           <p style={{ color: 'rgba(255,255,255,0.85)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
-            Loading your workspace…
+            {isRestoringTrip ? 'Resuming your active trip…' : 'Loading your workspace…'}
           </p>
         </motion.div>
       </div>

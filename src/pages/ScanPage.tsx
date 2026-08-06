@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ScanLine, CheckCircle, Wallet, CloudOff, RefreshCw,
   MapPin, AlertTriangle, Users, ArrowRight, X, CreditCard,
-  XCircle, Navigation, ChevronRight,
+  XCircle, Navigation, ChevronRight, Package,
 } from 'lucide-react';
 import { useTrip } from '../context/TripContext';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,8 @@ import {
   SoftCard, PrimaryButton, DashboardCard,
   AppToast, StatusBadge,
 } from '../components/ui';
+import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
+import type { BaggageSelection } from '../types/fareValidation';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,12 +90,11 @@ const ScanPage: React.FC = () => {
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
   const [scanType, setScanType] = useState<'onboarding' | 'alighting'>('onboarding');
 
-  // For alighting: which stop is the bus currently at (conductor selects once)
-  const [currentStop, setCurrentStop] = useState<string>('');
-
   // Post-scan state (onboarding: waiting for destination pick)
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<string>('');
+  const [baggageSelection, setBaggageSelection] = useState<BaggageSelection | null>(null);
+  const [showBaggageSelector, setShowBaggageSelector] = useState(false);
 
 
   // Final result info
@@ -106,7 +107,7 @@ const ScanPage: React.FC = () => {
   const [boardedCount, setBoardedCount] = useState(0);
   const [alightedCount, setAlightedCount] = useState(0);
 
-  const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected } = useTrip();
+  const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected, isRestoringTrip } = useTrip();
   const { profile } = useAuth();
   const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useOffline();
   const history = useHistory();
@@ -127,10 +128,7 @@ const ScanPage: React.FC = () => {
   console.log('Display stops:', displayStops);
 
   useEffect(() => {
-    if (!currentTrip || !currentBus) history.replace('/trip-setup');
-    if (displayStops.length > 0) {
-      setCurrentStop(displayStops[displayStops.length - 1]); // default: last stop
-    }
+    if (!isRestoringTrip && (!currentTrip || !currentBus)) history.replace('/trip-setup');
     return () => { cleanupScanner(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -245,7 +243,7 @@ const ScanPage: React.FC = () => {
       showNotification(`Camera error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'danger');
       setScanState('idle');
     }
-  }, [scanType, currentStop]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scanType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function stopCamera() {
     await cleanupScanner();
@@ -492,7 +490,8 @@ const ScanPage: React.FC = () => {
         profile.id,
         currentBus?.route,
         'onboarding',
-        destination
+        destination,
+        baggageSelection?.fee
       );
       console.log('Process scan result:', result);
       console.log('Result status:', result.status);
@@ -502,10 +501,12 @@ const ScanPage: React.FC = () => {
         case 'qr_pass':
           setValidatedCount(validatedCount + 1);
           setBoardedCount(c => c + 1);
-          setSuccessMsg(`Boarded → ${destination}`);
+          setSuccessMsg(`Boarded → ${destination}${baggageSelection ? ` (w/ baggage ₱${baggageSelection.fee.toFixed(2)})` : ''}`);
           setSuccessAmount(0);
           setSuccessBalance(result.newBalance);
           setPendingScan(null);
+          setBaggageSelection(null);
+          setSelectedDestination('');
           setScanState('success');
           // Stop camera after successful boarding - don't auto-rescan
           setTimeout(() => {
@@ -515,10 +516,12 @@ const ScanPage: React.FC = () => {
         case 'ticket_validated':
           setValidatedCount(validatedCount + 1);
           setBoardedCount(c => c + 1);
-          setSuccessMsg(`Ticket boarded → ${destination}`);
+          setSuccessMsg(`Ticket boarded → ${destination}${baggageSelection ? ` (w/ baggage ₱${baggageSelection.fee.toFixed(2)})` : ''}`);
           setSuccessAmount(0);
           setSuccessBalance(null);
           setPendingScan(null);
+          setBaggageSelection(null);
+          setSelectedDestination('');
           setScanState('success');
           // Stop camera after successful boarding - don't auto-rescan
           setTimeout(() => {
@@ -528,53 +531,78 @@ const ScanPage: React.FC = () => {
         case 'duplicate_scan':
           setFailedMsg('Already boarded on this trip');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'qr_fail_balance':
-          setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${result.fare}`);
+          const neededFare = result.totalFare || result.fare;
+          setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${neededFare.toFixed(2)}`);
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'qr_inactive':
           setFailedMsg('Card is inactive');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'qr_wrong_trip':
           setFailedMsg(`Wrong route. Card is for: ${result.expectedRoute}`);
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'qr_fake':
           setFailedMsg(`Invalid QR: ${result.reason}`);
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'ticket_already_used':
           setFailedMsg('Ticket already used');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'ticket_expired':
           setFailedMsg('Ticket expired');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'ticket_wrong_trip':
           setFailedMsg(`Wrong route. Ticket is for: ${result.expectedRoute}`);
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'not_found':
           setFailedMsg('QR code not recognised');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         case 'error':
           setFailedMsg(result.message || 'Boarding failed');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
         default:
           console.error('Unexpected result status:', (result as any).status);
           setFailedMsg('Boarding failed - unexpected error');
           setScanState('failed');
+          setBaggageSelection(null);
+          setSelectedDestination('');
           break;
       }
     } catch (err) {
       console.error('Boarding error:', err);
       setFailedMsg(`Boarding error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
+      setBaggageSelection(null);
+      setSelectedDestination('');
     }
   }
 
@@ -587,26 +615,29 @@ const ScanPage: React.FC = () => {
         profile!.id,
         currentBus?.route,
         'alighting',
-        currentStop  // the conductor's selected current stop = the alighting stop
+        undefined,  // destination will be fetched from boarded_passengers record
+        0  // baggage fee - currently not stored during onboarding, so 0 for now
       );
 
       if (result.status === 'qr_pass') {
         setValidatedCount(validatedCount + 1);
         setAlightedCount(c => c + 1);
-        if (result.fare > 0) setFareCollected(fareCollected + result.fare);
+        const totalFare = result.totalFare || result.fare;
+        if (totalFare > 0) setFareCollected(fareCollected + totalFare);
         setSuccessMsg(
           result.destination
             ? `Alighted @ ${result.destination}`
             : 'Alighted successfully'
         );
-        setSuccessAmount(result.fare);
+        setSuccessAmount(totalFare);
         setSuccessBalance(result.newBalance);
         setScanState('success');
         scheduleNextScan();
       } else if (result.status === 'ticket_validated') {
         setValidatedCount(validatedCount + 1);
         setAlightedCount(c => c + 1);
-        if (result.fareAmount > 0) setFareCollected(fareCollected + result.fareAmount);
+        const totalFare = result.totalFare || result.fareAmount;
+        if (totalFare > 0) setFareCollected(fareCollected + totalFare);
         setSuccessMsg(result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully');
         setSuccessAmount(result.fareAmount);
         setSuccessBalance(null);
@@ -748,35 +779,18 @@ const ScanPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* ── ALIGHTING: conductor picks current stop (the bus's location) ── */}
-                {scanType === 'alighting' && displayStops.length > 0 && (
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <MapPin size={15} color="var(--color-warning)" />
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                        Current Stop <span style={{ fontSize: '0.72rem', fontWeight: 500 }}>(where passengers are alighting)</span>
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {displayStops.map((stop) => (
-                        <button key={stop} type="button" onClick={() => setCurrentStop(stop)} style={{
-                          padding: '8px 16px', borderRadius: 22,
-                          border: currentStop === stop ? '2px solid var(--color-warning)' : '1.5px solid var(--color-border)',
-                          background: currentStop === stop ? 'var(--color-warning-subtle)' : 'transparent',
-                          color: currentStop === stop ? '#A16207' : 'var(--text-secondary)',
-                          fontWeight: currentStop === stop ? 700 : 500, fontSize: '0.85rem',
-                          cursor: 'pointer', transition: 'all 0.15s',
-                        }}>{stop}</button>
-                      ))}
-                    </div>
-                    {currentStop && (
-                      <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--color-warning-subtle)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <AlertTriangle size={14} color="#A16207" />
-                        <span style={{ fontSize: '0.8rem', color: '#A16207', fontWeight: 600 }}>
-                          Scanning will verify destination = <strong>{currentStop}</strong> and deduct fare
-                        </span>
+                {/* ── ALIGHTING: GPS-based destination verification ── */}
+                {scanType === 'alighting' && (
+                  <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--color-warning-subtle)', borderRadius: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <MapPin size={16} color="var(--color-warning)" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div>
+                        <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.85rem', color: '#A16207' }}>How alighting works</p>
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                          Scan the passenger's QR card → GPS verifies location matches their destination → fare is automatically deducted.
+                        </p>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </SoftCard>
@@ -828,7 +842,7 @@ const ScanPage: React.FC = () => {
                     color: scanType === 'alighting' ? '#A16207' : 'var(--color-success)',
                     borderRadius: 20, padding: '4px 12px', fontSize: '0.78rem', fontWeight: 700,
                   }}>
-                    {scanType === 'alighting' ? `Alighting @ ${currentStop || '—'}` : 'Onboarding'}
+                    {scanType === 'alighting' ? 'Alighting' : 'Onboarding'}
                     {!isOnline && ' · Offline'}
                   </span>
                   <button type="button" onClick={stopCamera}
@@ -1047,6 +1061,7 @@ const ScanPage: React.FC = () => {
                           </p>
                           <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                             Current balance · Fare ₱{pendingScan.fare.toFixed(2)}
+                            {baggageSelection && ` + Baggage ₱${baggageSelection.fee.toFixed(2)}`}
                           </p>
                           {/* Display scanned QR code */}
                           <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.5)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1057,8 +1072,8 @@ const ScanPage: React.FC = () => {
                         {/* Remaining after fare */}
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                           <p style={{ margin: '0 0 2px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>After fare</p>
-                          <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: pendingScan.balance - pendingScan.fare >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                            ₱{(pendingScan.balance - pendingScan.fare).toFixed(2)}
+                          <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: pendingScan.balance - pendingScan.fare - (baggageSelection?.fee || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                            ₱{(pendingScan.balance - pendingScan.fare - (baggageSelection?.fee || 0)).toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -1117,6 +1132,46 @@ const ScanPage: React.FC = () => {
                       </div>
                     </SoftCard>
 
+                    {/* Baggage fee selector */}
+                    <SoftCard style={{ marginBottom: 14 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowBaggageSelector(true)}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '14px 16px',
+                          borderRadius: 12,
+                          border: baggageSelection ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
+                          background: baggageSelection ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 10,
+                            background: baggageSelection ? 'var(--color-primary)' : 'var(--color-border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Package size={16} color={baggageSelection ? 'white' : 'var(--text-secondary)'} />
+                          </div>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.92rem', color: baggageSelection ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                              {baggageSelection ? baggageSelection.category : 'Add Baggage Fee'}
+                            </p>
+                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {baggageSelection ? `₱${baggageSelection.fee.toFixed(2)}` : 'Optional - for passengers with baggage'}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight size={16} color={baggageSelection ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                      </button>
+                    </SoftCard>
+
                     {/* Confirm button */}
                     <button
                       type="button"
@@ -1142,6 +1197,11 @@ const ScanPage: React.FC = () => {
                     >
                       <CheckCircle size={20} />
                       Confirm Boarding
+                      {baggageSelection && (
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.9 }}>
+                          (Total: ₱{(pendingScan.fare + baggageSelection.fee).toFixed(2)})
+                        </span>
+                      )}
                     </button>
 
                     <button
@@ -1223,6 +1283,15 @@ const ScanPage: React.FC = () => {
         message={toastMessage}
         color={toastColor}
         onDismiss={() => setShowToast(false)}
+      />
+
+      <BaggageFeeSelector
+        isOpen={showBaggageSelector}
+        onSelect={(selection) => {
+          setBaggageSelection(selection);
+          setShowBaggageSelector(false);
+        }}
+        onClose={() => setShowBaggageSelector(false)}
       />
     </IonPage>
   );
