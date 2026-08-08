@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
 import { supabase } from '../supabaseClient';
 import { calculateDistance, isWithinProximity, getProximityStatus } from '../utils/gpsUtils';
+import { Geolocation } from '@capacitor/geolocation';
 import ProfileAvatar from '../components/ProfileAvatar';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
@@ -44,7 +45,7 @@ const LiveTripPage: React.FC = () => {
   const [destinationAlerts, setDestinationAlerts] = useState<any[]>([]);
   const [notifiedPassengers, setNotifiedPassengers] = useState<Set<string>>(new Set());
 
-  const { currentTrip, currentBus, validatedCount, fareCollected } = useTrip();
+  const { currentTrip, currentBus, validatedCount, fareCollected, isRestoringTrip } = useTrip();
   const { profile } = useAuth();
   const { isOnline } = useOffline();
   const history = useHistory();
@@ -52,7 +53,7 @@ const LiveTripPage: React.FC = () => {
 
   useEffect(() => {
     if (!currentTrip || !currentBus) {
-      history.replace('/trip-setup');
+      if (!isRestoringTrip) history.replace('/trip-setup');
       return;
     }
 
@@ -75,18 +76,25 @@ const LiveTripPage: React.FC = () => {
 
   function startGPSTracking() {
     setGpsStatus('searching');
-    if ('geolocation' in navigator) {
-      navigator.geolocation.watchPosition(
-        (position) => {
+    
+    // Use Capacitor Geolocation plugin for native location access
+    const watchId = Geolocation.watchPosition(
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+      (position, error) => {
+        if (error) {
+          console.error('Geolocation error:', error);
+          setGpsStatus('inactive');
+          return;
+        }
+        if (position) {
           setGpsStatus('active');
           updateGPSLocation(position.coords.latitude, position.coords.longitude);
-        },
-        () => setGpsStatus('inactive'),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-      );
-    } else {
-      setGpsStatus('inactive');
-    }
+        }
+      }
+    );
+
+    // Store watchId for cleanup if needed
+    return watchId;
   }
 
   async function updateGPSLocation(lat: number, lng: number) {
@@ -186,39 +194,34 @@ const LiveTripPage: React.FC = () => {
   async function sendEmergencyAlert() {
     if (!currentTrip || !profile) return;
     try {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          await supabase.from('emergency_alerts').insert({
-            trip_id: currentTrip.id,
-            conductor_id: profile.id,
-            bus_id: currentBus?.id,
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            status: 'active',
-            type: selectedEmergencyType,
-            created_at: new Date().toISOString(),
-          });
-          showNotification('Emergency alert sent! Admin notified.', 'success');
-          setShowEmergencyAlert(false);
-          setSelectedEmergencyType('other');
-        }, () => {
-          showNotification('Could not get GPS location. Emergency alert sent without location.', 'warning');
-        });
-      } else {
-        await supabase.from('emergency_alerts').insert({
-          trip_id: currentTrip.id,
-          conductor_id: profile.id,
-          bus_id: currentBus?.id,
-          status: 'active',
-          type: selectedEmergencyType,
-          created_at: new Date().toISOString(),
-        });
-        showNotification('Emergency alert sent! Admin notified.', 'success');
-        setShowEmergencyAlert(false);
-        setSelectedEmergencyType('other');
-      }
-    } catch {
-      showNotification('Failed to send emergency alert', 'danger');
+      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+      await supabase.from('emergency_alerts').insert({
+        trip_id: currentTrip.id,
+        conductor_id: profile.id,
+        bus_id: currentBus?.id,
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
+    } catch (error) {
+      console.error('Error getting location for emergency alert:', error);
+      // Fallback: send alert without location
+      await supabase.from('emergency_alerts').insert({
+        trip_id: currentTrip.id,
+        conductor_id: profile.id,
+        bus_id: currentBus?.id,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
     }
   }
 

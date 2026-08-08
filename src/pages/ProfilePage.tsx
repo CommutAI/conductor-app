@@ -7,7 +7,7 @@ import {
 import { useHistory } from 'react-router-dom';
 import {
   Mail, IdCard, Building2, Bell, Shield, HelpCircle,
-  LogOut, Moon, Sun, Info, ChevronRight,
+  LogOut, Moon, Sun, Info, ChevronRight, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
@@ -115,6 +115,22 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">Transportation Services</span>
               </div>
             </div>
+          </div>
+
+          {/* Card Management */}
+          <div className="settings-group">
+            <p className="settings-group__title">Card Management</p>
+
+            <button type="button" className="settings-item" onClick={() => history.push('/card-management')}>
+              <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
+                <CreditCard size={20} />
+              </div>
+              <div className="settings-item__content">
+                <span className="settings-item__label">QR Cards</span>
+                <span className="settings-item__desc">Create and manage QR cards</span>
+              </div>
+              <ChevronRight size={18} className="settings-item__chevron" />
+            </button>
           </div>
 
           {/* Settings */}

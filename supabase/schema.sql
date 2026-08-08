@@ -27,7 +27,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE transaction_type AS ENUM ('fare_validation', 'balance_topup', 'card_issuance', 'boarding');
+  CREATE TYPE transaction_type AS ENUM ('fare_validation', 'balance_topup', 'card_issuance', 'boarding', 'baggage_fee');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN

@@ -35,12 +35,12 @@ const PassengerListPage: React.FC = () => {
   const [destinationGroups, setDestinationGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { currentTrip, currentBus } = useTrip();
+  const { currentTrip, currentBus, isRestoringTrip } = useTrip();
   const history = useHistory();
 
   useEffect(() => {
     if (!currentTrip) {
-      history.replace('/trip-setup');
+      if (!isRestoringTrip) history.replace('/trip-setup');
       return;
     }
     loadStats();

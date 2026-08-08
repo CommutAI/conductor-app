@@ -8,7 +8,9 @@ import type {
   PassengerDestinationResponse,
   RouteInfoResponse,
   PassengerType,
-  FareCalculationResult
+  FareCalculationResult,
+  BaggageFee,
+  BaggageSelection
 } from '../types/fareValidation';
 
 /**
@@ -22,17 +24,23 @@ function normalizeQrCode(scannedUid: string): string {
 }
 
 // Fare calculation logic
-export function calculateFare(baseFare: number, passengerType: PassengerType): FareCalculationResult {
+export function calculateFare(baseFare: number, passengerType: PassengerType, baggageSelection?: BaggageSelection): FareCalculationResult {
   const discountPercentage = getDiscountPercentage(passengerType);
   const discountAmount = baseFare * discountPercentage;
   const finalFare = baseFare - discountAmount;
+  
+  // Add baggage fee if selected
+  const baggageFee = baggageSelection?.fee || 0;
+  const totalFare = finalFare + baggageFee;
 
   return {
     baseFare,
     discountPercentage,
     discountAmount,
     finalFare,
-    passengerType
+    passengerType,
+    baggageFee,
+    totalFare
   };
 }
 
@@ -46,6 +54,27 @@ function getDiscountPercentage(passengerType: PassengerType): number {
     default:
       return 0; // No discount
   }
+}
+
+// Get all baggage fee categories
+export async function getBaggageFees(): Promise<BaggageFee[]> {
+  const { data, error } = await supabase
+    .from('baggage_fee_matrix')
+    .select('*')
+    .order('max_weight_kg', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching baggage fees:', error);
+    return [];
+  }
+
+  return (data || []).map(fee => ({
+    id: fee.id,
+    category: fee.category,
+    max_weight_kg: Number(fee.max_weight_kg),
+    fee: Number(fee.fee),
+    remarks: fee.remarks
+  }));
 }
 
 // Get route information by terminal and destination
