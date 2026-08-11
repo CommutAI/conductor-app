@@ -3,26 +3,25 @@ import { IonPage, IonContent } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ScanLine, CheckCircle, Wallet, CloudOff, RefreshCw,
-  MapPin, AlertTriangle, Users, ArrowRight, X, CreditCard,
+  ScanLine, CheckCircle, CloudOff, RefreshCw,
+  MapPin, AlertTriangle, X, CreditCard,
   XCircle, Navigation, ChevronRight, Package,
 } from 'lucide-react';
-import { useTrip } from '../context/TripContext';
-import { useAuth } from '../context/AuthContext';
-import { useOffline } from '../context/OfflineContext';
-import { processScan, ScanResult } from '../utils/scanProcessor';
-import { OfflineStorage } from '../utils/offlineStorage';
+import { useApp } from '../context/AppContext';
+import { useNetwork } from '../context/NetworkContext';
+import { processScan, ScanResult } from '../services/fareService';
+import { StorageService } from '../services/storageService';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
 import { Camera } from '@capacitor/camera';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
 import {
-  SoftCard, PrimaryButton, DashboardCard,
+  SoftCard, PrimaryButton,
   AppToast, StatusBadge,
 } from '../components/ui';
 import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
-import type { BaggageSelection } from '../types/fareValidation';
+import type { BaggageSelection } from '../types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,23 +36,11 @@ function normalizeQrCode(scannedUid: string): string {
 }
 
 function getRouteStops(route: string): string[] {
-  console.log('getRouteStops input:', route);
-  console.log('Route char codes:', route.split('').map(c => `${c}(${c.charCodeAt(0)})`).join(' '));
-  
-  // Try multiple separator patterns including Unicode variants
-  // Unicode: ↔ (2194), ← (2190), → (2192), – (8211), — (8212)
-  const separators = ['↔', '←', '→', '↔', '↔', '-', '–', '—', '>', '<', '|', '\u2194', '\u2190', '\u2192', '\u2013', '\u2014'];
-  let stops: string[] = [];
-  
+  const separators = ['↔', '←', '→', '-', '–', '—', '>', '<', '|'];
   for (const sep of separators) {
-    stops = route.split(sep).map((s) => s.trim()).filter(Boolean);
-    if (stops.length >= 2) {
-      console.log('getRouteStops found stops with separator', sep, ':', stops);
-      return stops;
-    }
+    const stops = route.split(sep).map((s) => s.trim()).filter(Boolean);
+    if (stops.length >= 2) return stops;
   }
-  
-  console.log('getRouteStops could not parse, returning empty');
   return [];
 }
 
@@ -107,9 +94,8 @@ const ScanPage: React.FC = () => {
   const [boardedCount, setBoardedCount] = useState(0);
   const [alightedCount, setAlightedCount] = useState(0);
 
-  const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected, isRestoringTrip } = useTrip();
-  const { profile } = useAuth();
-  const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useOffline();
+  const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected, isRestoringTrip, profile } = useApp();
+  const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useNetwork();
   const history = useHistory();
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
@@ -120,15 +106,10 @@ const ScanPage: React.FC = () => {
   const lastScanCodeRef = useRef('');
 
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
-  console.log('Current bus route:', currentBus?.route);
-  console.log('Route stops:', routeStops);
-  
-  // Always use default stops for now to ensure dropdown shows
-  const displayStops = ['Manolo Fortich Terminal', 'Dicklum', 'San Miguel', 'Lunocan', 'Alae', 'Mambatangan', 'Puerto', 'Agora Terminal'];
-  console.log('Display stops:', displayStops);
+  const displayStops = routeStops.length >= 2 ? routeStops : ['Manolo Fortich Terminal', 'Dicklum', 'San Miguel', 'Lunocan', 'Alae', 'Mambatangan', 'Puerto', 'Agora Terminal'];
 
   useEffect(() => {
-    if (!isRestoringTrip && (!currentTrip || !currentBus)) history.replace('/trip-setup');
+    if (!isRestoringTrip && (!currentTrip || !currentBus)) history.replace('/');
     return () => { cleanupScanner(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -161,13 +142,10 @@ const ScanPage: React.FC = () => {
 
     const readerEl = document.getElementById('qr-reader');
     if (!readerEl) {
-      console.error('QR reader element not found');
       showNotification('Camera element not found', 'danger');
       setScanState('idle');
       return;
     }
-
-    console.log('Starting camera');
 
     try {
       // Clear any existing scanner first
@@ -187,27 +165,11 @@ const ScanPage: React.FC = () => {
         { facingMode: 'environment' },
         config,
         async (decodedText: string, decodedResult: any) => {
-          console.log('QR code detected:', decodedText);
-          console.log('Full result:', decodedResult);
+          if (!cameraReadyRef.current) return;
+          if (!decodedText || decodedText.length < 5 || decodedText.length > 100) return;
 
-          // Ignore scans during camera startup (first 2 seconds)
-          if (!cameraReadyRef.current) {
-            console.log('Ignoring scan - camera not ready');
-            return;
-          }
-
-          // Validate QR code format - should be alphanumeric with reasonable length
-          if (!decodedText || decodedText.length < 5 || decodedText.length > 100) {
-            console.log('Invalid QR code format:', decodedText);
-            return;
-          }
-
-          // Debounce: ignore if same code scanned within 500ms (prevents rapid duplicate detections)
           const now = Date.now();
-          if (decodedText === lastScanCodeRef.current && (now - lastScanTimeRef.current) < 500) {
-            console.log('Ignoring duplicate scan within debounce window');
-            return;
-          }
+          if (decodedText === lastScanCodeRef.current && (now - lastScanTimeRef.current) < 500) return;
 
           if (processingRef.current) return;
           processingRef.current = true;
@@ -223,30 +185,26 @@ const ScanPage: React.FC = () => {
           }, 500);
         },
         (errorMessage: string) => {
-          // Log errors for debugging
-          if (errorMessage && !errorMessage.includes('No barcode') && !errorMessage.includes('NotFoundException')) {
-            console.log('Scan error:', errorMessage);
-          }
+          // Silently ignore scan errors
         }
       );
       stripShadedRegionRef.current = stripQrShadedRegion('qr-reader');
       
-      // Mark camera as ready after 2 seconds to prevent false detections
       setTimeout(() => {
         cameraReadyRef.current = true;
-        console.log('Camera ready for scanning');
       }, 2000);
-      
-      console.log('Camera started successfully');
     } catch (err) {
-      console.error('QR camera error:', err);
-      showNotification(`Camera error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'danger');
+      showNotification('Failed to start camera', 'danger');
       setScanState('idle');
     }
   }, [scanType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function stopCamera() {
-    await cleanupScanner();
+    try {
+      await cleanupScanner();
+    } catch (err) {
+      console.error('[ScanPage] Error stopping camera:', err);
+    }
     setScanState('idle');
     setPendingScan(null);
     setSelectedDestination('');
@@ -277,7 +235,7 @@ const ScanPage: React.FC = () => {
     if (!currentTrip || !profile) return;
 
     if (!isOnline) {
-      OfflineStorage.addOfflineScan(scannedCode, currentTrip.id, profile.id, currentBus?.route);
+      StorageService.addOfflineScan(scannedCode, currentTrip.id, profile.id, currentBus?.route);
       bumpPending();
       showNotification('Offline — scan queued for sync', 'warning');
       processingRef.current = false;
@@ -705,7 +663,14 @@ const ScanPage: React.FC = () => {
     <IonPage>
       <PageHeader
         showBack
-        onBack={() => { stopCamera(); history.push('/live-trip'); }}
+        onBack={async () => {
+          try {
+            await stopCamera();
+          } catch (err) {
+            console.error('[ScanPage] Back button error:', err);
+          }
+          history.push('/');
+        }}
         title="QR Scanner"
         subtitle={`${validatedCount} scanned · ${currentBus?.plate_number}`}
         rightAction={
@@ -798,14 +763,6 @@ const ScanPage: React.FC = () => {
               <PrimaryButton onClick={startCamera} fullWidth icon={<ScanLine size={22} />} style={{ marginBottom: 20 }}>
                 Start Scanning
               </PrimaryButton>
-
-              {/* Stats */}
-              <div className="dashboard-grid" style={{ marginBottom: 20 }}>
-                <DashboardCard label="Validated" value={validatedCount} icon={CheckCircle} iconBg="var(--color-success-subtle)" iconColor="var(--color-success)" />
-                <DashboardCard label="Collected" value={`₱${fareCollected.toFixed(0)}`} icon={Wallet} iconBg="var(--color-primary-subtle)" iconColor="var(--color-primary)" />
-                <DashboardCard label="Boarded" value={boardedCount} icon={Users} iconBg="var(--color-info-subtle)" iconColor="var(--color-info)" />
-                <DashboardCard label="Alighted" value={alightedCount} icon={ArrowRight} iconBg="var(--color-warning-subtle)" iconColor="#A16207" />
-              </div>
 
               {/* Pending sync */}
               {pendingCount > 0 && (

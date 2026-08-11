@@ -3,7 +3,7 @@ import { IonContent, IonPage } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import Logo from '../components/Logo';
 import { ModernInput, PrimaryButton, AppToast } from '../components/ui';
 
@@ -15,7 +15,7 @@ const LoginPage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('danger');
-  const { signIn } = useAuth();
+  const { signIn } = useApp();
   const history = useHistory();
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning' = 'danger') {
@@ -50,7 +50,7 @@ const LoginPage: React.FC = () => {
         showNotification(errorMsg, 'danger');
       } else {
         showNotification('Welcome back!', 'success');
-        setTimeout(() => history.replace('/trip-setup'), 400);
+        setTimeout(() => history.replace('/'), 400);
       }
     } catch (err) {
       setLoading(false);

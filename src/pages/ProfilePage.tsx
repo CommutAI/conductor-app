@@ -3,15 +3,15 @@ import {
   IonPage,
   IonContent,
   IonAlert,
+  IonActionSheet,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import {
   Mail, IdCard, Building2, Bell, Shield, HelpCircle,
-  LogOut, Moon, Sun, Info, ChevronRight, CreditCard,
+  LogOut, Moon, Sun, Info, ChevronRight, AlertCircle,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useTrip } from '../context/TripContext';
-import { useTheme } from '../context/ThemeContext';
+import { useApp } from '../context/AppContext';
+import { supabase } from '../supabaseClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import PageHeader from '../components/layout/PageHeader';
 import BottomNav from '../components/layout/BottomNav';
@@ -24,10 +24,10 @@ const ProfilePage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
+  const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState<'medical' | 'accident' | 'security' | 'mechanical' | 'other'>('other');
 
-  const { profile, signOut } = useAuth();
-  const { currentTrip, fareCollected } = useTrip();
-  const { isDark, toggleTheme } = useTheme();
+  const { profile, signOut, isDark, toggleTheme } = useApp();
   const history = useHistory();
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
@@ -39,6 +39,35 @@ const ProfilePage: React.FC = () => {
   function handleLogout() {
     signOut();
     showNotification('Signed out successfully', 'success');
+  }
+
+  async function sendEmergencyAlert() {
+    if (!profile) return;
+    try {
+      const position = await (window as any).Capacitor?.Geolocation?.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+      await supabase.from('emergency_alerts').insert({
+        conductor_id: profile.id,
+        lat: position?.coords.latitude,
+        lng: position?.coords.longitude,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
+    } catch (error) {
+      // Fallback: send alert without location
+      await supabase.from('emergency_alerts').insert({
+        conductor_id: profile.id,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
+    }
   }
 
   return (
@@ -63,26 +92,6 @@ const ProfilePage: React.FC = () => {
                 </p>
               </div>
             </div>
-
-            {currentTrip ? (
-              <div style={{
-                background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: 16,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <div>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.7rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>Current Trip</p>
-                  <p style={{ margin: 0, fontWeight: 700, color: 'white' }}>Trip in Progress</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.7rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>Earnings</p>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: '1.1rem', color: 'white' }}>₱{fareCollected.toFixed(0)}</p>
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: 16, textAlign: 'center' }}>
-                <p style={{ margin: 0, fontWeight: 600, color: 'white', opacity: 0.9 }}>Off Duty</p>
-              </div>
-            )}
           </SoftCard>
 
           {/* Contact Info */}
@@ -115,22 +124,6 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">Transportation Services</span>
               </div>
             </div>
-          </div>
-
-          {/* Card Management */}
-          <div className="settings-group">
-            <p className="settings-group__title">Card Management</p>
-
-            <button type="button" className="settings-item" onClick={() => history.push('/card-management')}>
-              <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
-                <CreditCard size={20} />
-              </div>
-              <div className="settings-item__content">
-                <span className="settings-item__label">QR Cards</span>
-                <span className="settings-item__desc">Create and manage QR cards</span>
-              </div>
-              <ChevronRight size={18} className="settings-item__chevron" />
-            </button>
           </div>
 
           {/* Settings */}
@@ -204,6 +197,24 @@ const ProfilePage: React.FC = () => {
             </button>
           </div>
 
+          <button 
+            type="button" 
+            className="emergency-btn" 
+            onClick={() => setShowEmergencyAlert(true)}
+            style={{
+              padding: '14px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}
+          >
+            <AlertCircle size={20} />
+            <div style={{ textAlign: 'left' }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: 800, display: 'block' }}>EMERGENCY</span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.9, display: 'block' }}>Send Alert to Admin</span>
+            </div>
+          </button>
+
           <PrimaryButton
             onClick={() => setShowLogoutAlert(true)}
             variant="secondary"
@@ -235,6 +246,59 @@ const ProfilePage: React.FC = () => {
         buttons={[
           { text: 'Cancel', role: 'cancel' },
           { text: 'Sign Out', handler: handleLogout },
+        ]}
+      />
+
+      <IonActionSheet
+        isOpen={showEmergencyAlert}
+        onDidDismiss={() => setShowEmergencyAlert(false)}
+        header="Select Emergency Type"
+        subHeader="This will send your GPS location to the admin"
+        buttons={[
+          {
+            text: '🏥 Medical',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('medical');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🚗 Accident',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('accident');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🛡️ Security',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('security');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '🔧 Mechanical',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('mechanical');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: '📋 Other',
+            role: 'destructive',
+            handler: () => {
+              setSelectedEmergencyType('other');
+              sendEmergencyAlert();
+            },
+          },
+          {
+            text: 'Cancel',
+            role: 'cancel',
+          },
         ]}
       />
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Home, ScanLine, Bus, User, History } from 'lucide-react';
+import { Home, ScanLine, User, History } from 'lucide-react';
 
 interface NavItem {
   path: string;
@@ -11,8 +11,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/trip-setup', label: 'Home', icon: <Home size={22} />, matchPaths: ['/trip-setup'] },
-  { path: '/live-trip', label: 'Trip', icon: <Bus size={22} />, matchPaths: ['/live-trip', '/scan', '/passengers'] },
+  { path: '/', label: 'Home', icon: <Home size={22} />, matchPaths: ['/'] },
   { path: '/scan', label: 'Scan', icon: <ScanLine size={22} />, matchPaths: ['/scan'] },
   { path: '/history', label: 'History', icon: <History size={22} />, matchPaths: ['/history', '/trip-summary'] },
   { path: '/profile', label: 'Profile', icon: <User size={22} />, matchPaths: ['/profile'] },

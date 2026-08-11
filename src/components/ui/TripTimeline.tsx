@@ -15,6 +15,7 @@ interface TripTimelineProps {
   nextStop?: string;
   eta?: string;
   progress?: number;
+  onEndTrip?: () => void;
 }
 
 const TripTimeline: React.FC<TripTimelineProps> = ({
@@ -23,6 +24,7 @@ const TripTimeline: React.FC<TripTimelineProps> = ({
   nextStop,
   eta,
   progress = 0,
+  onEndTrip,
 }) => (
   <div className="trip-timeline">
     {(currentStop || nextStop) && (
@@ -61,25 +63,24 @@ const TripTimeline: React.FC<TripTimelineProps> = ({
       <span className="trip-timeline__progress-label">{Math.round(progress)}% complete</span>
     </div>
 
-    <div className="trip-timeline__stops">
-      {stops.map((stop, index) => (
-        <motion.div
-          key={stop.id}
-          className={`trip-timeline__item trip-timeline__item--${stop.status}`}
-          initial={{ opacity: 0, x: -12 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: index * 0.08 }}
-        >
-          <div className="trip-timeline__dot" />
-          <div className="trip-timeline__content">
-            <span className="trip-timeline__stop">{stop.name}</span>
-            {stop.eta && stop.status === 'upcoming' && (
-              <span className="trip-timeline__stop-eta">{stop.eta}</span>
-            )}
-          </div>
-        </motion.div>
-      ))}
-    </div>
+    <button
+      onClick={onEndTrip}
+      style={{
+        width: '100%',
+        padding: '14px',
+        marginTop: '20px',
+        background: '#DC2626',
+        border: 'none',
+        borderRadius: '12px',
+        color: 'white',
+        fontWeight: 700,
+        fontSize: '1rem',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+      }}
+    >
+      End Trip
+    </button>
   </div>
 );
 

@@ -31,13 +31,14 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
     onClick={onClick}
     role={onClick ? 'button' : undefined}
     tabIndex={onClick ? 0 : undefined}
+    style={{ padding: '10px' }}
   >
-    <div className="dashboard-kpi__icon" style={{ background: iconBg, color: iconColor }}>
-      <Icon size={22} strokeWidth={2.25} />
+    <div className="dashboard-kpi__icon" style={{ background: iconBg, color: iconColor, width: '32px', height: '32px' }}>
+      <Icon size={16} strokeWidth={2.25} />
     </div>
     <div className="dashboard-kpi__content">
-      <p className="dashboard-kpi__value">{value}</p>
-      <p className="dashboard-kpi__label">{label}</p>
+      <p className="dashboard-kpi__value" style={{ fontSize: '1rem' }}>{value}</p>
+      <p className="dashboard-kpi__label" style={{ fontSize: '0.75rem' }}>{label}</p>
       {trend && <p className="dashboard-kpi__trend">{trend}</p>}
     </div>
   </motion.div>

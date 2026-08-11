@@ -11,7 +11,7 @@ import {
 } from '@ionic/react';
 import { Calendar, Users, Wallet, AlertTriangle, Bus } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
 import {
@@ -36,7 +36,7 @@ const TripHistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
 
-  const { profile } = useAuth();
+  const { profile } = useApp();
   const history = useHistory();
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import {
 } from '@ionic/react';
 import { Users, ArrowUp, ArrowDown, CreditCard, Ticket } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
-import { useTrip } from '../context/TripContext';
+import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
 import {
@@ -35,12 +35,12 @@ const PassengerListPage: React.FC = () => {
   const [destinationGroups, setDestinationGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { currentTrip, currentBus, isRestoringTrip } = useTrip();
+  const { currentTrip, currentBus, isRestoringTrip } = useApp();
   const history = useHistory();
 
   useEffect(() => {
     if (!currentTrip) {
-      if (!isRestoringTrip) history.replace('/trip-setup');
+      if (!isRestoringTrip) history.replace('/');
       return;
     }
     loadStats();
@@ -112,7 +112,7 @@ const PassengerListPage: React.FC = () => {
     <IonPage>
       <PageHeader
         showBack
-        onBack={() => history.push('/live-trip')}
+        onBack={() => history.push('/')}
         title="Passenger Count"
         subtitle={currentBus?.plate_number}
         statusBadge={stats ? { label: `${stats.currentOnboard} on board`, variant: 'primary' } : undefined}

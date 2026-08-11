@@ -6,8 +6,7 @@ import {
   CheckCircle, Wallet, Clock, AlertTriangle, Bus, User,
   Download, Share2, Home,
 } from 'lucide-react';
-import { useTrip } from '../context/TripContext';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
 import BottomNav from '../components/layout/BottomNav';
@@ -47,13 +46,12 @@ const TripSummaryPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
 
-  const { currentTrip, currentBus, validatedCount, fareCollected, clearTrip } = useTrip();
-  const { profile } = useAuth();
+  const { currentTrip, currentBus, validatedCount, fareCollected, profile, clearTrip } = useApp();
   const history = useHistory();
 
   useEffect(() => {
     if (!currentTrip || !currentBus) {
-      history.replace('/trip-setup');
+      history.replace('/');
       return;
     }
     loadSummaryData();
@@ -83,7 +81,7 @@ const TripSummaryPage: React.FC = () => {
   function startNewTrip() {
     clearTrip();
     showNotification('Ready for new trip', 'success');
-    history.replace('/trip-setup');
+    history.replace('/');
   }
 
   function exportSummary() { showNotification('Summary exported', 'success'); }

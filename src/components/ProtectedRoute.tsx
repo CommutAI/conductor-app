@@ -2,8 +2,7 @@ import React from 'react';
 import { Redirect } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useTrip } from '../context/TripContext';
+import { useApp } from '../context/AppContext';
 import Logo from './Logo';
 
 interface ProtectedRouteProps {
@@ -11,8 +10,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component }) => {
-  const { session, profile, loading } = useAuth();
-  const { isRestoringTrip } = useTrip();
+  const { session, profile, loading, isRestoringTrip } = useApp();
 
   if (loading || isRestoringTrip) {
     return (

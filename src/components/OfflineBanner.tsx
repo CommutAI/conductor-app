@@ -1,13 +1,13 @@
 import React from 'react';
 import { CloudOff, RefreshCw, Loader2 } from 'lucide-react';
-import { useOffline } from '../context/OfflineContext';
+import { useNetwork } from '../context/NetworkContext';
 
 interface OfflineBannerProps {
   style?: React.CSSProperties;
 }
 
 const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
-  const { isOnline, pendingCount, isSyncing, triggerSync } = useOffline();
+  const { isOnline, pendingCount, isSyncing, triggerSync } = useNetwork();
 
   if (isOnline && pendingCount === 0 && !isSyncing) return null;
 

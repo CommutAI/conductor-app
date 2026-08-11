@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, X, Check, Info } from 'lucide-react';
-import { getBaggageFees } from '../../utils/fareValidationApi';
-import type { BaggageFee, BaggageSelection } from '../../types/fareValidation';
+import { getBaggageFees } from '../../services/fareService';
+import type { BaggageFee, BaggageSelection } from '../../types';
 
 interface BaggageFeeSelectorProps {
   onSelect: (selection: BaggageSelection | null) => void;
