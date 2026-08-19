@@ -3,12 +3,13 @@ import {
   IonPage,
   IonContent,
   IonAlert,
-  IonActionSheet,
+  IonModal,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import {
   Mail, IdCard, Building2, Bell, Shield, HelpCircle,
   LogOut, Moon, Sun, Info, ChevronRight, AlertCircle,
+  Stethoscope, Car, ShieldAlert, Wrench, ClipboardList, X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
@@ -249,58 +250,132 @@ const ProfilePage: React.FC = () => {
         ]}
       />
 
-      <IonActionSheet
+      <IonModal
         isOpen={showEmergencyAlert}
         onDidDismiss={() => setShowEmergencyAlert(false)}
-        header="Select Emergency Type"
-        subHeader="This will send your GPS location to the admin"
-        buttons={[
-          {
-            text: '🏥 Medical',
-            role: 'destructive',
-            handler: () => {
-              setSelectedEmergencyType('medical');
-              sendEmergencyAlert();
-            },
-          },
-          {
-            text: '🚗 Accident',
-            role: 'destructive',
-            handler: () => {
-              setSelectedEmergencyType('accident');
-              sendEmergencyAlert();
-            },
-          },
-          {
-            text: '🛡️ Security',
-            role: 'destructive',
-            handler: () => {
-              setSelectedEmergencyType('security');
-              sendEmergencyAlert();
-            },
-          },
-          {
-            text: '🔧 Mechanical',
-            role: 'destructive',
-            handler: () => {
-              setSelectedEmergencyType('mechanical');
-              sendEmergencyAlert();
-            },
-          },
-          {
-            text: '📋 Other',
-            role: 'destructive',
-            handler: () => {
-              setSelectedEmergencyType('other');
-              sendEmergencyAlert();
-            },
-          },
-          {
-            text: 'Cancel',
-            role: 'cancel',
-          },
-        ]}
-      />
+        breakpoints={[0, 1]}
+        initialBreakpoint={1}
+        style={{ '--height': 'auto' }}
+      >
+        <div style={{ padding: '24px 20px 36px', background: 'var(--bg-primary)' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                borderRadius: 10,
+                padding: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <AlertCircle size={20} color="#DC2626" />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-text-primary)' }}>
+                  Select Emergency Type
+                </h2>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                  This will send your GPS location to the admin
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowEmergencyAlert(false)}
+              style={{
+                background: 'var(--bg-secondary)',
+                border: 'none',
+                borderRadius: 8,
+                padding: 6,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={18} color="var(--color-text-secondary)" />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: 'var(--bg-secondary)', margin: '16px 0' }} />
+
+          {/* Emergency Type Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { type: 'medical',    label: 'Medical',    desc: 'Medical emergency on board',      icon: Stethoscope,  color: '#DC2626', bg: 'rgba(220,38,38,0.08)' },
+              { type: 'accident',   label: 'Accident',   desc: 'Vehicle or road accident',        icon: Car,          color: '#D97706', bg: 'rgba(217,119,6,0.08)' },
+              { type: 'security',   label: 'Security',   desc: 'Threat or suspicious activity',   icon: ShieldAlert,  color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
+              { type: 'mechanical', label: 'Mechanical', desc: 'Bus breakdown or malfunction',    icon: Wrench,       color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
+              { type: 'other',      label: 'Other',      desc: 'Other emergency situation',       icon: ClipboardList, color: '#059669', bg: 'rgba(5,150,105,0.08)' },
+            ].map(({ type, label, desc, icon: Icon, color, bg }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => {
+                  setSelectedEmergencyType(type as any);
+                  sendEmergencyAlert();
+                }}
+                style={{
+                  width: '100%',
+                  background: bg,
+                  border: `1.5px solid ${color}30`,
+                  borderRadius: 14,
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{
+                  background: `${color}18`,
+                  borderRadius: 10,
+                  width: 42,
+                  height: 42,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Icon size={20} color={color} />
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>
+                    {label}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                    {desc}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Cancel */}
+          <button
+            type="button"
+            onClick={() => setShowEmergencyAlert(false)}
+            style={{
+              width: '100%',
+              marginTop: 14,
+              background: 'var(--bg-secondary)',
+              border: 'none',
+              borderRadius: 14,
+              padding: '14px',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </IonModal>
 
       <AppToast
         isOpen={showToast}

@@ -50,12 +50,13 @@ const TripSummaryPage: React.FC = () => {
   const history = useHistory();
 
   useEffect(() => {
-    if (!currentTrip || !currentBus) {
+    if (!currentTrip) {
+      // Trip was already cleared (e.g. page refresh) — go home
       history.replace('/');
       return;
     }
     loadSummaryData();
-  }, [currentTrip]);
+  }, []);
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning') {
     setToastMessage(message);
@@ -80,19 +81,18 @@ const TripSummaryPage: React.FC = () => {
 
   function startNewTrip() {
     clearTrip();
-    showNotification('Ready for new trip', 'success');
     history.replace('/');
   }
 
   function exportSummary() { showNotification('Summary exported', 'success'); }
   function shareSummary() { showNotification('Summary shared', 'success'); }
 
-  if (!currentTrip || !currentBus) return null;
+  if (!currentTrip) return null;
 
   const tripDuration = currentTrip.ended_at
     ? Math.floor((new Date(currentTrip.ended_at).getTime() - new Date(currentTrip.started_at).getTime()) / (1000 * 60))
     : 0;
-  const completionRate = currentBus.seat_capacity > 0 ? (validatedCount / currentBus.seat_capacity) * 100 : 0;
+  const completionRate = (currentBus?.seat_capacity ?? 0) > 0 ? (validatedCount / currentBus!.seat_capacity) * 100 : 0;
 
   return (
     <IonPage>
@@ -130,7 +130,7 @@ const TripSummaryPage: React.FC = () => {
                 transition={{ delay: 0.5 }}
                 style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}
               >
-                {currentBus.plate_number} · {tripDuration}m duration
+                {currentBus?.plate_number} · {tripDuration}m duration
               </motion.p>
             </div>
 
@@ -146,8 +146,8 @@ const TripSummaryPage: React.FC = () => {
               <div className="transport-list-item">
                 <Bus size={20} color="var(--color-primary)" />
                 <div>
-                  <p style={{ margin: '0 0 2px', fontWeight: 700 }}>{currentBus.plate_number}</p>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{currentBus.route}</p>
+                  <p style={{ margin: '0 0 2px', fontWeight: 700 }}>{currentBus?.plate_number ?? '—'}</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{currentBus?.route ?? '—'}</p>
                 </div>
               </div>
               <div className="transport-list-item">

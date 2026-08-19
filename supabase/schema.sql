@@ -197,11 +197,23 @@ CREATE TABLE IF NOT EXISTS temporary_tickets (
   status          ticket_status NOT NULL DEFAULT 'issued',
   allowed_routes  TEXT[]        DEFAULT '{}',
   passenger_id    UUID,
+  passenger_type  TEXT          DEFAULT 'regular',
   trip_id         UUID          REFERENCES trips (id),
   issued_by       UUID          REFERENCES staff_users (id),
   issued_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   validated_at    TIMESTAMPTZ
 );
+
+-- Add passenger_type column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'temporary_tickets' AND column_name = 'passenger_type'
+  ) THEN
+    ALTER TABLE temporary_tickets ADD COLUMN passenger_type TEXT DEFAULT 'regular';
+  END IF;
+END $$;
 
 -- ── 6. Transactions ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS transactions (

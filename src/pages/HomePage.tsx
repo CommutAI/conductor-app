@@ -90,6 +90,14 @@ const HomePage: React.FC = () => {
   // Computed Values
   const isLoading = authLoading || isRestoringTrip || !initialLoadDone;
 
+  const currentDate = useMemo(() => new Date(), []);
+  const greeting = useMemo(() => {
+    const hour = currentDate.getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  }, [currentDate]);
+
   const routeStops = useMemo(() => {
     if (!currentBus?.route) return [];
     return currentBus.route.split(/[→\-–>↔]/).map((s) => s.trim()).filter(Boolean);
@@ -143,12 +151,29 @@ const HomePage: React.FC = () => {
   const loadData = useCallback(async () => {
     if (!currentTrip) return;
 
+    // Check if trip is actually still active in database
+    const { data: tripStatus } = await supabase
+      .from('trips')
+      .select('status, ended_at')
+      .eq('id', currentTrip.id)
+      .single();
+
+    if (tripStatus && (tripStatus.status === 'completed' || tripStatus.ended_at)) {
+      console.log('[HomePage] Trip already ended in database, clearing state');
+      setCurrentTrip(null);
+      setCurrentBus(null);
+      setValidatedCount(0);
+      setFareCollected(0);
+      return;
+    }
+
     try {
-      // Load passenger count
+      // Load passenger count - only count passengers who have NOT alighted yet
       const { count: passengerCount } = await supabase
         .from('boarded_passengers')
         .select('id', { count: 'exact', head: true })
-        .eq('trip_id', currentTrip.id);
+        .eq('trip_id', currentTrip.id)
+        .is('alighted_at', null);
 
       // Load irregularities
       const { data: irregularities } = await supabase
@@ -168,7 +193,7 @@ const HomePage: React.FC = () => {
     } catch (err) {
       console.error('[HomePage] Error loading data:', err);
     }
-  }, [currentTrip, currentBus, setValidatedCount]);
+  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setFareCollected]);
 
   // Effects
 
@@ -191,6 +216,13 @@ const HomePage: React.FC = () => {
       if (proximityCheckRef.current) clearTimeout(proximityCheckRef.current);
     };
   }, [currentTrip?.id, authLoading, initialLoadDone, loadData]);
+
+  // Refresh data when component mounts (handles navigation back from scan page)
+  useEffect(() => {
+    if (currentTrip && currentBus && !isLoading) {
+      loadData();
+    }
+  }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load bus info when profile is available
   useEffect(() => {
@@ -296,7 +328,7 @@ const HomePage: React.FC = () => {
     try {
       const { error } = await supabase
         .from('trips')
-        .update({ 
+        .update({
           ended_at: new Date().toISOString(),
           status: 'completed'
         })
@@ -304,12 +336,14 @@ const HomePage: React.FC = () => {
 
       if (error) throw error;
 
+      // Navigate FIRST — TripSummaryPage still reads trip state
+      // State is cleared by startNewTrip() on that page
       history.push('/trip-summary');
     } catch (err) {
       console.error('[HomePage] Error ending trip:', err);
       showNotification('Failed to end trip', 'danger');
     }
-  }, [currentTrip, history, showNotification]);
+  }, [currentTrip, history, showNotification, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected]);
 
   // Render
 
@@ -346,6 +380,33 @@ const HomePage: React.FC = () => {
         </IonRefresher>
 
         <div className="page-content">
+          {/* Greeting Section */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            style={{ marginBottom: 20 }}
+          >
+            <h1 style={{
+              margin: 0,
+              fontSize: '1.75rem',
+              fontWeight: 800,
+              color: 'var(--color-text-primary)',
+              marginBottom: 4,
+              letterSpacing: '-0.5px'
+            }}>
+              {greeting}, {profile?.full_name?.split(' ')[0] || 'Conductor'}
+            </h1>
+            <p style={{
+              margin: 0,
+              fontSize: '0.95rem',
+              color: 'var(--color-text-secondary)',
+              fontWeight: 500
+            }}>
+              {hasActiveTrip ? 'Your trip is in progress' : 'Ready to start your shift'}
+            </p>
+          </motion.div>
+
           {!hasActiveTrip ? (
             /* No Active Trip - Show Start Trip Button */
             <motion.div
@@ -540,11 +601,54 @@ const HomePage: React.FC = () => {
           ) : (
             /* Active Trip - Show Trip Progress */
             <>
-              {/* Trip Progress */}
+              {/* Summary Cards */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
+                style={{ marginBottom: 24 }}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                  <DashboardCard
+                    icon={ScanLine}
+                    label="Passengers"
+                    value={tripStats.passengerCount.toString()}
+                    trend={undefined}
+                    iconColor="#10b981"
+                    iconBg="rgba(16, 185, 129, 0.1)"
+                  />
+                  <DashboardCard
+                    icon={Wallet}
+                    label="Fare Collected"
+                    value={`₱${fareCollected.toFixed(0)}`}
+                    trend={undefined}
+                    iconColor="#3b82f6"
+                    iconBg="rgba(59, 130, 246, 0.1)"
+                  />
+                  <DashboardCard
+                    icon={Bus}
+                    label="Capacity"
+                    value={`${tripStats.capacityPercent.toFixed(0)}%`}
+                    trend={undefined}
+                    iconColor="#f59e0b"
+                    iconBg="rgba(245, 158, 11, 0.1)"
+                  />
+                  <DashboardCard
+                    icon={AlertTriangle}
+                    label="Irregularities"
+                    value={tripStats.irregularities.length.toString()}
+                    trend={undefined}
+                    iconColor={tripStats.irregularities.length > 0 ? '#ef4444' : '#10b981'}
+                    iconBg={tripStats.irregularities.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)'}
+                  />
+                </div>
+              </motion.div>
+
+              {/* Trip Progress */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
                 style={{ marginBottom: 24 }}
               >
                 <SoftCard variant="gradient">
@@ -559,50 +663,7 @@ const HomePage: React.FC = () => {
                 </SoftCard>
               </motion.div>
 
-              {/* Quick Stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-              >
-                <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ 
-                    margin: 0, 
-                    fontSize: '1.1rem', 
-                    fontWeight: 700, 
-                    color: 'var(--color-text-primary)',
-                    marginBottom: 4
-                  }}>
-                    Trip Summary
-                  </h3>
-                  <p style={{ 
-                    margin: 0, 
-                    fontSize: '0.9rem', 
-                    color: 'var(--color-text-secondary)' 
-                  }}>
-                    Today's performance metrics
-                  </p>
-                </div>
-                
-                <div className="dashboard-grid" style={{ marginBottom: 24, gap: 12 }}>
-                  <DashboardCard
-                    label="Validated"
-                    value={validatedCount}
-                    icon={CheckCircle}
-                    iconBg="var(--color-success-subtle)"
-                    iconColor="var(--color-success)"
-                    delay={0}
-                  />
-                  <DashboardCard
-                    label="Fare Collected"
-                    value={`₱${fareCollected.toFixed(0)}`}
-                    icon={Wallet}
-                    iconBg="var(--color-primary-subtle)"
-                    iconColor="var(--color-primary)"
-                    delay={0.05}
-                  />
-                </div>
-              </motion.div>
+
 
               {/* Recent Activity */}
               <motion.div

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, X, Check, Info } from 'lucide-react';
+import { Package, X, Check, Info, Plus, Minus } from 'lucide-react';
 import { getBaggageFees } from '../../services/fareService';
 import type { BaggageFee, BaggageSelection } from '../../types';
 
@@ -13,6 +13,7 @@ interface BaggageFeeSelectorProps {
 const BaggageFeeSelector: React.FC<BaggageFeeSelectorProps> = ({ onSelect, onClose, isOpen }) => {
   const [baggageFees, setBaggageFees] = useState<BaggageFee[]>([]);
   const [selectedFee, setSelectedFee] = useState<BaggageFee | null>(null);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,7 +26,15 @@ const BaggageFeeSelector: React.FC<BaggageFeeSelectorProps> = ({ onSelect, onClo
     setLoading(true);
     try {
       const fees = await getBaggageFees();
-      setBaggageFees(fees);
+      // Deduplicate fees by category to prevent duplicates
+      const uniqueFees = fees.reduce((acc, fee) => {
+        const existing = acc.find(f => f.category === fee.category);
+        if (existing) {
+          return acc; // Skip duplicates
+        }
+        return [...acc, fee];
+      }, [] as BaggageFee[]);
+      setBaggageFees(uniqueFees);
     } catch (error) {
       console.error('Error loading baggage fees:', error);
     } finally {
@@ -37,17 +46,29 @@ const BaggageFeeSelector: React.FC<BaggageFeeSelectorProps> = ({ onSelect, onClo
     if (selectedFee?.id === fee.id) {
       // Deselect if already selected
       setSelectedFee(null);
+      setQuantities({});
     } else {
       setSelectedFee(fee);
+      setQuantities({ [fee.id]: 1 }); // Default quantity to 1
     }
+  }
+
+  function handleQuantityChange(feeId: string, delta: number) {
+    setQuantities(prev => {
+      const current = prev[feeId] || 1;
+      const newQuantity = Math.max(1, current + delta);
+      return { ...prev, [feeId]: newQuantity };
+    });
   }
 
   function handleConfirm() {
     if (selectedFee) {
+      const quantity = quantities[selectedFee.id] || 1;
       onSelect({
         category: selectedFee.category,
-        fee: selectedFee.fee,
-        weight: selectedFee.max_weight_kg
+        fee: selectedFee.fee * quantity, // Multiply fee by quantity
+        weight: selectedFee.max_weight_kg * quantity, // Multiply weight by quantity
+        quantity: quantity
       });
     } else {
       onSelect(null);
@@ -58,6 +79,7 @@ const BaggageFeeSelector: React.FC<BaggageFeeSelectorProps> = ({ onSelect, onClo
   function handleSkip() {
     onSelect(null);
     setSelectedFee(null);
+    setQuantities({});
     onClose();
   }
 
@@ -189,13 +211,72 @@ const BaggageFeeSelector: React.FC<BaggageFeeSelectorProps> = ({ onSelect, onClo
                             </div>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--color-primary)' }}>
-                            ₱{fee.fee.toFixed(2)}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--color-primary)' }}>
+                              ₱{fee.fee.toFixed(2)}
+                            </div>
+                            {fee.remarks && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                {fee.remarks}
+                              </div>
+                            )}
                           </div>
-                          {fee.remarks && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              {fee.remarks}
+                          {selectedFee?.id === fee.id && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuantityChange(fee.id, -1);
+                                }}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--color-primary)',
+                                  background: 'white',
+                                  color: 'var(--color-primary)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '1.2rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                -
+                              </button>
+                              <span style={{ 
+                                fontWeight: 700, 
+                                fontSize: '1rem', 
+                                minWidth: 24, 
+                                textAlign: 'center',
+                                color: 'var(--color-primary)'
+                              }}>
+                                {quantities[fee.id] || 1}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuantityChange(fee.id, 1);
+                                }}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--color-primary)',
+                                  background: 'var(--color-primary)',
+                                  color: 'white',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '1.2rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                +
+                              </button>
                             </div>
                           )}
                         </div>

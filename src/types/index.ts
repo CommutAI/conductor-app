@@ -122,6 +122,7 @@ export interface BaggageSelection {
   category: string;
   fee: number;
   weight: number;
+  quantity: number;
 }
 
 // ── Fare Validation ─────────────────────────────────────────────────────────

@@ -25,7 +25,6 @@ export interface QRCard {
   balance: number;
   status: 'active' | 'lost' | 'replaced' | 'deactivated';
   allowed_routes: string[];
-  passenger_id?: string;
   passenger_type: PassengerType;
   destination?: string;
   route_id?: string;
@@ -45,6 +44,7 @@ export interface BaggageSelection {
   category: string;
   fee: number;
   weight: number;
+  quantity: number;
 }
 
 export interface FareCalculationResult {
@@ -150,7 +150,7 @@ export async function processScan(
   // Check for QR card
   const { data: card } = await supabase
     .from('qr_cards')
-    .select('id, balance, status, passenger_id, allowed_routes, destination')
+    .select('id, balance, status, allowed_routes, destination, card_type, card_uid')
     .eq('card_uid', normalizedUid)
     .maybeSingle();
 
@@ -254,8 +254,19 @@ async function processQRCard(
   const totalFare = fare + (baggageFee || 0);
 
   if (scanType === 'onboarding') {
+    // Check card has enough balance to cover baggage fee upfront (fare is deducted at alighting)
+    const upfrontCharge = baggageFee || 0;
+    if (upfrontCharge > 0 && card.balance < upfrontCharge) {
+      return { status: 'qr_fail_balance', balance: card.balance, fare: upfrontCharge, baggageFee, totalFare: upfrontCharge };
+    }
+
     const updatePayload: Record<string, unknown> = {};
     if (currentDestination) updatePayload.destination = currentDestination;
+
+    // Deduct baggage fee immediately at boarding if applicable
+    if (upfrontCharge > 0) {
+      updatePayload.balance = card.balance - upfrontCharge;
+    }
 
     if (Object.keys(updatePayload).length > 0) {
       const { error: updateErr } = await supabase.from('qr_cards').update(updatePayload).eq('id', card.id);
@@ -268,7 +279,7 @@ async function processQRCard(
       card_id: card.id,
       trip_id: tripId,
       type: 'boarding',
-      amount: 0,
+      amount: upfrontCharge,
       channel: 'qr_card',
       staff_id: conductorId,
     });
@@ -279,29 +290,28 @@ async function processQRCard(
     const { error: boardErr } = await supabase.from('boarded_passengers').insert({
       trip_id: tripId,
       card_id: card.id,
-      passenger_id: card.passenger_id,
       boarded_at: new Date().toISOString(),
     });
     if (boardErr) {
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
     }
 
+    const newBalance = card.balance - upfrontCharge;
     return {
       status: 'qr_pass',
-      newBalance: card.balance,
+      newBalance,
       fare: 0,
       baggageFee,
-      totalFare: 0,
-      passengerId: card.passenger_id,
+      totalFare: upfrontCharge,
       destination: currentDestination,
     };
   } else {
-    // Alighting - deduct fare
-    if (card.balance < totalFare) {
-      return { status: 'qr_fail_balance', balance: card.balance, fare: totalFare, baggageFee, totalFare };
+    // Alighting — deduct base fare only (baggage fee was already charged at boarding)
+    if (card.balance < fare) {
+      return { status: 'qr_fail_balance', balance: card.balance, fare, baggageFee: 0, totalFare: fare };
     }
 
-    const newBalance = card.balance - totalFare;
+    const newBalance = card.balance - fare;
     const { error: updateErr } = await supabase.from('qr_cards').update({ balance: newBalance }).eq('id', card.id);
     if (updateErr) {
       return { status: 'error', message: `Failed to update balance: ${updateErr.message}` };
@@ -310,12 +320,14 @@ async function processQRCard(
     const { error: txErr } = await supabase.from('transactions').insert({
       card_id: card.id,
       trip_id: tripId,
-      type: 'fare_payment',
-      amount: totalFare,
+      type: 'fare_validation',
+      amount: fare,
       channel: 'qr_card',
       staff_id: conductorId,
     });
     if (txErr) {
+      console.error('Transaction insert error:', txErr);
+      console.error('Transaction data:', { card_id: card.id, trip_id: tripId, type: 'fare_validation', amount: fare, channel: 'qr_card', staff_id: conductorId });
       return { status: 'error', message: `Failed to create payment transaction: ${txErr.message}` };
     }
 
@@ -330,10 +342,9 @@ async function processQRCard(
     return {
       status: 'qr_pass',
       newBalance,
-      fare: totalFare,
-      baggageFee,
-      totalFare,
-      passengerId: card.passenger_id,
+      fare,
+      baggageFee: 0,
+      totalFare: fare,
       destination: currentDestination,
     };
   }

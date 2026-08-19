@@ -30,7 +30,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 }) => {
   const history = useHistory();
 
-  const handleBack = () => {
+  const handleBack = (e: React.MouseEvent<HTMLButtonElement>) => {
+    (e.currentTarget as HTMLElement).blur();
     if (onBack) onBack();
     else if (backTo) history.push(backTo);
     else history.goBack();

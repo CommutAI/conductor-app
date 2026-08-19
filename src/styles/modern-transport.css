@@ -512,6 +512,42 @@ ion-content.orange-geometric-bg {
 
 .dashboard-grid--3 { grid-template-columns: repeat(3, 1fr); }
 
+/* ─── Scanner Page ───────────────────────────────────────────────────────────── */
+.scanner-page {
+  padding: var(--space-lg);
+}
+
+.scanner-hero {
+  position: relative;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+  border-radius: var(--card-radius);
+  padding: var(--space-3xl) var(--space-2xl);
+  margin-bottom: var(--space-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-primary);
+  text-align: center;
+}
+
+.scanner-hero--alighting {
+  background: linear-gradient(135deg, #A16207 0%, #FACC15 100%);
+  box-shadow: 0 8px 24px rgba(161, 98, 7, 0.3);
+}
+
+.scanner-hero__glow {
+  position: absolute;
+  top: -50%;
+  right: -30%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.scanner-hero--offline {
+  background: linear-gradient(135deg, var(--color-danger) 0%, #F87171 100%);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3);
+}
+
 /* Stats card (gradient hero) */
 .stats-card {
   background: var(--color-primary-gradient);

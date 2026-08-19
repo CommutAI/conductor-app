@@ -40,7 +40,10 @@ const BottomNav: React.FC<BottomNavProps> = ({ hidden = false }) => {
               key={item.path}
               type="button"
               className={`bottom-nav-modern__item ${active ? 'bottom-nav-modern__item--active' : ''}`}
-              onClick={() => history.push(item.path)}
+              onClick={(e) => {
+                (e.currentTarget as HTMLElement).blur();
+                history.push(item.path);
+              }}
               aria-current={active ? 'page' : undefined}
             >
               {active && (
