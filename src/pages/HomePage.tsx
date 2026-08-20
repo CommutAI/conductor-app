@@ -391,7 +391,7 @@ const HomePage: React.FC = () => {
               margin: 0,
               fontSize: '1.75rem',
               fontWeight: 800,
-              color: 'var(--color-text-primary)',
+              color: 'var(--text-primary)',
               marginBottom: 4,
               letterSpacing: '-0.5px'
             }}>
@@ -400,7 +400,7 @@ const HomePage: React.FC = () => {
             <p style={{
               margin: 0,
               fontSize: '0.95rem',
-              color: 'var(--color-text-secondary)',
+              color: 'var(--text-secondary)',
               fontWeight: 500
             }}>
               {hasActiveTrip ? 'Your trip is in progress' : 'Ready to start your shift'}
@@ -414,7 +414,7 @@ const HomePage: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
-              <SoftCard style={{ padding: 0, overflow: 'hidden', background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
+              <SoftCard variant="glass" style={{ padding: 0, overflow: 'hidden', background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
                 {/* Decorative Elements */}
                 <div style={{
                   position: 'absolute',

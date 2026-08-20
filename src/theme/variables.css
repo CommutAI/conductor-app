@@ -50,13 +50,14 @@
   --ion-color-light-shade: #FFF1E6;
   --ion-color-light-tint: #FFFFFF;
 
-  --ion-background-color: #FFF8F3;
-  --ion-text-color: #1F2937;
+  /* Force gradient background */
+  --ion-background-color: transparent;
+  --ion-text-color: #F3F4F6;
   --ion-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 [data-theme="dark"] {
-  --ion-background-color: #0F1117;
+  --ion-background-color: transparent;
   --ion-text-color: #F9FAFB;
   --ion-color-light: #1A1D27;
   --ion-color-light-contrast: #F9FAFB;
@@ -98,7 +99,8 @@ ion-toolbar {
 }
 
 ion-content {
-  --background: var(--bg-primary, #FFF8F3);
+  --background: transparent !important;
+  background: transparent !important;
 }
 
 ion-toast {

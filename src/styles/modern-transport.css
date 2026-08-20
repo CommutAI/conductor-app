@@ -27,7 +27,7 @@
   --bg-tertiary: #FFF1E6;
   --bg-elevated: #FFFFFF;
 
-  --text-primary: #1F2937;
+  --text-primary: #374151;
   --text-secondary: #6B7280;
   --text-tertiary: #9CA3AF;
   --text-inverse: #FFFFFF;
@@ -84,7 +84,7 @@
   --bg-tertiary: #252836;
   --bg-elevated: #1E2130;
 
-  --text-primary: #F9FAFB;
+  --text-primary: #F3F4F6;
   --text-secondary: #9CA3AF;
   --text-tertiary: #6B7280;
 
@@ -97,8 +97,8 @@
   --color-warning-subtle: rgba(250, 204, 21, 0.12);
   --color-info-subtle: rgba(59, 130, 246, 0.12);
 
-  --glass-bg: rgba(26, 29, 39, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(0, 0, 0, 0.3);
+  --glass-border: rgba(255, 255, 255, 0.1);
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -150,10 +150,12 @@ ion-content.orange-geometric-bg {
 
 /* ─── Soft Card ───────────────────────────────────────────────────────────── */
 .soft-card {
-  background: var(--bg-secondary);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--card-radius);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-subtle);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   transition: box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-fast);
   position: relative;
   overflow: hidden;
@@ -170,9 +172,9 @@ ion-content.orange-geometric-bg {
 }
 
 .soft-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 25px 30px -5px rgba(0, 0, 0, 0.15);
   transform: translateY(-2px);
-  border-color: var(--border-medium);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .soft-card:hover::before {
@@ -192,10 +194,11 @@ ion-content.orange-geometric-bg {
 }
 
 .soft-card--glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }
 
 /* Legacy transport-card */
@@ -209,27 +212,27 @@ ion-content.orange-geometric-bg {
 }
 
 .glass-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--card-radius);
-  box-shadow: var(--shadow-md);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 1rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   transition: all var(--transition-base);
 }
 
 .glass-card:hover {
-  box-shadow: var(--shadow-lg);
-  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 25px 30px -5px rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .glass-container {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   border-radius: var(--card-radius);
-  box-shadow: var(--shadow-md);
   position: relative;
   overflow: hidden;
 }
@@ -323,10 +326,10 @@ ion-content.orange-geometric-bg {
 }
 
 .primary-btn--ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  box-shadow: none;
-  border: 1.5px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  border: 2px solid var(--border-medium) !important;
 }
 
 .primary-btn--ghost:hover {
@@ -816,6 +819,79 @@ ion-content.orange-geometric-bg {
     transparent
   );
   animation: skeleton-shine 1.5s ease-in-out infinite;
+}
+
+/* ─── Dropdown & Select Styles ────────────────────────────────────────────────── */
+select,
+.dropdown-select {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px;
+  padding-right: 40px;
+}
+
+select:focus,
+.dropdown-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+}
+
+select option,
+.dropdown-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 12px 16px;
+}
+
+/* ─── Modal Styles ───────────────────────────────────────────────────────────── */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ─── Input Field Fix ─────────────────────────────────────────────────────────── */
+input,
+textarea {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
 @keyframes skeleton-shine {

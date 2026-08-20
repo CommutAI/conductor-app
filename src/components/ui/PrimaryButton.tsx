@@ -33,7 +33,10 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
     <motion.button
       type={type}
       className={`primary-btn ${variantClass} ${fullWidth ? 'primary-btn--full' : ''} ${className}`}
-      style={style}
+      style={{
+        ...style,
+        border: variant === 'ghost' ? '2px solid var(--border-medium)' : undefined
+      }}
       disabled={disabled || loading}
       onClick={onClick}
       whileTap={{ scale: disabled || loading ? 1 : 0.97 }}

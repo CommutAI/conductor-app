@@ -126,7 +126,7 @@ const TripHistoryPage: React.FC = () => {
           />
 
           {!loading && filteredTrips.length > 0 && (
-            <SoftCard variant="gradient" style={{ marginBottom: 20 }}>
+            <SoftCard variant="glass" style={{ marginBottom: 20, background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
               <p style={{ margin: '0 0 4px', fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>
                 Total Earnings
               </p>
@@ -165,6 +165,7 @@ const TripHistoryPage: React.FC = () => {
             filteredTrips.map((trip, i) => (
               <SoftCard
                 key={trip.id}
+                variant="glass"
                 style={{ marginBottom: 12 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

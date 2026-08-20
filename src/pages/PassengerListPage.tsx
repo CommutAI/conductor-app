@@ -140,7 +140,7 @@ const PassengerListPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 style={{ marginBottom: 20 }}
               >
-                <SoftCard variant="gradient" style={{ marginBottom: 20, textAlign: 'center', padding: 28 }}>
+                <SoftCard variant="glass" style={{ marginBottom: 20, textAlign: 'center', padding: 28, background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
                   <p style={{ margin: '0 0 4px', color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' }}>
                     Currently On Board
                   </p>
@@ -191,7 +191,7 @@ const PassengerListPage: React.FC = () => {
 
               {/* ── Destination Breakdown ─────────────────────────────── */}
               {destinationGroups.length > 0 && (
-                <SoftCard style={{ marginBottom: 20 }}>
+                <SoftCard variant="glass" style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <h3 className="heading-medium">Destinations</h3>
                     <StatusBadge variant="info">{destinationGroups.length} stops</StatusBadge>
@@ -231,7 +231,7 @@ const PassengerListPage: React.FC = () => {
               )}
 
               {destinationGroups.length === 0 && (
-                <SoftCard style={{ textAlign: 'center', padding: 24, marginBottom: 20 }}>
+                <SoftCard variant="glass" style={{ textAlign: 'center', padding: 24, marginBottom: 20 }}>
                   <Users size={32} color="var(--text-tertiary)" style={{ marginBottom: 8 }} />
                   <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                     No destination data from QR cards yet

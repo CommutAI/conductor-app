@@ -1709,7 +1709,7 @@ const ScanPage: React.FC = () => {
                         </div>
 
                         {/* Route */}
-                        <div style={{ marginBottom: 12, padding: '12px', background: 'white', borderRadius: 10 }}>
+                        <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: 10 }}>
                           <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Route</p>
                           <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                             {pendingAlighting.route}
@@ -1717,7 +1717,7 @@ const ScanPage: React.FC = () => {
                         </div>
 
                         {/* Destination */}
-                        <div style={{ marginBottom: 12, padding: '12px', background: 'white', borderRadius: 10 }}>
+                        <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: 10 }}>
                           <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Destination</p>
                           <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: '#A16207' }}>
                             {pendingAlighting.destination}
@@ -1725,7 +1725,7 @@ const ScanPage: React.FC = () => {
                         </div>
 
                         {/* Fare */}
-                        <div style={{ marginBottom: 12, padding: '12px', background: 'white', borderRadius: 10 }}>
+                        <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: 10 }}>
                           <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Fare to Deduct</p>
                           <p style={{ margin: 0, fontWeight: 800, fontSize: '1.2rem', color: 'var(--color-primary)' }}>
                             ₱{pendingAlighting.fare.toFixed(2)}

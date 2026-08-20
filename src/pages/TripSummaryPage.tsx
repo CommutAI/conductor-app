@@ -141,7 +141,7 @@ const TripSummaryPage: React.FC = () => {
               <DashboardCard label="Issues" value={irregularities.length} icon={AlertTriangle} iconBg={irregularities.length > 0 ? 'var(--color-warning-subtle)' : 'var(--bg-tertiary)'} iconColor={irregularities.length > 0 ? '#A16207' : 'var(--text-secondary)'} delay={0.25} />
             </div>
 
-            <SoftCard style={{ marginBottom: 16 }}>
+            <SoftCard variant="glass" style={{ marginBottom: 16 }}>
               <h3 className="heading-medium" style={{ marginBottom: 16 }}>Trip Details</h3>
               <div className="transport-list-item">
                 <Bus size={20} color="var(--color-primary)" />
@@ -171,7 +171,7 @@ const TripSummaryPage: React.FC = () => {
               </div>
             </SoftCard>
 
-            <SoftCard style={{ marginBottom: 24, background: 'var(--color-primary-subtle)', border: '1px solid rgba(249,115,22,0.2)' }}>
+            <SoftCard variant="glass" style={{ marginBottom: 24, background: 'var(--color-primary-subtle)', border: '1px solid rgba(249,115,22,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <span style={{ fontSize: '2rem' }}>
                   {irregularities.length === 0 ? '⭐' : completionRate > 80 ? '🌟' : '✓'}
@@ -196,11 +196,11 @@ const TripSummaryPage: React.FC = () => {
             </SoftCard>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={exportSummary}>
+              <SoftCard variant="glass" padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={exportSummary}>
                 <Download size={24} color="var(--text-secondary)" style={{ margin: '0 auto 8px' }} />
                 <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem' }}>Export</p>
               </SoftCard>
-              <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={shareSummary}>
+              <SoftCard variant="glass" padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={shareSummary}>
                 <Share2 size={24} color="var(--text-secondary)" style={{ margin: '0 auto 8px' }} />
                 <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem' }}>Share</p>
               </SoftCard>
@@ -210,7 +210,7 @@ const TripSummaryPage: React.FC = () => {
               Start New Trip
             </PrimaryButton>
 
-            <SoftCard padding="sm" style={{ marginTop: 24, textAlign: 'center' }}>
+            <SoftCard variant="glass" padding="sm" style={{ marginTop: 24, textAlign: 'center' }}>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                 Thank you for your service!
               </p>

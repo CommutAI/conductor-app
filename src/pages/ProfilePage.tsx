@@ -78,7 +78,7 @@ const ProfilePage: React.FC = () => {
       <IonContent className="app-page-bg">
         <div className="page-content">
           {/* Profile Hero */}
-          <SoftCard variant="gradient" style={{ marginBottom: 24 }}>
+          <SoftCard variant="gradient" style={{ marginBottom: 24 }} className="glass-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
               <ProfileAvatar name={profile?.full_name || 'Conductor'} size="xl" />
               <div style={{ flex: 1, color: 'white' }}>
@@ -98,7 +98,7 @@ const ProfilePage: React.FC = () => {
           {/* Contact Info */}
           <div className="settings-group">
             <p className="settings-group__title">Profile</p>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <Mail size={20} />
               </div>
@@ -107,7 +107,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">{profile?.email || 'conductor@test.com'}</span>
               </div>
             </div>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <IdCard size={20} />
               </div>
@@ -116,7 +116,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">EMP-{profile?.id?.slice(-6).toUpperCase() || '001234'}</span>
               </div>
             </div>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-success-subtle)', color: 'var(--color-success)' }}>
                 <Building2 size={20} />
               </div>
@@ -131,7 +131,7 @@ const ProfilePage: React.FC = () => {
           <div className="settings-group">
             <p className="settings-group__title">Preferences</p>
 
-            <div className="settings-item" style={{ cursor: 'pointer' }} onClick={toggleTheme}>
+            <div className="settings-item glass-card" style={{ cursor: 'pointer', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={toggleTheme}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                 {isDark ? <Sun size={20} /> : <Moon size={20} />}
               </div>
@@ -149,7 +149,7 @@ const ProfilePage: React.FC = () => {
               </button>
             </div>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-warning-subtle)', color: '#A16207' }}>
                 <Bell size={20} />
               </div>
@@ -160,7 +160,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Security settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Security settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <Shield size={20} />
               </div>
@@ -176,7 +176,7 @@ const ProfilePage: React.FC = () => {
           <div className="settings-group">
             <p className="settings-group__title">Support</p>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Help center coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Help center coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <HelpCircle size={20} />
               </div>
@@ -187,7 +187,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item" style={{ cursor: 'default' }}>
+            <button type="button" className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
                 <Info size={20} />
               </div>
@@ -198,15 +198,19 @@ const ProfilePage: React.FC = () => {
             </button>
           </div>
 
-          <button 
-            type="button" 
-            className="emergency-btn" 
+          <button
+            type="button"
+            className="emergency-btn glass-card"
             onClick={() => setShowEmergencyAlert(true)}
             style={{
               padding: '14px 20px',
               display: 'flex',
               alignItems: 'center',
-              gap: '12px'
+              gap: '12px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
             }}
           >
             <AlertCircle size={20} />
@@ -257,7 +261,7 @@ const ProfilePage: React.FC = () => {
         initialBreakpoint={1}
         style={{ '--height': 'auto' }}
       >
-        <div style={{ padding: '24px 20px 36px', background: 'var(--bg-primary)' }}>
+        <div style={{ padding: '24px 20px 36px', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -272,10 +276,10 @@ const ProfilePage: React.FC = () => {
                 <AlertCircle size={20} color="#DC2626" />
               </div>
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-text-primary)' }}>
+                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   Select Emergency Type
                 </h2>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                   This will send your GPS location to the admin
                 </p>
               </div>
@@ -285,7 +289,7 @@ const ProfilePage: React.FC = () => {
               onClick={() => setShowEmergencyAlert(false)}
               style={{
                 background: 'var(--bg-secondary)',
-                border: 'none',
+                border: '2px solid var(--border-medium)',
                 borderRadius: 8,
                 padding: 6,
                 cursor: 'pointer',
@@ -294,12 +298,12 @@ const ProfilePage: React.FC = () => {
                 justifyContent: 'center',
               }}
             >
-              <X size={18} color="var(--color-text-secondary)" />
+              <X size={18} color="var(--text-primary)" />
             </button>
           </div>
 
           {/* Divider */}
-          <div style={{ height: 1, background: 'var(--bg-secondary)', margin: '16px 0' }} />
+          <div style={{ height: 1, background: 'rgba(255, 255, 255, 0.2)', margin: '16px 0' }} />
 
           {/* Emergency Type Cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -319,8 +323,10 @@ const ProfilePage: React.FC = () => {
                 }}
                 style={{
                   width: '100%',
-                  background: bg,
-                  border: `1.5px solid ${color}30`,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  border: `1.5px solid ${color}40`,
                   borderRadius: 14,
                   padding: '14px 16px',
                   cursor: 'pointer',
@@ -344,10 +350,10 @@ const ProfilePage: React.FC = () => {
                   <Icon size={20} color={color} />
                 </div>
                 <div>
-                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
                     {label}
                   </p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     {desc}
                   </p>
                 </div>
@@ -363,13 +369,13 @@ const ProfilePage: React.FC = () => {
               width: '100%',
               marginTop: 14,
               background: 'var(--bg-secondary)',
-              border: 'none',
+              border: '2px solid var(--border-medium)',
               borderRadius: 14,
               padding: '14px',
               cursor: 'pointer',
               fontWeight: 700,
               fontSize: '0.95rem',
-              color: 'var(--color-text-secondary)',
+              color: 'var(--text-primary)',
             }}
           >
             Cancel

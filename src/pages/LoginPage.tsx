@@ -74,17 +74,25 @@ const LoginPage: React.FC = () => {
               <Logo size="xl" />
               <h1 style={{
                 fontSize: '2.25rem', fontWeight: 800, margin: '16px 0 6px',
-                color: '#1F2937', letterSpacing: '-0.03em',
+                color: 'var(--text-primary)', letterSpacing: '-0.03em',
               }}>
                 CommutAI
               </h1>
-              <p style={{ color: '#6B7280', margin: 0, fontSize: '1rem', fontWeight: 500 }}>
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1rem', fontWeight: 500 }}>
                 Conductor Portal
               </p>
             </motion.div>
 
             <motion.div
-              className="login-form-card"
+              className="login-form-card glass-card"
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: 24,
+                padding: 32
+              }}
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.15 }}
@@ -117,13 +125,13 @@ const LoginPage: React.FC = () => {
                     animate={{ opacity: 1, height: 'auto' }}
                     style={{
                       background: 'var(--color-danger-subtle)',
-                      border: '1.5px solid #FECACA',
+                      border: '1.5px solid rgba(239, 68, 68, 0.3)',
                       borderRadius: 14,
                       padding: '12px 16px',
                       marginBottom: 20,
                     }}
                   >
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#B91C1C', fontWeight: 600 }}>
+                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-danger)', fontWeight: 600 }}>
                       {error}
                     </p>
                   </motion.div>
