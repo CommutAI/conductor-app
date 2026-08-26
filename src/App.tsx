@@ -24,6 +24,7 @@ import './styles/modern-transport.css';
 import { AppProvider } from './context/AppContext';
 import { NetworkProvider } from './context/NetworkContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import InteractiveBackground from './components/layout/InteractiveBackground';
 
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
@@ -45,6 +46,7 @@ addIcons({
 const App: React.FC = () => {
   return (
     <IonApp>
+      <InteractiveBackground />
       <AppProvider>
         <NetworkProvider>
           <IonReactRouter>
@@ -61,6 +63,8 @@ const App: React.FC = () => {
               {/* Additional pages */}
               <Route exact path="/passengers" render={() => <ProtectedRoute component={PassengerListPage} />} />
               <Route exact path="/history"    render={() => <ProtectedRoute component={TripHistoryPage} />} />
+
+              <Route render={() => <Redirect to="/" />} />
             </IonRouterOutlet>
           </IonReactRouter>
         </NetworkProvider>

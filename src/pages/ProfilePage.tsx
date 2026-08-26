@@ -15,6 +15,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, StatusBadge, AppToast,
@@ -73,12 +74,13 @@ const ProfilePage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader showBack title="Settings" subtitle="Manage your account" />
 
       <IonContent className="app-page-bg">
         <div className="page-content">
           {/* Profile Hero */}
-          <SoftCard variant="gradient" style={{ marginBottom: 24 }} className="glass-card">
+          <SoftCard variant="hero" style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
               <ProfileAvatar name={profile?.full_name || 'Conductor'} size="xl" />
               <div style={{ flex: 1, color: 'white' }}>
@@ -98,7 +100,7 @@ const ProfilePage: React.FC = () => {
           {/* Contact Info */}
           <div className="settings-group">
             <p className="settings-group__title">Profile</p>
-            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <Mail size={20} />
               </div>
@@ -107,7 +109,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">{profile?.email || 'conductor@test.com'}</span>
               </div>
             </div>
-            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <IdCard size={20} />
               </div>
@@ -116,7 +118,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">EMP-{profile?.id?.slice(-6).toUpperCase() || '001234'}</span>
               </div>
             </div>
-            <div className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-success-subtle)', color: 'var(--color-success)' }}>
                 <Building2 size={20} />
               </div>
@@ -131,7 +133,7 @@ const ProfilePage: React.FC = () => {
           <div className="settings-group">
             <p className="settings-group__title">Preferences</p>
 
-            <div className="settings-item glass-card" style={{ cursor: 'pointer', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={toggleTheme}>
+            <div className="settings-item glass-card" style={{ cursor: 'pointer' }} onClick={toggleTheme}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                 {isDark ? <Sun size={20} /> : <Moon size={20} />}
               </div>
@@ -149,7 +151,7 @@ const ProfilePage: React.FC = () => {
               </button>
             </div>
 
-            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-warning-subtle)', color: '#A16207' }}>
                 <Bell size={20} />
               </div>
@@ -160,7 +162,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Security settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Security settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <Shield size={20} />
               </div>
@@ -176,7 +178,7 @@ const ProfilePage: React.FC = () => {
           <div className="settings-group">
             <p className="settings-group__title">Support</p>
 
-            <button type="button" className="settings-item glass-card" style={{ background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }} onClick={() => showNotification('Help center coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Help center coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <HelpCircle size={20} />
               </div>
@@ -187,7 +189,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item glass-card" style={{ cursor: 'default', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+            <button type="button" className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
                 <Info size={20} />
               </div>
@@ -202,16 +204,6 @@ const ProfilePage: React.FC = () => {
             type="button"
             className="emergency-btn glass-card"
             onClick={() => setShowEmergencyAlert(true)}
-            style={{
-              padding: '14px 20px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              background: 'rgba(239, 68, 68, 0.1)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid rgba(239, 68, 68, 0.3)'
-            }}
           >
             <AlertCircle size={20} />
             <div style={{ textAlign: 'left' }}>
@@ -261,7 +253,7 @@ const ProfilePage: React.FC = () => {
         initialBreakpoint={1}
         style={{ '--height': 'auto' }}
       >
-        <div style={{ padding: '24px 20px 36px', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+        <div className="glass-modal">
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -317,25 +309,12 @@ const ProfilePage: React.FC = () => {
               <button
                 key={type}
                 type="button"
+                className="glass-modal__option"
                 onClick={() => {
                   setSelectedEmergencyType(type as any);
                   sendEmergencyAlert();
                 }}
-                style={{
-                  width: '100%',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
-                  border: `1.5px solid ${color}40`,
-                  borderRadius: 14,
-                  padding: '14px 16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  textAlign: 'left',
-                  transition: 'all 0.15s ease',
-                }}
+                style={{ borderColor: `${color}40` }}
               >
                 <div style={{
                   background: `${color}18`,
@@ -364,19 +343,9 @@ const ProfilePage: React.FC = () => {
           {/* Cancel */}
           <button
             type="button"
+            className="glass-modal__option"
             onClick={() => setShowEmergencyAlert(false)}
-            style={{
-              width: '100%',
-              marginTop: 14,
-              background: 'var(--bg-secondary)',
-              border: '2px solid var(--border-medium)',
-              borderRadius: 14,
-              padding: '14px',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: '0.95rem',
-              color: 'var(--text-primary)',
-            }}
+            style={{ marginTop: 14, justifyContent: 'center', fontWeight: 700 }}
           >
             Cancel
           </button>

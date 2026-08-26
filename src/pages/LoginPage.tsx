@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Mail, Lock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import Logo from '../components/Logo';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import { ModernInput, PrimaryButton, AppToast } from '../components/ui';
 
 const LoginPage: React.FC = () => {
@@ -62,6 +63,7 @@ const LoginPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <IonContent fullscreen className="app-page-bg">
         <div className="login-hero">
           <div className="login-hero__content">
@@ -69,7 +71,7 @@ const LoginPage: React.FC = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              style={{ textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
             >
               <Logo size="xl" />
               <h1 style={{
@@ -85,14 +87,6 @@ const LoginPage: React.FC = () => {
 
             <motion.div
               className="login-form-card glass-card"
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: 24,
-                padding: 32
-              }}
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.15 }}

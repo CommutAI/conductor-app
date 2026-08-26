@@ -9,6 +9,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, DashboardCard, LoadingSkeleton,
@@ -96,6 +97,7 @@ const TripSummaryPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader title="Trip Summary" subtitle="Completed successfully" />
 
       <IonContent className="app-page-bg">
@@ -171,7 +173,7 @@ const TripSummaryPage: React.FC = () => {
               </div>
             </SoftCard>
 
-            <SoftCard variant="glass" style={{ marginBottom: 24, background: 'var(--color-primary-subtle)', border: '1px solid rgba(249,115,22,0.2)' }}>
+            <SoftCard variant="accent-primary" style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <span style={{ fontSize: '2rem' }}>
                   {irregularities.length === 0 ? '⭐' : completionRate > 80 ? '🌟' : '✓'}

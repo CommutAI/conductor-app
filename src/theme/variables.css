@@ -131,3 +131,25 @@ ion-segment-button {
   font-weight: 600;
   min-height: 40px;
 }
+
+ion-footer {
+  background: transparent !important;
+  --background: transparent !important;
+  box-shadow: none !important;
+  --border-color: transparent !important;
+}
+
+ion-footer::before {
+  display: none !important;
+}
+
+ion-header {
+  background: transparent !important;
+  --background: transparent !important;
+  box-shadow: none !important;
+  --border-color: transparent !important;
+}
+
+ion-header::after {
+  display: none !important;
+}

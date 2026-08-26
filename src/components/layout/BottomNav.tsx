@@ -1,4 +1,5 @@
 import React from 'react';
+import { IonFooter } from '@ionic/react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Home, ScanLine, User, History } from 'lucide-react';
@@ -31,35 +32,43 @@ const BottomNav: React.FC<BottomNavProps> = ({ hidden = false }) => {
     item.matchPaths?.some((p) => location.pathname.startsWith(p)) ?? location.pathname === item.path;
 
   return (
-    <nav className="bottom-nav-modern" aria-label="Main navigation">
-      <div className="bottom-nav-modern__container">
-        {navItems.map((item) => {
-          const active = isActive(item);
-          return (
-            <button
-              key={item.path}
-              type="button"
-              className={`bottom-nav-modern__item ${active ? 'bottom-nav-modern__item--active' : ''}`}
-              onClick={(e) => {
-                (e.currentTarget as HTMLElement).blur();
-                history.push(item.path);
-              }}
-              aria-current={active ? 'page' : undefined}
-            >
-              {active && (
-                <motion.div
-                  className="bottom-nav-modern__indicator"
-                  layoutId="nav-indicator"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <span className="bottom-nav-modern__icon">{item.icon}</span>
-              <span className="bottom-nav-modern__label">{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+    <IonFooter
+      className="ion-no-border"
+      style={{
+        background: 'transparent',
+        boxShadow: 'none',
+      }}
+    >
+      <nav className="bottom-nav-modern" aria-label="Main navigation">
+        <div className="bottom-nav-modern__container">
+          {navItems.map((item) => {
+            const active = isActive(item);
+            return (
+              <button
+                key={item.path}
+                type="button"
+                className={`bottom-nav-modern__item ${active ? 'bottom-nav-modern__item--active' : ''}`}
+                onClick={(e) => {
+                  (e.currentTarget as HTMLElement).blur();
+                  history.push(item.path);
+                }}
+                aria-current={active ? 'page' : undefined}
+              >
+                {active && (
+                  <motion.div
+                    className="bottom-nav-modern__indicator"
+                    layoutId="nav-indicator"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <span className="bottom-nav-modern__icon">{item.icon}</span>
+                <span className="bottom-nav-modern__label">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </IonFooter>
   );
 };
 

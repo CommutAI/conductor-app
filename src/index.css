@@ -5,15 +5,31 @@
 :root {
   --slate-900: #0f172a;
   --orange-950: #431407;
+
+  /* Dark shell text — readable on gradient background */
+  --text-primary: #F3F4F6;
+  --text-secondary: #CBD5E1;
+  --text-tertiary: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-bg-hover: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border-hover: rgba(255, 255, 255, 0.28);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.35);
+  --glass-highlight: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, transparent 50%);
 }
 
 html, body, #root {
-  background: linear-gradient(to bottom right, var(--slate-900), var(--orange-950), var(--slate-900)) !important;
+  background: linear-gradient(135deg, var(--slate-900) 0%, var(--orange-950) 50%, var(--slate-900) 100%) !important;
   min-height: 100vh !important;
 }
 
 ion-app {
-  background: linear-gradient(to bottom right, var(--slate-900), var(--orange-950), var(--slate-900)) !important;
+  background: transparent !important;
+  position: relative;
 }
 
 ion-content {
@@ -23,71 +39,4 @@ ion-content {
 
 ion-content::part(background) {
   background: transparent !important;
-}
-
-/* Glass morphism utilities from sys-admin */
-.glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 1rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-}
-
-.glass-sidebar {
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(24px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Compatibility with existing components */
-.glass-container {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  border-radius: 1rem;
-  position: relative;
-  overflow: hidden;
-}
-
-.soft-card {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 1rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.3s, transform 0.3s, border-color 0.15s;
-  position: relative;
-  overflow: hidden;
-}
-
-.soft-card:hover {
-  box-shadow: 0 25px 30px -5px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.soft-card--gradient {
-  background: linear-gradient(135deg, #F97316 0%, #FB923C 100%);
-  border: none;
-  color: white;
-  box-shadow: 0 8px 24px rgba(249, 115, 22, 0.25);
-}
-
-.soft-card--glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }

@@ -21,6 +21,7 @@ import { supabase } from '../supabaseClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, DashboardCard,
@@ -364,6 +365,7 @@ const HomePage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader
         showLogo={true}
         statusBadge={{
@@ -414,7 +416,7 @@ const HomePage: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
-              <SoftCard variant="glass" style={{ padding: 0, overflow: 'hidden', background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
+              <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden' }}>
                 {/* Decorative Elements */}
                 <div style={{
                   position: 'absolute',
@@ -495,13 +497,10 @@ const HomePage: React.FC = () => {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.3 }}
+                      className="glass-chip"
                       style={{
-                        background: 'rgba(255, 255, 255, 0.15)',
-                        backdropFilter: 'blur(10px)',
-                        borderRadius: 12,
                         padding: '16px',
                         marginBottom: 24,
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 12
@@ -651,7 +650,7 @@ const HomePage: React.FC = () => {
                 transition={{ duration: 0.5, delay: 0.3 }}
                 style={{ marginBottom: 24 }}
               >
-                <SoftCard variant="gradient">
+                <SoftCard variant="hero">
                   <TripTimeline
                     stops={timelineStops}
                     currentStop={routeStops.length >= 2 ? routeStops[0] : undefined}

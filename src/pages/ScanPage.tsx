@@ -12,12 +12,13 @@ import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { processScan, ScanResult } from '../services/fareService';
 import { StorageService } from '../services/storageService';
-import { validateAlightingLocation, getCurrentPosition, nearestStop } from '../services/geoService';
+import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
 import { Camera } from '@capacitor/camera';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
   SoftCard, PrimaryButton,
   StatusBadge,
@@ -134,7 +135,8 @@ const ScanPage: React.FC = () => {
   const [alightedCount, setAlightedCount] = useState(0);
   const [gpsValidating, setGpsValidating] = useState(false);
   const [gpsResult, setGpsResult] = useState<{ status: string; message: string; nearestStop: string } | null>(null);
-  const [currentStopName, setCurrentStopName] = useState<string | null>(null); // GPS-detected current stop
+  const [currentStopName, setCurrentStopName] = useState<string | null>(null); // GPS-detected current location
+  const [currentCoordinates, setCurrentCoordinates] = useState<{ lat: number; lng: number } | null>(null); // GPS coordinates
 
   const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected, isRestoringTrip, profile } = useApp();
   const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useNetwork();
@@ -170,30 +172,36 @@ const ScanPage: React.FC = () => {
     cleanupScanner();
   });
 
-  // Auto-detect current GPS stop when destination picker opens
+  // Auto-detect current GPS location when destination picker opens
   useEffect(() => {
     if (scanState !== 'pick_destination') return;
     let cancelled = false;
     (async () => {
       try {
-        console.log('[GPS] Attempting to get current position...');
-        const pos = await getCurrentPosition(8000); // Optimized timeout with progressive strategy
+        console.log('[GPS] Attempting to get current location...');
+        const locationResult = await getLocationAndDecode();
         if (cancelled) return;
-        console.log('[GPS] Position obtained:', pos);
-        const match = nearestStop(pos.lat, pos.lng);
-        console.log('[GPS] Nearest stop:', match);
-        // Only set if reasonably close (within 3 km)
-        if (match.distanceKm < 3) {
-          setCurrentStopName(match.stop.name);
-          console.log('[GPS] Current stop set to:', match.stop.name);
+        console.log('[GPS] Location obtained:', locationResult);
+        
+        if (locationResult.success && locationResult.locationName) {
+          setCurrentStopName(locationResult.locationName);
+          if (locationResult.coordinates) {
+            setCurrentCoordinates({
+              lat: locationResult.coordinates.lat,
+              lng: locationResult.coordinates.lng,
+            });
+          }
+          console.log('[GPS] Current location set to:', locationResult.locationName);
         } else {
-          console.log('[GPS] Too far from nearest stop:', match.distanceKm, 'km');
+          console.log('[GPS] Location detection failed:', locationResult.error);
           setCurrentStopName(null);
+          setCurrentCoordinates(null);
         }
       } catch (err) {
-        console.error('[GPS] Error getting position:', err);
-        // GPS unavailable — no current stop shown
+        console.error('[GPS] Error getting location:', err);
+        // GPS unavailable — no current location shown
         setCurrentStopName(null);
+        setCurrentCoordinates(null);
       }
     })();
     return () => { cancelled = true; };
@@ -309,6 +317,8 @@ const ScanPage: React.FC = () => {
     setScanState('idle');
     setPendingScan(null);
     setSelectedDestination('');
+    setCurrentStopName(null);
+    setCurrentCoordinates(null);
     processingRef.current = false;
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
@@ -320,6 +330,7 @@ const ScanPage: React.FC = () => {
     setSelectedDestination('');
     setFailedMsg('');
     setCurrentStopName(null);
+    setCurrentCoordinates(null);
     processingRef.current = false;
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
@@ -1054,18 +1065,24 @@ const ScanPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader
         showBack
-        onBack={() => {
+        onBack={(e?: React.MouseEvent<HTMLButtonElement>) => {
+          console.log('[ScanPage] Back button clicked');
+          e?.preventDefault();
+          e?.stopPropagation();
+          
           // Blur any focused element before navigating to avoid aria-hidden focus conflict
           (document.activeElement as HTMLElement)?.blur();
-          // Use goBack so Ionic plays the correct back animation.
-          // Fall back to replace('/') if there's no history entry to go back to.
-          if (history.length > 1) {
-            history.goBack();
-          } else {
-            history.replace('/');
-          }
+          
+          // Navigate immediately, cleanup in background
+          history.replace('/');
+          
+          // Cleanup camera after navigation (non-blocking)
+          cleanupScanner().catch(err => {
+            console.error('[ScanPage] Cleanup error after navigation:', err);
+          });
         }}
         title="QR Scanner"
         subtitle={`${validatedCount} scanned · ${currentBus?.plate_number}`}
@@ -1092,33 +1109,30 @@ const ScanPage: React.FC = () => {
           {!isActiveView && (
             <>
               {/* Hero */}
-              <div className={`scanner-hero ${!isOnline ? 'scanner-hero--offline' : ''} ${scanType === 'alighting' ? 'scanner-hero--alighting' : ''}`}>
-                <div className="scanner-hero__glow" />
-                <div className="scanner-hero__content">
-                  <motion.div
-                    style={{ width: 80, height: 80, borderRadius: 24, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}
-                    animate={{ scale: [1, 1.06, 1] }}
-                    transition={{ duration: 2.5, repeat: Infinity }}
-                  >
-                    {scanType === 'alighting' ? (
-                      <MapPin size={40} color="rgba(255,255,255,0.95)" strokeWidth={1.5} />
-                    ) : (
-                      <ScanLine size={40} color="rgba(255,255,255,0.95)" strokeWidth={1.5} />
-                    )}
-                  </motion.div>
-                  <h2 style={{ color: 'white', fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>
-                    {isOnline ? (scanType === 'alighting' ? 'Alighting Scanner' : 'Onboarding Scanner') : 'Offline Scanner'}
-                  </h2>
-                  <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9rem', margin: 0, textAlign: 'center', fontWeight: 500 }}>
-                    {isOnline
-                      ? (scanType === 'onboarding' ? 'Scan card → pick destination' : 'Scan card → fare auto-deducted')
-                      : `Scans sync when online${pendingCount > 0 ? ` (${pendingCount} queued)` : ''}`}
-                  </p>
-                </div>
-              </div>
+              <SoftCard variant="glass" style={{ marginBottom: 20, padding: '32px 24px', textAlign: 'center' }}>
+                <motion.div
+                  style={{ width: 80, height: 80, borderRadius: 24, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}
+                  animate={{ scale: [1, 1.06, 1] }}
+                  transition={{ duration: 2.5, repeat: Infinity }}
+                >
+                  {scanType === 'alighting' ? (
+                    <MapPin size={40} color="var(--color-primary)" strokeWidth={1.5} />
+                  ) : (
+                    <ScanLine size={40} color="var(--color-primary)" strokeWidth={1.5} />
+                  )}
+                </motion.div>
+                <h2 style={{ color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>
+                  {isOnline ? (scanType === 'alighting' ? 'Alighting Scanner' : 'Onboarding Scanner') : 'Offline Scanner'}
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0, textAlign: 'center', fontWeight: 500 }}>
+                  {isOnline
+                    ? (scanType === 'onboarding' ? 'Scan card → pick destination' : 'Scan card → fare auto-deducted')
+                    : `Scans sync when online${pendingCount > 0 ? ` (${pendingCount} queued)` : ''}`}
+                </p>
+              </SoftCard>
 
               {/* Mode selector card */}
-              <SoftCard style={{ marginBottom: 20 }}>
+              <SoftCard variant="glass" style={{ marginBottom: 20 }}>
                 <h4 className="heading-small" style={{ marginBottom: 12 }}>Scan Mode</h4>
                 <div style={{ display: 'flex', gap: 12, marginBottom: scanType === 'alighting' && routeStops.length > 0 ? 16 : 0 }}>
                   <button type="button" className={`scanner-type-btn ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`} onClick={() => setScanType('onboarding')}>
@@ -1194,7 +1208,11 @@ const ScanPage: React.FC = () => {
 
               {/* Pending sync */}
               {pendingCount > 0 && (
-                <SoftCard style={{ marginBottom: 20, cursor: isOnline ? 'pointer' : 'default', background: isOnline ? 'var(--color-warning-subtle)' : 'var(--color-danger-subtle)' }} onClick={isOnline ? triggerSync : undefined}>
+                <SoftCard
+                  variant={isOnline ? 'accent-warning' : 'accent-danger'}
+                  style={{ marginBottom: 20, cursor: isOnline ? 'pointer' : 'default' }}
+                  onClick={isOnline ? triggerSync : undefined}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <RefreshCw size={20} color={isOnline ? '#A16207' : 'var(--color-danger)'} className={isSyncing ? 'primary-btn__spinner' : ''} />
@@ -1400,13 +1418,19 @@ const ScanPage: React.FC = () => {
                           <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>{debugScannedCode}</span>
                         </div>
                       )}
-                      <button type="button" onClick={retryCamera} style={{
-                        marginTop: 8, padding: '10px 28px', borderRadius: 24, border: '2px solid white',
-                        background: 'transparent', color: 'white', fontWeight: 700, fontSize: '0.9rem',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                      }}>
-                        <RefreshCw size={16} /> Try Again
-                      </button>
+                      <PrimaryButton
+                        onClick={retryCamera}
+                        variant="ghost"
+                        icon={<RefreshCw size={16} />}
+                        style={{
+                          marginTop: 8,
+                          borderColor: 'white',
+                          color: 'white',
+                          background: 'transparent',
+                        }}
+                      >
+                        Try Again
+                      </PrimaryButton>
                     </motion.div>
                   )}
                 </div>
@@ -1505,7 +1529,7 @@ const ScanPage: React.FC = () => {
                     </motion.div>
 
                     {/* Destination picker */}
-                    <SoftCard style={{ marginBottom: 14 }}>
+                    <SoftCard variant="glass" style={{ marginBottom: 14 }}>
                       {/* From (current GPS stop) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                         <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1518,6 +1542,11 @@ const ScanPage: React.FC = () => {
                               <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Detecting location…</span>
                             )}
                           </p>
+                          {currentCoordinates && (
+                            <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                              {currentCoordinates.lat.toFixed(6)}, {currentCoordinates.lng.toFixed(6)}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1535,23 +1564,9 @@ const ScanPage: React.FC = () => {
                         <div style={{ flex: 1 }}>
                           <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
                           <select
+                            className="bus-select"
                             value={selectedDestination}
                             onChange={e => setSelectedDestination(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '12px 14px',
-                              borderRadius: 12,
-                              border: selectedDestination
-                                ? '2px solid var(--color-primary)'
-                                : '1.5px solid var(--color-border)',
-                              background: selectedDestination ? 'var(--color-primary-subtle)' : 'var(--bg-secondary)',
-                              color: selectedDestination ? 'var(--color-primary)' : 'var(--text-secondary)',
-                              fontSize: '1rem',
-                              fontWeight: selectedDestination ? 700 : 500,
-                              outline: 'none',
-                              cursor: 'pointer',
-                              appearance: 'auto',
-                            }}
                           >
                             <option value="">— Choose destination —</option>
                             <option value="Agora Terminal">Agora Terminal</option>
@@ -1568,8 +1583,8 @@ const ScanPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* GPS Match Indicator */}
-                      {selectedDestination && currentStopName && (
+                      {/* GPS Location Display */}
+                      {currentStopName && (
                         <motion.div
                           initial={{ opacity: 0, y: -10 }}
                           animate={{ opacity: 1, y: 0 }}
@@ -1587,101 +1602,75 @@ const ScanPage: React.FC = () => {
                           <CheckCircle size={18} color="#10b981" />
                           <div style={{ flex: 1 }}>
                             <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>
-                              GPS Location Matched
+                              GPS Location Detected
                             </p>
                             <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              Current location: {currentStopName}
+                              {currentStopName}
                             </p>
+                            {currentCoordinates && (
+                              <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                                {currentCoordinates.lat.toFixed(6)}, {currentCoordinates.lng.toFixed(6)}
+                              </p>
+                            )}
                           </div>
                         </motion.div>
                       )}
                     </SoftCard>
 
                     {/* Baggage fee selector */}
-                    <SoftCard style={{ marginBottom: 14 }}>
+                    <SoftCard variant="glass" style={{ marginBottom: 14 }}>
                       <button
                         type="button"
                         onClick={() => setShowBaggageSelector(true)}
+                        className="settings-item glass-card"
                         style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
                           padding: '14px 16px',
-                          borderRadius: 12,
-                          border: baggageSelection ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
-                          background: baggageSelection ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                          textAlign: 'left',
+                          marginBottom: 0,
+                          border: baggageSelection ? '2px solid var(--color-primary)' : '1px solid var(--glass-border)',
+                          background: baggageSelection ? 'var(--color-primary-subtle)' : 'var(--glass-bg)',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{
-                            width: 32, height: 32, borderRadius: 10,
-                            background: baggageSelection ? 'var(--color-primary)' : 'var(--color-border)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <Package size={16} color={baggageSelection ? 'white' : 'var(--text-secondary)'} />
-                          </div>
-                          <div>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.92rem', color: baggageSelection ? 'var(--color-primary)' : 'var(--text-primary)' }}>
-                              {baggageSelection ? `${baggageSelection.category} (x${baggageSelection.quantity})` : 'Add Baggage Fee'}
-                            </p>
-                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              {baggageSelection ? `₱${baggageSelection.fee.toFixed(2)}` : 'Optional - for passengers with baggage'}
-                            </p>
-                          </div>
+                        <div className="settings-item__icon" style={{
+                          background: baggageSelection ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                        }}>
+                          <Package size={16} color={baggageSelection ? 'white' : 'var(--text-secondary)'} />
                         </div>
-                        <ChevronRight size={16} color={baggageSelection ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                        <div className="settings-item__content">
+                          <span className="settings-item__label" style={{ color: baggageSelection ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                            {baggageSelection ? `${baggageSelection.category} (x${baggageSelection.quantity})` : 'Add Baggage Fee'}
+                          </span>
+                          <span className="settings-item__desc">
+                            {baggageSelection ? `₱${baggageSelection.fee.toFixed(2)}` : 'Optional - for passengers with baggage'}
+                          </span>
+                        </div>
+                        <ChevronRight size={16} color={baggageSelection ? 'var(--color-primary)' : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
                       </button>
                     </SoftCard>
 
                     {/* Confirm button */}
-                    <button
-                      type="button"
+                    <PrimaryButton
                       onClick={commitBoarding}
                       disabled={!selectedDestination}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        borderRadius: 14,
-                        border: 'none',
-                        background: selectedDestination
-                          ? 'linear-gradient(135deg, var(--color-primary), var(--color-primary))'
-                          : 'var(--color-border)',
-                        color: selectedDestination ? 'white' : 'var(--text-secondary)',
-                        fontWeight: 800,
-                        fontSize: '1.05rem',
-                        cursor: selectedDestination ? 'pointer' : 'not-allowed',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                        marginBottom: 10,
-                        boxShadow: selectedDestination ? '0 6px 20px rgba(var(--color-primary-rgb,59,130,246),0.35)' : 'none',
-                        transition: 'all 0.15s',
-                      }}
+                      fullWidth
+                      icon={<CheckCircle size={20} />}
+                      style={{ marginBottom: 10 }}
                     >
-                      <CheckCircle size={20} />
                       Confirm Boarding
                       {baggageSelection && (
                         <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.9 }}>
                           (Total: ₱{(pendingScan.fare + baggageSelection.fee).toFixed(2)})
                         </span>
                       )}
-                    </button>
+                    </PrimaryButton>
 
-                    <button
-                      type="button"
+                    <PrimaryButton
                       onClick={retryCamera}
-                      style={{
-                        width: '100%', padding: '12px', borderRadius: 12,
-                        border: '1.5px solid var(--color-border)', background: 'transparent',
-                        color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        marginBottom: 14,
-                      }}
+                      variant="ghost"
+                      icon={<RefreshCw size={15} />}
+                      style={{ marginBottom: 14 }}
                     >
-                      <RefreshCw size={15} /> Scan Different Card
-                    </button>
+                      Scan Different Card
+                    </PrimaryButton>
                   </motion.div>
                 )}
 
@@ -1697,7 +1686,7 @@ const ScanPage: React.FC = () => {
                       transition={{ duration: 0.25 }}
                     >
                       {/* Trip Summary Card */}
-                      <SoftCard style={{ marginBottom: 14, background: 'var(--color-warning-subtle)', border: '2px solid #A16207' }}>
+                      <SoftCard variant="accent-warning" style={{ marginBottom: 14 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                           <div style={{ width: 40, height: 40, borderRadius: 12, background: '#A16207', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <MapPin size={20} color="white" />
@@ -1774,47 +1763,33 @@ const ScanPage: React.FC = () => {
                         )}
 
                         {/* Confirm Button */}
-                        <button
-                          type="button"
+                        <PrimaryButton
                           onClick={confirmAlighting}
+                          variant="primary"
+                          fullWidth
+                          icon={<CheckCircle size={20} />}
                           style={{
-                            width: '100%',
-                            padding: '16px',
-                            borderRadius: 14,
-                            border: 'none',
-                            background: 'linear-gradient(135deg, #A16207, #FACC15)',
-                            color: 'white',
-                            fontWeight: 800,
-                            fontSize: '1.05rem',
-                            cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                             marginBottom: 10,
-                            boxShadow: '0 6px 20px rgba(161, 98, 7, 0.35)',
-                            transition: 'all 0.15s',
+                            background: 'linear-gradient(135deg, #A16207, #FACC15)',
+                            borderColor: '#A16207',
                           }}
                         >
-                          <CheckCircle size={20} />
                           Confirm Alighting
-                        </button>
+                        </PrimaryButton>
 
                         {/* Cancel Button */}
-                        <button
-                          type="button"
+                        <PrimaryButton
                           onClick={() => {
                             setPendingAlighting(null);
                             setGpsResult(null);
                             setScanState('scanning');
                           }}
-                          style={{
-                            width: '100%', padding: '12px', borderRadius: 12,
-                            border: '1.5px solid var(--color-border)', background: 'transparent',
-                            color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                            marginBottom: 14,
-                          }}
+                          variant="ghost"
+                          icon={<X size={15} />}
+                          style={{ marginBottom: 14 }}
                         >
-                          <X size={15} /> Cancel
-                        </button>
+                          Cancel
+                        </PrimaryButton>
                       </SoftCard>
                     </motion.div>
                   )}
@@ -1864,34 +1839,18 @@ const ScanPage: React.FC = () => {
           }}>
             {modalMessage}
           </p>
-          <button
-            type="button"
+          <PrimaryButton
             onClick={() => setShowModal(false)}
-            style={{
+            variant="primary"
+            style={{ 
               marginTop: 24,
-              padding: '12px 32px',
-              borderRadius: 12,
-              border: 'none',
               background: modalColor === 'success' ? '#10b981' :
                         modalColor === 'danger' ? '#ef4444' :
                         '#f59e0b',
-              color: 'white',
-              fontSize: '1rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'transform 0.2s, opacity 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.opacity = '0.9';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.opacity = '1';
             }}
           >
             OK
-          </button>
+          </PrimaryButton>
         </div>
       </AnimatedModal>
 

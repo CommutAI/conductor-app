@@ -14,6 +14,7 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState,
 } from '../components/ui';
@@ -104,6 +105,7 @@ const TripHistoryPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader showBack title="Trip History" subtitle="Your past trips" />
 
       <IonContent className="app-page-bg">
@@ -126,7 +128,7 @@ const TripHistoryPage: React.FC = () => {
           />
 
           {!loading && filteredTrips.length > 0 && (
-            <SoftCard variant="glass" style={{ marginBottom: 20, background: 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)' }}>
+            <SoftCard variant="hero" style={{ marginBottom: 20 }}>
               <p style={{ margin: '0 0 4px', fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>
                 Total Earnings
               </p>

@@ -18,7 +18,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
   value,
   icon: Icon,
   iconColor = 'var(--color-primary)',
-  iconBg = 'var(--color-primary-subtle)',
+  iconBg = 'rgba(249, 115, 22, 0.15)',
   trend,
   delay = 0,
   onClick,
@@ -31,7 +31,8 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
     onClick={onClick}
     role={onClick ? 'button' : undefined}
     tabIndex={onClick ? 0 : undefined}
-    style={{ padding: '10px' }}
+    whileHover={{ scale: 1.02, y: -2 }}
+    whileTap={{ scale: 0.98 }}
   >
     <div className="dashboard-kpi__icon" style={{ background: iconBg, color: iconColor, width: '32px', height: '32px' }}>
       <Icon size={16} strokeWidth={2.25} />

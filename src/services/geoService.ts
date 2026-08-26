@@ -275,3 +275,65 @@ export async function validateAlightingLocation(
     message: `${(match.distanceKm * 1000).toFixed(0)}m from nearest stop (${match.stop.name})`,
   };
 }
+
+// ── Simplified GPS: Get coordinates and decode location for display ─────────
+export interface GpsLocationResult {
+  success: boolean;
+  coordinates?: {
+    lat: number;
+    lng: number;
+    accuracy: number;
+  };
+  locationName?: string;
+  fullAddress?: string;
+  error?: string;
+}
+
+export async function getLocationAndDecode(): Promise<GpsLocationResult> {
+  try {
+    // 1. Get current GPS coordinates
+    const pos = await getCurrentPosition(10000);
+    
+    // 2. Reverse-geocode to get readable location
+    const geo = await reverseGeocode(pos.lat, pos.lng);
+    
+    if (!geo) {
+      return {
+        success: true,
+        coordinates: {
+          lat: pos.lat,
+          lng: pos.lng,
+          accuracy: pos.accuracy,
+        },
+        locationName: 'Unknown location',
+        fullAddress: `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`,
+      };
+    }
+    
+    // Extract meaningful location name
+    const locationName = 
+      geo.address.village ||
+      geo.address.suburb ||
+      geo.address.city_district ||
+      geo.address.town ||
+      geo.address.city ||
+      geo.display_name.split(',')[0] ||
+      'Current location';
+    
+    return {
+      success: true,
+      coordinates: {
+        lat: pos.lat,
+        lng: pos.lng,
+        accuracy: pos.accuracy,
+      },
+      locationName,
+      fullAddress: geo.display_name,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get location',
+    };
+  }
+}
