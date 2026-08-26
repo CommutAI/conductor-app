@@ -3,32 +3,32 @@ import SoftCard from './SoftCard';
 
 // Card template images live in /assets/ (copied from public/assets/ by Vite)
 const REGULAR_TEMPLATES: Record<string, string> = {
-  regular:        '/assets/regular.png',
-  student:        '/assets/student.png',
-  senior_citizen: '/assets/senior_citizien.png',
-  pwd:            '/assets/pwd.png',
+  regular:        '/assets/REGULAR.png',
+  student:        '/assets/STUDENT.png',
+  senior_citizen: '/assets/SENIOR-CITIZIEN.png',
+  pwd:            '/assets/PWD.png',
 };
 
 const TEMP_TEMPLATES: Record<string, string> = {
-  regular:        '/assets/temp-regular.png',
-  student:        '/assets/temp-student.png',
+  regular:        '/assets/TEMP-REG.png',
+  student:        '/assets/TEMP-STUD.png',
   senior_citizen: '/assets/temp-senior.png',
-  pwd:            '/assets/temp-pwd.png',
+  pwd:            '/assets/TEMP-PWD.png',
 };
 
 // Alternative paths to try if main path fails
 const ALT_REGULAR_TEMPLATES: Record<string, string> = {
-  regular:        './assets/regular.png',
-  student:        './assets/student.png',
-  senior_citizen: './assets/senior_citizien.png',
-  pwd:            './assets/pwd.png',
+  regular:        './assets/REGULAR.png',
+  student:        './assets/STUDENT.png',
+  senior_citizen: './assets/SENIOR-CITIZIEN.png',
+  pwd:            './assets/PWD.png',
 };
 
 const ALT_TEMP_TEMPLATES: Record<string, string> = {
-  regular:        './assets/temp-regular.png',
-  student:        './assets/temp-student.png',
+  regular:        './assets/TEMP-REG.png',
+  student:        './assets/TEMP-STUD.png',
   senior_citizen: './assets/temp-senior.png',
-  pwd:            './assets/temp-pwd.png',
+  pwd:            './assets/TEMP-PWD.png',
 };
 
 const TEMP_ID_COLORS: Record<string, string> = {
