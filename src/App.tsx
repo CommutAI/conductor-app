@@ -36,7 +36,7 @@ import TripHistoryPage from './pages/TripHistoryPage';
 
 setupIonicReact({
   mode: 'md',
-  animated: true,
+  animated: false,
 });
 
 addIcons({

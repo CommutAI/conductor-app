@@ -176,6 +176,15 @@ const HomePage: React.FC = () => {
         .eq('trip_id', currentTrip.id)
         .is('alighted_at', null);
 
+      // Load total fare collected from transactions
+      const { data: transactions } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('trip_id', currentTrip.id)
+        .eq('type', 'fare_validation');
+
+      const totalFare = transactions?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+
       // Load irregularities
       const { data: irregularities } = await supabase
         .from('fare_irregularities')
@@ -191,6 +200,7 @@ const HomePage: React.FC = () => {
       });
 
       setValidatedCount(passengerCount || 0);
+      setFareCollected(totalFare);
     } catch (err) {
       console.error('[HomePage] Error loading data:', err);
     }

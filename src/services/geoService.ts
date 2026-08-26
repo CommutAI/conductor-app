@@ -2,7 +2,10 @@
  * geoService.ts
  * Free GPS reverse-geocoding via Nominatim (OpenStreetMap) +
  * known stop coordinates for the Manolo Fortich ↔ Agora route.
+ * Includes circuit breaker pattern for GPS service resilience
  */
+
+import { withCircuitBreaker } from './circuitBreaker';
 
 export interface StopCoords {
   name: string;
@@ -138,17 +141,19 @@ export interface NominatimResult {
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<NominatimResult | null> {
-  try {
-    const url =
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`;
-    const res = await fetch(url, {
-      headers: { 'Accept-Language': 'en', 'User-Agent': 'CommutAI-ConductorApp/1.0' },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as NominatimResult;
-  } catch {
-    return null;
-  }
+  return withCircuitBreaker('gps', async () => {
+    try {
+      const url =
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`;
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'en', 'User-Agent': 'CommutAI-ConductorApp/1.0' },
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as NominatimResult;
+    } catch {
+      return null;
+    }
+  }, () => null); // Fallback: return null on circuit open
 }
 
 // ── Match current position to a known stop ────────────────────────────────────

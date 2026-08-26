@@ -90,7 +90,7 @@ export interface Transaction {
   card_id: string | null;
   temp_ticket_id: string | null;
   trip_id: string | null;
-  type: 'fare_validation' | 'balance_topup' | 'card_issuance' | 'boarding' | 'fare_payment';
+  type: 'fare_validation' | 'balance_topup' | 'card_issuance' | 'baggage_fee';
   amount: number;
   channel: string;
   staff_id: string | null;

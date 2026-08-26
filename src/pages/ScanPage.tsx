@@ -7,6 +7,7 @@ import {
   ScanLine, CheckCircle, CloudOff, RefreshCw,
   MapPin, AlertTriangle, X, CreditCard,
   XCircle, Navigation, ChevronRight, Package, Loader,
+  LogIn, LogOut as AlightIcon,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -78,8 +79,14 @@ function getRouteStops(route: string): string[] {
 
 // Helper to determine if camera should be visible
 function shouldShowCamera(scanState: ScanState): boolean {
-  console.log('shouldShowCamera:', scanState, 'result:', scanState === 'idle' || scanState === 'scanning');
-  return scanState === 'idle' || scanState === 'scanning';
+  return scanState === 'idle'
+    || scanState === 'scanning'
+    || scanState === 'payment_options'
+    || scanState === 'detected'
+    || scanState === 'processing'
+    || scanState === 'committing'
+    || scanState === 'success'
+    || scanState === 'failed';
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ type ScanState =
   | 'processing'
   | 'confirm_alighting'
   | 'pick_destination'
+  | 'payment_options'
   | 'committing'
   | 'success'
   | 'failed';
@@ -123,6 +131,22 @@ const ScanPage: React.FC = () => {
   const [baggageSelection, setBaggageSelection] = useState<BaggageSelection | null>(null);
   const [showBaggageSelector, setShowBaggageSelector] = useState(false);
   const [pendingAlighting, setPendingAlighting] = useState<any | null>(null);
+  const [alightingBaggageSelection, setAlightingBaggageSelection] = useState<BaggageSelection | null>(null);
+  const [showAlightingBaggageSelector, setShowAlightingBaggageSelector] = useState(false);
+  
+  // Payment options state (for insufficient balance scenarios)
+  const [pendingPayment, setPendingPayment] = useState<{
+    code: string;
+    balance: number;
+    fare: number;
+    baggageFee?: number;
+    baggageCategory?: string;
+    baggageWeight?: number;
+    totalFare: number;
+    destination?: string;
+    passengerType?: string;
+    cardId?: string;
+  } | null>(null);
 
 
   // Final result info
@@ -164,7 +188,9 @@ const ScanPage: React.FC = () => {
   ];
 
   useEffect(() => {
-    if (!isRestoringTrip && (!currentTrip || !currentBus)) history.replace('/');
+    if (!isRestoringTrip && (!currentTrip || !currentBus)) {
+      history.replace('/');
+    }
     return () => { cleanupScanner(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -244,6 +270,14 @@ const ScanPage: React.FC = () => {
   }
 
   const startCamera = useCallback(async () => {
+    // Guard: no active trip = no scanner
+    if (!currentTrip || !currentBus) {
+      showNotification('Start a trip before scanning', 'warning');
+      setScanState('idle');
+      history.replace('/');
+      return;
+    }
+
     setScanState('scanning');
     processingRef.current = false;
     cameraReadyRef.current = false;
@@ -336,7 +370,68 @@ const ScanPage: React.FC = () => {
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
     setScanState('scanning');
-    showNotification('Camera ready for scanning', 'success');
+  }
+
+  async function handleCashPayment() {
+    if (!pendingPayment || !currentTrip || !profile) return;
+    
+    try {
+      setScanState('processing');
+      
+      // Process the boarding with cash payment
+      const result = await processScan(
+        pendingPayment.code,
+        currentTrip.id,
+        profile.id,
+        currentBus?.route,
+        'onboarding',
+        pendingPayment.destination,
+        pendingPayment.baggageFee,
+        pendingPayment.baggageCategory,
+        pendingPayment.baggageWeight,
+        'cash',
+      );
+      
+      if (result.status === 'qr_pass') {
+        setValidatedCount(validatedCount + 1);
+        setBoardedCount(c => c + 1);
+        setPendingPayment(null);
+        setPendingScan(null);
+        setBaggageSelection(null);
+        setSelectedDestination('');
+        setSuccessMsg('Boarding successful (cash payment)');
+        setSuccessAmount(pendingPayment.totalFare);
+        setSuccessBalance(null); // No balance change for cash payment
+        setScanState('success');
+        setTimeout(async () => {
+          setSuccessMsg('');
+          setSuccessAmount(0);
+          setSuccessBalance(null);
+          processingRef.current = false;
+          lastScanTimeRef.current = 0;
+          lastScanCodeRef.current = '';
+          await cleanupScanner();
+          setScanState('idle');
+        }, 1500);
+      } else {
+        const errorMsg = (result as any).message || 'Cash payment failed';
+        setFailedMsg(errorMsg);
+        setScanState('failed');
+      }
+    } catch (err) {
+      console.error('Cash payment error:', err);
+      setFailedMsg(`Cash payment error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setScanState('failed');
+    }
+  }
+
+  async function handleContinueWithCard() {
+    if (!pendingPayment) return;
+    
+    // Prompt user to top up their card or use a different card
+    setPendingPayment(null);
+    setFailedMsg('Please top up your card or use a different payment method');
+    setScanState('failed');
   }
 
   // ── Core scan handler ─────────────────────────────────────────────────────
@@ -388,14 +483,12 @@ const ScanPage: React.FC = () => {
       if (!session) {
         setFailedMsg('Not authenticated. Please login again.');
         setScanState('failed');
-        showNotification('Not authenticated', 'danger');
         return;
       }
 
       if (!currentTrip) {
         setFailedMsg('No active trip found');
         setScanState('failed');
-        showNotification('No active trip', 'danger');
         return;
       }
 
@@ -415,31 +508,26 @@ const ScanPage: React.FC = () => {
           if (ticket.status === 'validated' || ticket.status === 'expired') {
             setFailedMsg(ticket.status === 'expired' ? 'Ticket expired' : 'Ticket already used');
             setScanState('failed');
-            showNotification(ticket.status === 'expired' ? 'Ticket expired' : 'Ticket already used', 'danger');
             return;
           }
 
           // Check if already boarded on this trip (prevent duplicate onboarding scans)
-          console.log('Checking for duplicate boarding for ticket:', ticket.id, 'on trip:', currentTrip.id);
-          const { data: boardedTicket, error: ticketBoardCheckError } = await supabase
+          const { data: boardedTicket } = await supabase
             .from('boarded_passengers')
-            .select('id, alighted_at')
+            .select('id')
             .eq('trip_id', currentTrip.id)
             .eq('temp_ticket_id', ticket.id)
+            .is('alighted_at', null)
+            .order('boarded_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-          console.log('Boarded ticket check result:', boardedTicket);
-          console.log('Boarded ticket check error:', ticketBoardCheckError);
-
-          if (boardedTicket && !boardedTicket.alighted_at) {
-            console.log('Duplicate scan detected - ticket already boarded');
+          if (boardedTicket) {
             setFailedMsg('Already boarded on this trip');
             setScanState('failed');
-            showNotification('Already boarded on this trip', 'warning');
             return;
           }
 
-          // Use prefix detection as primary source for tickets since database may not have passenger_type
           const passengerType = detectedType.passengerType;
           console.log('Ticket type determination', { prefixType: detectedType.passengerType, dbType: ticket.passenger_type, finalType: passengerType });
 
@@ -452,10 +540,8 @@ const ScanPage: React.FC = () => {
             cardUid: (ticket.ticket_uid || scannedCode).toUpperCase(),
             isTicket: true,
           });
-          // Don't auto-select destination - require manual selection
           setSelectedDestination('');
           setScanState('pick_destination');
-          showNotification('Ticket detected - select destination', 'success');
           return;
         }
       }
@@ -463,7 +549,7 @@ const ScanPage: React.FC = () => {
       // Try QR card
       const { data: card, error: cardError } = await supabase
         .from('qr_cards')
-        .select('id, balance, status, allowed_routes, destination, card_type, card_uid, owner_name')
+        .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid, owner_name')
         .eq('card_uid', normalizedCode)
         .maybeSingle();
 
@@ -472,10 +558,8 @@ const ScanPage: React.FC = () => {
 
       if (cardError) {
         console.error('Database query error:', cardError);
-        console.error('Error details:', JSON.stringify(cardError));
         setFailedMsg(`Database error: ${cardError.message}`);
         setScanState('failed');
-        showNotification('Database error', 'danger');
         return;
       }
 
@@ -483,39 +567,27 @@ const ScanPage: React.FC = () => {
         if (card.status !== 'active') {
           setFailedMsg('Card is inactive');
           setScanState('failed');
-          showNotification('Card is inactive', 'danger');
-          return;
-        }
-        if (card.balance < DEFAULT_FARE) {
-          setFailedMsg(`Insufficient balance ₱${card.balance.toFixed(2)} — need ₱${DEFAULT_FARE}`);
-          setScanState('failed');
-          showNotification('Insufficient balance', 'danger');
           return;
         }
 
-        // Check if already boarded on this trip (prevent duplicate onboarding scans)
-        console.log('Checking for duplicate boarding for card:', card.id, 'on trip:', currentTrip.id);
-        const { data: boardedPassenger, error: boardCheckError } = await supabase
+        const { data: boardedPassenger } = await supabase
           .from('boarded_passengers')
-          .select('id, alighted_at')
+          .select('id')
           .eq('trip_id', currentTrip.id)
           .eq('card_id', card.id)
+          .is('alighted_at', null)
+          .order('boarded_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        console.log('Boarded passenger check result:', boardedPassenger);
-        console.log('Boarded passenger check error:', boardCheckError);
-
-        if (boardedPassenger && !boardedPassenger.alighted_at) {
-          console.log('Duplicate scan detected - card already boarded');
+        if (boardedPassenger) {
           setFailedMsg('Already boarded on this trip');
           setScanState('failed');
-          showNotification('Already boarded on this trip', 'warning');
           return;
         }
 
-        // Use prefix detection as primary source for QR cards since database may have incorrect values
         const passengerType = detectedType.passengerType;
-        console.log('Card type determination', { prefixType: detectedType.passengerType, dbType: card.card_type, finalType: passengerType });
+        console.log('Card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
         setPendingScan({
           code: scannedCode,
@@ -524,25 +596,19 @@ const ScanPage: React.FC = () => {
           fare: DEFAULT_FARE,
           passengerType: passengerType,
           cardUid: (card.card_uid || scannedCode).toUpperCase(),
-          isTicket: false, // QR cards are never tickets
+          isTicket: false,
         });
-        // Don't auto-select destination - require manual selection
         setSelectedDestination('');
-        console.log('Setting scan state to pick_destination');
         setScanState('pick_destination');
-        showNotification('Card detected - select destination', 'success');
         return;
       }
 
-      console.log('No matching card or ticket found for:', scannedCode);
       setFailedMsg(`QR code not recognised`);
       setScanState('failed');
-      showNotification('QR code not recognised', 'danger');
     } catch (err) {
       console.error('Scan processing error:', err);
       setFailedMsg(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
-      showNotification('Scan processing error', 'danger');
     }
   }
 
@@ -565,11 +631,18 @@ const ScanPage: React.FC = () => {
       setScanState('failed');
       return;
     }
-    await commitBoardingWithDestination(pendingScan.code, selectedDestination);
+
+    // If balance is insufficient, go straight to cash payment
+    const totalRequired = pendingScan.fare + (baggageSelection?.fee || 0);
+    if (!pendingScan.isTicket && pendingScan.balance < totalRequired) {
+      await commitBoardingWithDestination(pendingScan.code, selectedDestination, 'cash');
+    } else {
+      await commitBoardingWithDestination(pendingScan.code, selectedDestination, 'card');
+    }
   }
 
   /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
-  async function commitBoardingWithDestination(code: string, destination: string) {
+  async function commitBoardingWithDestination(code: string, destination: string, paymentMethod: 'card' | 'cash' = 'card') {
     if (!currentTrip || !profile) {
       console.error('Missing currentTrip or profile in commitBoardingWithDestination');
       setFailedMsg('Missing trip or profile data');
@@ -579,7 +652,7 @@ const ScanPage: React.FC = () => {
     setScanState('committing');
 
     try {
-      console.log('Committing boarding with code:', code, 'destination:', destination);
+      console.log('Committing boarding with code:', code, 'destination:', destination, 'payment:', paymentMethod);
       console.log('Current trip ID:', currentTrip.id);
       console.log('Profile ID:', profile.id);
       console.log('Bus route:', currentBus?.route);
@@ -590,7 +663,10 @@ const ScanPage: React.FC = () => {
         currentBus?.route,
         'onboarding',
         destination,
-        baggageSelection?.fee || 0
+        baggageSelection?.fee || 0,
+        baggageSelection?.category,
+        baggageSelection?.weight,
+        paymentMethod,
       );
       console.log('Process scan result:', result);
       console.log('Result status:', result.status);
@@ -604,16 +680,20 @@ const ScanPage: React.FC = () => {
           setBaggageSelection(null);
           setSelectedDestination('');
           setScanState('success');
-          showNotification('Boarding successful', 'success');
-          // Auto-restart scanner after successful onboarding
-          setTimeout(() => {
+          setSuccessMsg(paymentMethod === 'cash' ? 'Boarded — cash payment recorded' : 'Boarding successful');
+          setSuccessAmount(result.totalFare || 0);
+          setSuccessBalance(paymentMethod === 'cash' ? null : result.newBalance);
+          // Return to idle (mode selector) after successful onboarding
+          setTimeout(async () => {
+            setSuccessMsg('');
+            setSuccessAmount(0);
+            setSuccessBalance(null);
             processingRef.current = false;
             lastScanTimeRef.current = 0;
             lastScanCodeRef.current = '';
-            setScanState('scanning');
-            // Restart camera if needed
-            startCamera();
-          }, 2000);
+            await cleanupScanner();
+            setScanState('idle');
+          }, 1500);
           break;
         case 'ticket_validated':
           setValidatedCount(validatedCount + 1);
@@ -622,30 +702,43 @@ const ScanPage: React.FC = () => {
           setBaggageSelection(null);
           setSelectedDestination('');
           setScanState('success');
-          showNotification('Ticket boarded successfully', 'success');
-          // Auto-restart scanner after successful onboarding
-          setTimeout(() => {
+          setSuccessMsg('Ticket boarded successfully');
+          setSuccessAmount(0);
+          setSuccessBalance(null);
+          // Return to idle (mode selector) after successful onboarding
+          setTimeout(async () => {
+            setSuccessMsg('');
+            setSuccessAmount(0);
+            setSuccessBalance(null);
             processingRef.current = false;
             lastScanTimeRef.current = 0;
             lastScanCodeRef.current = '';
-            setScanState('scanning');
-            // Restart camera if needed
-            startCamera();
-          }, 2000);
+            await cleanupScanner();
+            setScanState('idle');
+          }, 1500);
           break;
         case 'duplicate_scan':
           setFailedMsg('Already boarded on this trip');
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-          showNotification('Already boarded on this trip', 'warning');
           break;
         case 'qr_fail_balance':
           const neededFare = result.totalFare || result.fare;
-          setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${neededFare.toFixed(2)}`);
-          setScanState('failed');
-          setBaggageSelection(null);
-          setSelectedDestination('');
+          // Show payment options instead of failing
+          setPendingPayment({
+            code: pendingScan?.code || '',
+            balance: result.balance,
+            fare: result.fare,
+            baggageFee: result.baggageFee,
+            baggageCategory: baggageSelection?.category,
+            baggageWeight: baggageSelection?.weight,
+            totalFare: neededFare,
+            destination: pendingScan?.cardDestination || selectedDestination,
+            passengerType: pendingScan?.passengerType,
+            cardId: pendingScan?.code, // This would be the card ID in a real implementation
+          });
+          setScanState('payment_options');
           break;
         case 'qr_inactive':
           setFailedMsg('Card is inactive');
@@ -688,7 +781,6 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-          showNotification(result.message || 'An error occurred', 'danger');
           break;
         case 'not_found':
           setFailedMsg('QR code not recognised');
@@ -702,7 +794,6 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-          showNotification('Unknown error occurred', 'danger');
           break;
           setBaggageSelection(null);
           setSelectedDestination('');
@@ -737,14 +828,12 @@ const ScanPage: React.FC = () => {
       if (!session) {
         setFailedMsg('Not authenticated. Please login again.');
         setScanState('failed');
-        showNotification('Not authenticated', 'danger');
         return;
       }
 
       if (!currentTrip) {
         setFailedMsg('No active trip found');
         setScanState('failed');
-        showNotification('No active trip', 'danger');
         return;
       }
 
@@ -764,35 +853,23 @@ const ScanPage: React.FC = () => {
           if (ticket.status === 'validated' || ticket.status === 'expired') {
             setFailedMsg(ticket.status === 'expired' ? 'Ticket expired' : 'Ticket already used');
             setScanState('failed');
-            showNotification(ticket.status === 'expired' ? 'Ticket expired' : 'Ticket already used', 'danger');
             return;
           }
 
-          // Check if already boarded on this trip (prevent duplicate alighting scans)
-          console.log('Checking for duplicate alighting for ticket:', ticket.id, 'on trip:', currentTrip.id);
-          const { data: boardedTicket, error: ticketBoardCheckError } = await supabase
+          // Check if there's an active (unalighted) boarding for this ticket on this trip
+          const { data: boardedTicket } = await supabase
             .from('boarded_passengers')
             .select('id, alighted_at')
             .eq('trip_id', currentTrip.id)
             .eq('temp_ticket_id', ticket.id)
+            .is('alighted_at', null)
+            .order('boarded_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-          console.log('Boarded ticket check result:', boardedTicket);
-          console.log('Boarded ticket check error:', ticketBoardCheckError);
-
           if (!boardedTicket) {
-            console.log('Ticket not boarded on this trip');
             setFailedMsg('Ticket not boarded on this trip');
             setScanState('failed');
-            showNotification('Ticket not boarded on this trip', 'danger');
-            return;
-          }
-
-          if (boardedTicket.alighted_at) {
-            console.log('Duplicate scan detected - ticket already alighted');
-            setFailedMsg('Already alighted on this trip');
-            setScanState('failed');
-            showNotification('Already alighted', 'warning');
             return;
           }
 
@@ -815,7 +892,7 @@ const ScanPage: React.FC = () => {
       // Step 2 — Try QR card (like onboarding)
       const { data: card } = await supabase
         .from('qr_cards')
-        .select('id, destination, status, balance')
+        .select('id, destination, status, balance, passenger_type, card_uid, owner_name')
         .eq('card_uid', normalizedCode)
         .maybeSingle();
 
@@ -824,49 +901,64 @@ const ScanPage: React.FC = () => {
       if (!card) {
         setFailedMsg('QR code not recognised');
         setScanState('failed');
-        showNotification('QR code not recognised', 'danger');
         return;
       }
 
       if (card.status !== 'active') {
         setFailedMsg('Card is inactive');
         setScanState('failed');
-        showNotification('Card is inactive', 'danger');
         return;
       }
 
       // Check if already boarded on this trip (prevent duplicate alighting scans)
       console.log('[Alighting] Checking for boarded passenger - card:', card.id, 'trip:', currentTrip.id);
-      const { data: boardedPassenger, error: boardCheckError } = await supabase
+      
+      // Look for the most recent active (unalighted) boarding for this card on this trip
+      let boardedPassenger = await supabase
         .from('boarded_passengers')
         .select('id, alighted_at, boarded_at')
         .eq('trip_id', currentTrip.id)
         .eq('card_id', card.id)
+        .is('alighted_at', null)
+        .order('boarded_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      console.log('[Alighting] Boarded passenger check result:', boardedPassenger);
-      console.log('[Alighting] Boarded passenger check error:', boardCheckError);
-
-      if (!boardedPassenger) {
-        console.log('[Alighting] Card not boarded on this trip - checking all boarded passengers for this trip');
-        // Debug: Check all boarded passengers for this trip to see what's there
-        const { data: allBoarded } = await supabase
+      // If not found by card_id, try by temp_ticket_id
+      if (!boardedPassenger.data) {
+        console.log('[Alighting] Not found by card_id, trying temp_ticket_id lookup');
+        boardedPassenger = await supabase
           .from('boarded_passengers')
-          .select('*')
-          .eq('trip_id', currentTrip.id);
-        console.log('[Alighting] All boarded passengers for this trip:', allBoarded);
-        
-        setFailedMsg('Card not boarded on this trip');
-        setScanState('failed');
-        showNotification('Card not boarded on this trip', 'danger');
-        return;
+          .select('id, alighted_at, boarded_at')
+          .eq('trip_id', currentTrip.id)
+          .eq('temp_ticket_id', card.id)
+          .is('alighted_at', null)
+          .order('boarded_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
       }
 
-      if (boardedPassenger.alighted_at) {
-        console.log('Duplicate scan detected - card already alighted');
-        setFailedMsg('Already alighted on this trip');
+      const actualBoardedPassenger = boardedPassenger.data;
+
+      // Fetch fare and baggage info from boarding transaction
+      const { data: boardingTransaction } = await supabase
+        .from('transactions')
+        .select('amount, baggage_category, baggage_weight, baggage_fee, channel')
+        .eq('card_id', card.id)
+        .eq('trip_id', currentTrip.id)
+        .eq('type', 'fare_validation')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      console.log('[Alighting] Boarding transaction result:', boardingTransaction);
+
+      console.log('[Alighting] Boarded passenger check result:', actualBoardedPassenger);
+      console.log('[Alighting] Boarded passenger check error:', boardedPassenger.error);
+
+      if (!actualBoardedPassenger) {
+        setFailedMsg('Card not boarded on this trip');
         setScanState('failed');
-        showNotification('Already alighted', 'warning');
         return;
       }
 
@@ -892,14 +984,32 @@ const ScanPage: React.FC = () => {
       }
 
       // Step 4 — Show confirmation with trip summary before processing
-      const fare = 12; // Default fare - could be calculated based on route
+      // transaction.amount = totalFare (base + baggage) as stored by fareService
+      const txAmount = boardingTransaction?.amount || 12;
+      const baggageFee = boardingTransaction?.baggage_fee || 0;
+      const baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
+      const totalFare = txAmount;               // amount IS already the total — no re-addition needed
+      
+      // Use prefix detection as primary source for QR cards since database may have incorrect values
+      const passengerType = detectedType.passengerType;
+      console.log('Alighting card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
+      
       setPendingAlighting({
         code: scannedCode,
         cardId: card.id,
         destination: card.destination,
         balance: card.balance,
-        fare: fare,
+        fare: baseFare,
+        totalFare: totalFare,
         route: currentBus?.route || '',
+        cardType: passengerType,
+        cardUid: card.card_uid,
+        paymentMethod: boardingTransaction?.channel || 'qr_card',
+        baggageInfo: boardingTransaction ? {
+          category: boardingTransaction.baggage_category,
+          weight: boardingTransaction.baggage_weight,
+          fee: boardingTransaction.baggage_fee,
+        } : null,
       });
       setScanState('confirm_alighting');
     } catch (err) {
@@ -907,7 +1017,6 @@ const ScanPage: React.FC = () => {
       setGpsValidating(false);
       setFailedMsg(`Alighting error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
-      showNotification('Alighting error', 'danger');
     }
   }
 
@@ -930,19 +1039,17 @@ const ScanPage: React.FC = () => {
       setGpsResult(null);
       setPendingAlighting(null);
       setScanState('success');
-      showNotification('Alighting successful!', 'success');
-      // Auto-restart scanner after successful alighting
-      setTimeout(() => {
+      // Return to idle (mode selector) after successful alighting
+      setTimeout(async () => {
         setSuccessMsg('');
         setSuccessAmount(0);
         setSuccessBalance(null);
         processingRef.current = false;
         lastScanTimeRef.current = 0;
         lastScanCodeRef.current = '';
-        setScanState('scanning');
-        // Restart camera if needed
-        startCamera();
-      }, 2000);
+        await cleanupScanner();
+        setScanState('idle');
+      }, 1500);
     } else if (result.status === 'ticket_validated') {
       console.log('[handleAlightingResult] Processing ticket_validated success');
       setValidatedCount(validatedCount + 1);
@@ -955,54 +1062,40 @@ const ScanPage: React.FC = () => {
       setGpsResult(null);
       setPendingAlighting(null);
       setScanState('success');
-      showNotification('Ticket alighted successfully!', 'success');
-      // Auto-restart scanner after successful alighting
-      setTimeout(() => {
+      // Return to idle (mode selector) after successful alighting
+      setTimeout(async () => {
         setSuccessMsg('');
         setSuccessAmount(0);
         setSuccessBalance(null);
         processingRef.current = false;
         lastScanTimeRef.current = 0;
         lastScanCodeRef.current = '';
-        setScanState('scanning');
-        // Restart camera if needed
-        startCamera();
-      }, 2000);
+        await cleanupScanner();
+        setScanState('idle');
+      }, 1500);
     } else if (result.status === 'qr_fail_balance') {
-      console.log('[handleAlightingResult] Insufficient balance error');
       setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${result.fare}`);
       setScanState('failed');
-      showNotification('Insufficient balance', 'danger');
     } else if (result.status === 'error') {
-      console.log('[handleAlightingResult] Error:', result.message);
       setFailedMsg(result.message);
       setScanState('failed');
-      showNotification(result.message || 'Alighting error', 'danger');
     } else if (result.status === 'duplicate_scan') {
-      console.log('[handleAlightingResult] Duplicate scan - this is expected after successful alighting');
-      // Don't show error for duplicate scans after successful alighting - just reset to scanning
+      // Passenger already alighted — quietly return to scanning
       setGpsResult(null);
       setPendingAlighting(null);
       processingRef.current = false;
       lastScanTimeRef.current = 0;
       lastScanCodeRef.current = '';
       setScanState('scanning');
-      showNotification('Passenger already alighted', 'warning');
     } else if (result.status === 'qr_inactive') {
-      console.log('[handleAlightingResult] Card inactive');
       setFailedMsg('Card is inactive');
       setScanState('failed');
-      showNotification('Card is inactive', 'danger');
     } else if (result.status === 'not_found') {
-      console.log('[handleAlightingResult] Not found');
       setFailedMsg('QR code not recognised');
       setScanState('failed');
-      showNotification('QR code not recognised', 'danger');
     } else {
-      console.log('[handleAlightingResult] Unknown status:', result.status);
       setFailedMsg('Alighting failed - unexpected error');
       setScanState('failed');
-      showNotification('Alighting failed', 'danger');
     }
   }
 
@@ -1109,17 +1202,19 @@ const ScanPage: React.FC = () => {
             <>
               {/* Hero */}
               <SoftCard variant="glass" style={{ marginBottom: 20, padding: '32px 24px', textAlign: 'center' }}>
-                <motion.div
-                  style={{ width: 80, height: 80, borderRadius: 24, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}
-                  animate={{ scale: [1, 1.06, 1] }}
-                  transition={{ duration: 2.5, repeat: Infinity }}
-                >
-                  {scanType === 'alighting' ? (
-                    <MapPin size={40} color="var(--color-primary)" strokeWidth={1.5} />
-                  ) : (
-                    <ScanLine size={40} color="var(--color-primary)" strokeWidth={1.5} />
-                  )}
-                </motion.div>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                  <motion.div
+                    style={{ width: 80, height: 80, borderRadius: 24, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    animate={{ scale: [1, 1.06, 1] }}
+                    transition={{ duration: 2.5, repeat: Infinity }}
+                  >
+                    {scanType === 'alighting' ? (
+                      <MapPin size={40} color="var(--color-primary)" strokeWidth={1.5} />
+                    ) : (
+                      <ScanLine size={40} color="var(--color-primary)" strokeWidth={1.5} />
+                    )}
+                  </motion.div>
+                </div>
                 <h2 style={{ color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>
                   {isOnline ? (scanType === 'alighting' ? 'Alighting Scanner' : 'Onboarding Scanner') : 'Offline Scanner'}
                 </h2>
@@ -1135,9 +1230,11 @@ const ScanPage: React.FC = () => {
                 <h4 className="heading-small" style={{ marginBottom: 12 }}>Scan Mode</h4>
                 <div style={{ display: 'flex', gap: 12, marginBottom: scanType === 'alighting' && routeStops.length > 0 ? 16 : 0 }}>
                   <button type="button" className={`scanner-type-btn ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`} onClick={() => setScanType('onboarding')}>
+                    <span className="scanner-type-btn__icon"><LogIn size={18} /></span>
                     Onboarding
                   </button>
                   <button type="button" className={`scanner-type-btn ${scanType === 'alighting' ? 'scanner-type-btn--active' : ''}`} onClick={() => setScanType('alighting')}>
+                    <span className="scanner-type-btn__icon"><AlightIcon size={18} /></span>
                     Alighting
                   </button>
                 </div>
@@ -1432,6 +1529,94 @@ const ScanPage: React.FC = () => {
                       </PrimaryButton>
                     </motion.div>
                   )}
+
+                  {/* ── Payment Options (Insufficient Balance) ── */}
+                  {scanState === 'payment_options' && pendingPayment && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, minHeight: 220, padding: '24px 20px' }}
+                    >
+                      <div style={{ 
+                        width: 56, height: 56, borderRadius: '50%', 
+                        background: 'linear-gradient(135deg, #F59E0B, #EF4444)', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}>
+                        <AlertTriangle size={28} color="white" />
+                      </div>
+                      <span style={{ color: 'white', fontWeight: 800, fontSize: '1.15rem', textAlign: 'center' }}>Insufficient Balance</span>
+                      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500, fontSize: '0.88rem', textAlign: 'center' }}>
+                        Card balance: ₱{pendingPayment.balance.toFixed(2)}<br />
+                        Required: ₱{pendingPayment.totalFare.toFixed(2)}
+                      </span>
+                      
+                      <div style={{ 
+                        width: '100%', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        borderRadius: 12, 
+                        padding: '16px',
+                        marginTop: 8
+                      }}>
+                        <p style={{ 
+                          margin: '0 0 12px', 
+                          fontSize: '0.85rem', 
+                          fontWeight: 600, 
+                          color: 'rgba(255,255,255,0.9)',
+                          textAlign: 'center'
+                        }}>
+                          Choose payment method:
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <PrimaryButton
+                            onClick={() => handleCashPayment()}
+                            variant="primary"
+                            icon={<CreditCard size={18} />}
+                            style={{
+                              background: 'linear-gradient(135deg, #22C55E, #16A34A)',
+                              borderColor: '#22C55E',
+                              padding: '14px 20px',
+                            }}
+                          >
+                            Pay in Cash
+                          </PrimaryButton>
+                          <PrimaryButton
+                            onClick={() => handleContinueWithCard()}
+                            variant="ghost"
+                            icon={<RefreshCw size={18} />}
+                            style={{
+                              borderColor: 'rgba(255,255,255,0.3)',
+                              color: 'white',
+                              background: 'rgba(255,255,255,0.1)',
+                              padding: '14px 20px',
+                            }}
+                          >
+                            Continue with Card
+                          </PrimaryButton>
+                        </div>
+                      </div>
+                      
+                      <PrimaryButton
+                        onClick={() => {
+                          setPendingPayment(null);
+                          setPendingScan(null);
+                          setBaggageSelection(null);
+                          setSelectedDestination('');
+                          retryCamera();
+                        }}
+                        variant="ghost"
+                        icon={<X size={16} />}
+                        style={{
+                          marginTop: 8,
+                          borderColor: 'rgba(255,255,255,0.2)',
+                          color: 'rgba(255,255,255,0.7)',
+                          background: 'transparent',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        Cancel
+                      </PrimaryButton>
+                    </motion.div>
+                  )}
                 </div>
 
                 {/* Status bar */}
@@ -1462,72 +1647,22 @@ const ScanPage: React.FC = () => {
                     exit={{ opacity: 0, y: 20 }}
                     transition={{ duration: 0.25 }}
                   >
-                    {/* Visual QR Card — canvas composite of template + QR */}
+                    {/* Visual QR Card */}
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.3 }}
                       style={{ marginBottom: 16, minHeight: '200px' }}
                     >
-                      {pendingScan && (
-                        <>
-                          <QRCardCanvas
-                            cardUid={pendingScan.cardUid || pendingScan.code}
-                            balance={pendingScan.balance}
-                            passengerType={pendingScan.passengerType}
-                            isTicket={pendingScan.isTicket}
-                          />
-                        </>
-                      )}
-
-                      {/* Fare total strip - styled with glass effect */}
-                      <SoftCard 
-                        variant="accent-primary" 
-                        padding="md"
-                        style={{
-                          borderTop: 'none',
-                          borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
-                          marginTop: '-2px',
-                          position: 'relative',
-                          zIndex: 1,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 600 }}>
-                            Base Fare
-                          </span>
-                          <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                            ₱{pendingScan.fare.toFixed(2)}
-                          </span>
-                        </div>
-                        {baggageSelection && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 600 }}>
-                              Baggage Fee ({baggageSelection.quantity}x {baggageSelection.category})
-                            </span>
-                            <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                              ₱{baggageSelection.fee.toFixed(2)}
-                            </span>
-                          </div>
-                        )}
-                        <div style={{
-                          height: 1,
-                          background: 'var(--color-primary)',
-                          opacity: 0.3,
-                          margin: '6px 0',
-                        }}></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--color-primary)', fontWeight: 700 }}>
-                            Total
-                          </span>
-                          <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                            ₱{(pendingScan.fare + (baggageSelection?.fee || 0)).toFixed(2)}
-                          </span>
-                        </div>
-                      </SoftCard>
+                      <QRCardCanvas
+                        cardUid={pendingScan.cardUid || pendingScan.code}
+                        balance={pendingScan.balance}
+                        passengerType={pendingScan.passengerType}
+                        isTicket={pendingScan.isTicket}
+                      />
                     </motion.div>
 
-                    {/* Destination picker */}
+                    {/* Destination picker + GPS + Baggage + Fare — all in one card */}
                     <SoftCard variant="glass" style={{ marginBottom: 14 }}>
                       {/* From (current GPS stop) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -1556,7 +1691,7 @@ const ScanPage: React.FC = () => {
                       </div>
 
                       {/* To — native select dropdown */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                         <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <Navigation size={16} color="var(--color-primary)" />
                         </div>
@@ -1582,13 +1717,13 @@ const ScanPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* GPS Location Display */}
+                      {/* GPS confirmed badge */}
                       {currentStopName && (
                         <motion.div
                           initial={{ opacity: 0, y: -10 }}
                           animate={{ opacity: 1, y: 0 }}
                           style={{
-                            marginTop: 12,
+                            marginBottom: 12,
                             padding: '10px 14px',
                             borderRadius: 10,
                             background: 'rgba(16, 185, 129, 0.1)',
@@ -1614,23 +1749,25 @@ const ScanPage: React.FC = () => {
                           </div>
                         </motion.div>
                       )}
-                    </SoftCard>
 
-                    {/* Baggage fee selector */}
-                    <SoftCard variant="glass" style={{ marginBottom: 14 }}>
+                      {/* Divider */}
+                      <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0 12px' }} />
+
+                      {/* Baggage fee selector */}
                       <button
                         type="button"
                         onClick={() => setShowBaggageSelector(true)}
                         className="settings-item glass-card"
                         style={{
-                          padding: '14px 16px',
-                          marginBottom: 0,
+                          padding: '12px 14px',
+                          marginBottom: 12,
                           border: baggageSelection ? '2px solid var(--color-primary)' : '1px solid var(--glass-border)',
                           background: baggageSelection ? 'var(--color-primary-subtle)' : 'var(--glass-bg)',
                         }}
                       >
                         <div className="settings-item__icon" style={{
                           background: baggageSelection ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                          width: 36, height: 36,
                         }}>
                           <Package size={16} color={baggageSelection ? 'white' : 'var(--text-secondary)'} />
                         </div>
@@ -1639,39 +1776,97 @@ const ScanPage: React.FC = () => {
                             {baggageSelection ? `${baggageSelection.category} (x${baggageSelection.quantity})` : 'Add Baggage Fee'}
                           </span>
                           <span className="settings-item__desc">
-                            {baggageSelection ? `₱${baggageSelection.fee.toFixed(2)}` : 'Optional - for passengers with baggage'}
+                            {baggageSelection ? `₱${baggageSelection.fee.toFixed(2)}` : 'Optional — for passengers with baggage'}
                           </span>
                         </div>
                         <ChevronRight size={16} color={baggageSelection ? 'var(--color-primary)' : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
                       </button>
+
+                      {/* Fare breakdown */}
+                      <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Base Fare</span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            ₱{pendingScan.fare.toFixed(2)}
+                          </span>
+                        </div>
+                        {baggageSelection && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              Baggage ({baggageSelection.quantity}× {baggageSelection.category})
+                            </span>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              ₱{baggageSelection.fee.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                        <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.88rem', color: 'var(--color-primary)', fontWeight: 800 }}>Total</span>
+                          <span style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--color-primary)' }}>
+                            ₱{(pendingScan.fare + (baggageSelection?.fee || 0)).toFixed(2)}
+                          </span>
+                        </div>
+
+                        {/* Low balance warning */}
+                        {!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0)) && (
+                          <div style={{
+                            marginTop: 10,
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}>
+                            <AlertTriangle size={14} color="#EF4444" style={{ flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#EF4444', display: 'block' }}>
+                                Insufficient Balance — ₱{pendingScan.balance.toFixed(2)} available
+                              </span>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                Tap confirm to pay in cash
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </SoftCard>
 
-                    {/* Confirm button */}
-                    <PrimaryButton
-                      onClick={commitBoarding}
-                      disabled={!selectedDestination}
-                      fullWidth
-                      icon={<CheckCircle size={20} />}
-                      style={{ marginBottom: 10 }}
-                    >
-                      Confirm Boarding
-                      {baggageSelection && (
-                        <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.9 }}>
-                          (Total: ₱{(pendingScan.fare + baggageSelection.fee).toFixed(2)})
-                        </span>
-                      )}
-                    </PrimaryButton>
-
-                    <PrimaryButton
-                      onClick={retryCamera}
-                      variant="ghost"
-                      icon={<RefreshCw size={15} />}
-                      style={{ marginBottom: 14 }}
-                    >
-                      Scan Different Card
-                    </PrimaryButton>
+                    {/* Button Row - Confirm and Cancel */}
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                      <PrimaryButton
+                        onClick={retryCamera}
+                        variant="ghost"
+                        icon={<RefreshCw size={15} />}
+                        style={{ flex: 1 }}
+                      >
+                        Cancel
+                      </PrimaryButton>
+                      <PrimaryButton
+                        onClick={commitBoarding}
+                        disabled={!selectedDestination}
+                        icon={
+                          !pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))
+                            ? <CreditCard size={20} />
+                            : <CheckCircle size={20} />
+                        }
+                        style={{
+                          flex: 1,
+                          ...((!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))) && {
+                            background: 'linear-gradient(135deg, #22C55E, #16A34A)',
+                          }),
+                        }}
+                      >
+                        {!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))
+                          ? 'Pay in Cash'
+                          : 'Confirm Boarding'}
+                      </PrimaryButton>
+                    </div>
                   </motion.div>
                 )}
+              </AnimatePresence>
 
                 {/* ══════════════════════════════════════════════════════════
                     ALIGHTING CONFIRMATION
@@ -1684,147 +1879,212 @@ const ScanPage: React.FC = () => {
                       exit={{ opacity: 0, y: 20 }}
                       transition={{ duration: 0.25 }}
                     >
-                      {/* Visual QR Card Display */}
+                      {/* Onboarding Summary (replaces card display) */}
                       <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3 }}
-                        style={{ marginBottom: 16, minHeight: '200px' }}
+                        style={{ marginBottom: 16 }}
                       >
-                        <QRCardCanvas
-                          cardUid={pendingAlighting.code}
-                          balance={pendingAlighting.balance}
-                          passengerType="regular" // Default to regular for alighting
-                          isTicket={false}
-                        />
-                        
-                        {/* Fare strip for alighting */}
-                        <SoftCard 
-                          variant="accent-warning" 
-                          padding="md"
-                          style={{
-                            borderTop: 'none',
-                            borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
-                            marginTop: '-2px',
-                            position: 'relative',
-                            zIndex: 1,
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.85rem', color: '#A16207', fontWeight: 700 }}>
-                              Fare to Deduct
-                            </span>
-                            <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#A16207' }}>
-                              ₱{pendingAlighting.fare.toFixed(2)}
-                            </span>
+                        <SoftCard variant="glass" style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <MapPin size={20} color="white" />
+                            </div>
+                            <div>
+                              <h4 className="heading-small" style={{ margin: 0, color: 'var(--color-primary)' }}>Alighting Confirmation</h4>
+                              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Review trip details before confirming</p>
+                            </div>
                           </div>
-                        </SoftCard>
-                      </motion.div>
 
-                      {/* Trip Summary Card */}
-                      <SoftCard variant="accent-warning" style={{ marginBottom: 14 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                          <div style={{ width: 40, height: 40, borderRadius: 12, background: '#A16207', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <MapPin size={20} color="white" />
+                          {/* Card ID */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Card ID</p>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                              {pendingAlighting.cardUid || pendingAlighting.code}
+                            </p>
                           </div>
-                          <div>
-                            <h4 className="heading-small" style={{ margin: 0, color: '#A16207' }}>Alighting Confirmation</h4>
-                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Review trip details before confirming</p>
+
+                          {/* Route */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Route</p>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                              {pendingAlighting.route}
+                            </p>
                           </div>
-                        </div>
 
-                        {/* Route */}
-                        <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
-                          <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Route</p>
-                          <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                            {pendingAlighting.route}
-                          </p>
-                        </div>
+                          {/* Destination */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Destination</p>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--color-primary)' }}>
+                              {pendingAlighting.destination}
+                            </p>
+                          </div>
 
-                        {/* Destination */}
-                        <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
-                          <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Destination</p>
-                          <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: '#A16207' }}>
-                            {pendingAlighting.destination}
-                          </p>
-                        </div>
+                          {/* Boarded information */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Boarded</p>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: '#10b981' }}>
+                              ✓ Passenger boarded on this trip
+                            </p>
+                          </div>
 
-
-                        {/* GPS Location Status */}
-                        {gpsResult && (
-                          <div style={{
-                            padding: '12px 14px',
-                            borderRadius: 10,
-                            background: gpsResult.status === 'confirmed'
-                              ? 'rgba(34,197,94,0.12)'
-                              : gpsResult.status === 'mismatch'
-                              ? 'rgba(239,68,68,0.12)'
-                              : 'rgba(250,204,21,0.12)',
-                            border: `1px solid ${
-                              gpsResult.status === 'confirmed'
-                                ? 'rgba(34,197,94,0.3)'
-                                : gpsResult.status === 'mismatch'
-                                ? 'rgba(239,68,68,0.3)'
-                                : 'rgba(250,204,21,0.3)'
-                            }`,
-                            backdropFilter: 'blur(8px)',
-                            WebkitBackdropFilter: 'blur(8px)',
-                            marginBottom: 16,
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <MapPin size={18} color={
-                                gpsResult.status === 'confirmed' ? '#16a34a' :
-                                gpsResult.status === 'mismatch' ? '#dc2626' : '#A16207'
-                              } />
-                              <div style={{ flex: 1 }}>
-                                <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 700, color: 
-                                  gpsResult.status === 'confirmed' ? '#16a34a' :
-                                  gpsResult.status === 'mismatch' ? '#dc2626' : '#A16207',
-                                }}>
-                                  {gpsResult.status === 'confirmed' ? 'Location Matched' : 
-                                   gpsResult.status === 'mismatch' ? 'Location Mismatch' : 'Location Warning'}
-                                </p>
-                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                  {gpsResult.message}
-                                </p>
+                          {/* Payment Method */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Payment Method</p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              {/* QR Card option */}
+                              <div style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                padding: '10px 14px',
+                                borderRadius: 10,
+                                border: `2px solid ${pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--glass-border)'}`,
+                                background: pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary-subtle)' : 'transparent',
+                                opacity: pendingAlighting.paymentMethod === 'qr_card' ? 1 : 0.45,
+                              }}>
+                                <CreditCard size={16} color={pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)' }}>
+                                  QR Card
+                                </span>
+                                {pendingAlighting.paymentMethod === 'qr_card' && (
+                                  <CheckCircle size={13} color="var(--color-primary)" />
+                                )}
+                              </div>
+                              {/* Cash option */}
+                              <div style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                padding: '10px 14px',
+                                borderRadius: 10,
+                                border: `2px solid ${pendingAlighting.paymentMethod === 'cash' ? '#22C55E' : 'var(--glass-border)'}`,
+                                background: pendingAlighting.paymentMethod === 'cash' ? 'rgba(34,197,94,0.1)' : 'transparent',
+                                opacity: pendingAlighting.paymentMethod === 'cash' ? 1 : 0.45,
+                              }}>
+                                <span style={{ fontSize: '1rem' }}>💵</span>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)' }}>
+                                  Cash
+                                </span>
+                                {pendingAlighting.paymentMethod === 'cash' && (
+                                  <CheckCircle size={13} color="#16A34A" />
+                                )}
                               </div>
                             </div>
                           </div>
-                        )}
 
-                        {/* Confirm Button */}
-                        <PrimaryButton
-                          onClick={confirmAlighting}
-                          variant="primary"
-                          fullWidth
-                          icon={<CheckCircle size={20} />}
-                          style={{
-                            marginBottom: 10,
-                            background: 'linear-gradient(135deg, #A16207, #FACC15)',
-                            borderColor: '#A16207',
-                          }}
-                        >
-                          Confirm Alighting
-                        </PrimaryButton>
+                          {/* Total Fare Charged */}
+                          <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 10 }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Fare Charged</p>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                Base Fare
+                              </span>
+                              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                ₱{pendingAlighting.fare.toFixed(2)}
+                              </span>
+                            </div>
+                            {pendingAlighting.baggageInfo && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                                <span style={{ fontSize: '0.85rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                  Baggage Fee
+                                </span>
+                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                  ₱{pendingAlighting.baggageInfo.fee?.toFixed(2) || '0.00'}
+                                </span>
+                              </div>
+                            )}
+                            <div style={{
+                              height: 1,
+                              background: 'var(--color-primary)',
+                              opacity: 0.3,
+                              margin: '6px 0',
+                            }}></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--color-primary)', fontWeight: 700 }}>
+                                Total
+                              </span>
+                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-primary)' }}>
+                                ₱{pendingAlighting.totalFare?.toFixed(2) || (pendingAlighting.fare + (pendingAlighting.baggageInfo?.fee || 0)).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
 
-                        {/* Cancel Button */}
-                        <PrimaryButton
-                          onClick={() => {
-                            setPendingAlighting(null);
-                            setGpsResult(null);
-                            setScanState('scanning');
-                          }}
-                          variant="ghost"
-                          icon={<X size={15} />}
-                          style={{ marginBottom: 14 }}
-                        >
-                          Cancel
-                        </PrimaryButton>
-                      </SoftCard>
+                          {/* GPS Location Status */}
+                          {gpsResult && (
+                            <div style={{
+                              padding: '12px 14px',
+                              borderRadius: 10,
+                              background: gpsResult.status === 'confirmed'
+                                ? 'rgba(34,197,94,0.12)'
+                                : gpsResult.status === 'mismatch'
+                                ? 'rgba(239,68,68,0.12)'
+                                : 'rgba(250,204,21,0.12)',
+                              border: `1px solid ${
+                                gpsResult.status === 'confirmed'
+                                  ? 'rgba(34,197,94,0.3)'
+                                  : gpsResult.status === 'mismatch'
+                                  ? 'rgba(239,68,68,0.3)'
+                                  : 'rgba(250,204,21,0.3)'
+                              }`,
+                              backdropFilter: 'blur(8px)',
+                              WebkitBackdropFilter: 'blur(8px)',
+                              marginBottom: 16,
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <MapPin size={18} color={
+                                  gpsResult.status === 'confirmed' ? '#16a34a' :
+                                  gpsResult.status === 'mismatch' ? '#dc2626' : '#A16207'
+                                } />
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 700, color: 
+                                    gpsResult.status === 'confirmed' ? '#16a34a' :
+                                    gpsResult.status === 'mismatch' ? '#dc2626' : '#A16207',
+                                  }}>
+                                    {gpsResult.status === 'confirmed' ? 'Location Matched' : 
+                                     gpsResult.status === 'mismatch' ? 'Location Mismatch' : 'Location Warning'}
+                                  </p>
+                                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                    {gpsResult.message}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Button Row - Confirm and Cancel */}
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <PrimaryButton
+                              onClick={() => {
+                                setPendingAlighting(null);
+                                setGpsResult(null);
+                                setScanState('scanning');
+                              }}
+                              variant="ghost"
+                              icon={<X size={15} />}
+                              style={{ flex: 1 }}
+                            >
+                              Cancel
+                            </PrimaryButton>
+                            <PrimaryButton
+                              onClick={confirmAlighting}
+                              variant="primary"
+                              icon={<CheckCircle size={20} />}
+                              style={{ flex: 1 }}
+                            >
+                              Confirm Alighting
+                            </PrimaryButton>
+                          </div>
+                        </SoftCard>
+                      </motion.div>
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </AnimatePresence>
 
               {/* Manual Card ID input removed - only camera scanning enabled */}
 
@@ -1891,6 +2151,15 @@ const ScanPage: React.FC = () => {
           setShowBaggageSelector(false);
         }}
         onClose={() => setShowBaggageSelector(false)}
+      />
+
+      <BaggageFeeSelector
+        isOpen={showAlightingBaggageSelector}
+        onSelect={(selection) => {
+          setAlightingBaggageSelection(selection);
+          setShowAlightingBaggageSelector(false);
+        }}
+        onClose={() => setShowAlightingBaggageSelector(false)}
       />
     </IonPage>
   );

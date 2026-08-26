@@ -1,9 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage Service — Unified local persistence and sync for the CommutAI conductor app
+// Enhanced with message queue patterns for offline scan synchronization
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from '../supabaseClient';
 import { processScan, ScanResult } from './fareService';
+import { observability } from './observability';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,6 +19,8 @@ export interface OfflineScan {
   synced: boolean;
   syncAttempts: number;
   lastError?: string;
+  priority?: 'high' | 'normal' | 'low'; // Message queue priority
+  retryDelay?: number; // Exponential backoff delay
 }
 
 export interface CachedTripState {
@@ -67,12 +71,13 @@ export class StorageService {
     return navigator.onLine;
   }
 
-  // ── Scan Queue ──────────────────────────────────────────────────────────────
+  // ── Scan Queue with Message Queue Patterns ───────────────────────────────────
   static addOfflineScan(
     scannedUid: string,
     tripId: string,
     conductorId: string,
-    busRoute?: string
+    busRoute?: string,
+    priority: 'high' | 'normal' | 'low' = 'normal'
   ): OfflineScan {
     const scans = this.getOfflineScans();
     const newScan: OfflineScan = {
@@ -84,9 +89,31 @@ export class StorageService {
       timestamp: new Date().toISOString(),
       synced: false,
       syncAttempts: 0,
+      priority,
+      retryDelay: 1000, // Initial retry delay: 1 second
     };
-    scans.push(newScan);
+    
+    // Insert based on priority (high priority first)
+    const priorityOrder = { high: 0, normal: 1, low: 2 };
+    let insertIndex = scans.length;
+    
+    for (let i = 0; i < scans.length; i++) {
+      if (priorityOrder[priority] < priorityOrder[scans[i].priority || 'normal']) {
+        insertIndex = i;
+        break;
+      }
+    }
+    
+    scans.splice(insertIndex, 0, newScan);
     this._write(OFFLINE_SCANS_KEY, scans);
+    
+    observability.info('Offline scan added to queue', {
+      scanId: newScan.id,
+      priority,
+      queueSize: scans.length
+    });
+    observability.recordMetric('offline_queue_size', scans.length);
+    
     return newScan;
   }
 
@@ -110,11 +137,30 @@ export class StorageService {
   }
 
   static markSyncFailed(scanId: string, error: string): void {
-    const scans = this.getOfflineScans().map((s) =>
-      s.id === scanId
-        ? { ...s, syncAttempts: s.syncAttempts + 1, lastError: error }
-        : s
-    );
+    const scans = this.getOfflineScans().map((s) => {
+      if (s.id === scanId) {
+        // Implement exponential backoff: delay doubles with each attempt
+        const newRetryDelay = Math.min(
+          (s.retryDelay || 1000) * 2,
+          60000 // Max delay: 1 minute
+        );
+        
+        observability.warn('Offline scan sync failed', {
+          scanId,
+          attempt: s.syncAttempts + 1,
+          error,
+          nextRetryDelay: newRetryDelay
+        });
+        
+        return {
+          ...s,
+          syncAttempts: s.syncAttempts + 1,
+          lastError: error,
+          retryDelay: newRetryDelay
+        };
+      }
+      return s;
+    });
     this._write(OFFLINE_SCANS_KEY, scans);
   }
 
@@ -228,11 +274,16 @@ export class StorageService {
     }
   }
 
-  // ── Sync Operations ─────────────────────────────────────────────────────────
+  // ── Enhanced Sync Operations with Message Queue Patterns ─────────────────────
   static async syncOfflineScans(
     onProgress?: (progress: SyncProgress) => void
   ): Promise<SyncResult> {
     const pending = this.getUnsyncedScans();
+    
+    observability.info('Starting offline scan sync', { 
+      pendingCount: pending.length,
+      timestamp: new Date().toISOString()
+    });
 
     const result: SyncResult = {
       synced: 0,
@@ -241,23 +292,49 @@ export class StorageService {
       validatedCount: 0,
     };
 
-    for (let i = 0; i < pending.length; i++) {
-      const scan = pending[i];
+    // Filter out scans that have exceeded max retry attempts (dead letter queue)
+    const MAX_RETRY_ATTEMPTS = 5;
+    const activeScans = pending.filter(scan => scan.syncAttempts < MAX_RETRY_ATTEMPTS);
+    const deadLetterScans = pending.filter(scan => scan.syncAttempts >= MAX_RETRY_ATTEMPTS);
+    
+    if (deadLetterScans.length > 0) {
+      observability.error('Scans moved to dead letter queue', {
+        count: deadLetterScans.length,
+        scanIds: deadLetterScans.map(s => s.id)
+      });
+      observability.recordMetric('dead_letter_queue_size', deadLetterScans.length);
+    }
+
+    for (let i = 0; i < activeScans.length; i++) {
+      const scan = activeScans[i];
 
       onProgress?.({
-        total: pending.length,
+        total: activeScans.length,
         processed: i,
         succeeded: result.synced,
         failed: result.failed,
       });
 
+      // Implement retry delay based on exponential backoff
+      if (scan.retryDelay && scan.syncAttempts > 0) {
+        observability.debug(`Applying retry delay for scan ${scan.id}`, {
+          delay: scan.retryDelay,
+          attempt: scan.syncAttempts
+        });
+        await new Promise(resolve => setTimeout(resolve, scan.retryDelay));
+      }
+
       try {
+        const endTimer = observability.startTimer('offline_scan_sync');
+        
         const scanResult: ScanResult = await processScan(
           scan.scannedUid,
           scan.tripId,
           scan.conductorId,
           scan.busRoute
         );
+        
+        endTimer();
 
         if (
           scanResult.status === 'qr_pass' ||
@@ -269,6 +346,13 @@ export class StorageService {
               : scanResult.fareAmount;
           result.fareTotal += fare;
           result.validatedCount += 1;
+          
+          observability.info('Offline scan synced successfully', {
+            scanId: scan.id,
+            fare,
+            totalFare: result.fareTotal
+          });
+          observability.recordMetric('offline_scan_sync_success', 1);
         }
 
         this.markAsSynced(scan.id);
@@ -277,15 +361,35 @@ export class StorageService {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.markSyncFailed(scan.id, errMsg);
         result.failed += 1;
+        
+        observability.error('Failed to sync offline scan', {
+          scanId: scan.id,
+          error: errMsg,
+          attempt: scan.syncAttempts + 1
+        });
+        observability.recordMetric('offline_scan_sync_error', 1);
+        
         console.warn(`[StorageService] Failed to sync scan ${scan.id}:`, errMsg);
       }
     }
 
     this.removeSyncedScans();
+    
+    observability.info('Offline scan sync completed', {
+      total: activeScans.length,
+      synced: result.synced,
+      failed: result.failed,
+      fareTotal: result.fareTotal,
+      deadLetterCount: deadLetterScans.length
+    });
+    observability.recordMetric('offline_sync_total', result.synced + result.failed);
+    observability.recordMetric('offline_sync_success_rate', 
+      (result.synced / (result.synced + result.failed)) * 100
+    );
 
     onProgress?.({
-      total: pending.length,
-      processed: pending.length,
+      total: activeScans.length,
+      processed: activeScans.length,
       succeeded: result.synced,
       failed: result.failed,
     });

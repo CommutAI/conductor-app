@@ -1,9 +1,11 @@
 /**
  * Fare Service — Unified fare validation and scan processing
  * Combines fareValidationApi.ts and scanProcessor.ts functionality
+ * Includes caching layer for improved performance
  */
 
 import { supabase } from '../supabaseClient';
+import { cache, CacheKeys, CacheTTL } from './cacheService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -143,22 +145,46 @@ export async function processScan(
   busRoute?: string,
   scanType: 'onboarding' | 'alighting' = 'onboarding',
   currentDestination?: string,
-  baggageFee?: number
+  baggageFee?: number,
+  baggageCategory?: string,
+  baggageWeight?: number,
+  paymentMethod: 'card' | 'cash' = 'card'
 ): Promise<ScanResult> {
   const normalizedUid = normalizeQrCode(scannedUid);
 
-  // Check for QR card
+  // Check cache for QR card first
+  const cachedCard = cache.get<QRCard>(CacheKeys.card(normalizedUid));
+  if (cachedCard) {
+    console.log('[FareService] Cache hit for card:', normalizedUid);
+    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod);
+  }
+
+  // Check for QR card from database
   const { data: card } = await supabase
     .from('qr_cards')
-    .select('id, balance, status, allowed_routes, destination, card_type, card_uid')
+    .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid')
     .eq('card_uid', normalizedUid)
     .maybeSingle();
 
   if (card) {
-    return processQRCard(card, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee);
+    // Cache the card data for future lookups
+    const cardData = {
+      ...card,
+      balance: Number(card.balance),
+      passenger_type: card.passenger_type as PassengerType
+    };
+    cache.set(CacheKeys.card(normalizedUid), cardData, CacheTTL.MEDIUM);
+    return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod);
   }
 
-  // Check for temporary ticket
+  // Check cache for temporary ticket
+  const cachedTicket = cache.get<any>(CacheKeys.ticket(normalizedUid));
+  if (cachedTicket) {
+    console.log('[FareService] Cache hit for ticket:', normalizedUid);
+    return processTemporaryTicket(cachedTicket, scannedUid, tripId, conductorId, busRoute);
+  }
+
+  // Check for temporary ticket from database
   const { data: ticket } = await supabase
     .from('temporary_tickets')
     .select('id, ticket_uid, fare_amount, status, issued_at')
@@ -166,6 +192,8 @@ export async function processScan(
     .maybeSingle();
 
   if (ticket) {
+    // Cache the ticket data
+    cache.set(CacheKeys.ticket(normalizedUid), ticket, CacheTTL.SHORT);
     return processTemporaryTicket(ticket, scannedUid, tripId, conductorId, busRoute);
   }
 
@@ -180,7 +208,10 @@ async function processQRCard(
   busRoute?: string,
   scanType: 'onboarding' | 'alighting' = 'onboarding',
   currentDestination?: string,
-  baggageFee?: number
+  baggageFee?: number,
+  baggageCategory?: string,
+  baggageWeight?: number,
+  paymentMethod: 'card' | 'cash' = 'card'
 ): Promise<ScanResult> {
   // Check for fake QR
   if (!scannedUid || scannedUid.length < 8) {
@@ -208,24 +239,41 @@ async function processQRCard(
     }
   }
 
-  // Check for duplicate scans
-  const { data: boardedPassenger } = await supabase
+  // Find the most recent active (not yet alighted) boarding for this card on this trip
+  const boardedPassengerResult = await supabase
     .from('boarded_passengers')
     .select('id, alighted_at')
     .eq('trip_id', tripId)
     .eq('card_id', card.id)
+    .is('alighted_at', null)
+    .order('boarded_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
+  // If not found by card_id, try by temp_ticket_id (for tickets boarded as cards)
+  let boardedPassenger = boardedPassengerResult;
+  if (!boardedPassenger.data) {
+    boardedPassenger = await supabase
+      .from('boarded_passengers')
+      .select('id, alighted_at')
+      .eq('trip_id', tripId)
+      .eq('temp_ticket_id', card.id)
+      .is('alighted_at', null)
+      .order('boarded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  }
+
+  const boardedData = boardedPassenger.data;
+
   if (scanType === 'onboarding') {
-    if (boardedPassenger && !boardedPassenger.alighted_at) {
+    // Duplicate check: is the card currently on board (boarded but not yet alighted)?
+    if (boardedData) {
       return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
     }
   } else if (scanType === 'alighting') {
-    if (!boardedPassenger) {
+    if (!boardedData) {
       return { status: 'error', message: 'Passenger not boarded on this trip' };
-    }
-    if (boardedPassenger.alighted_at) {
-      return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
     }
     if (currentDestination && card.destination) {
       const normalizedCardDest = card.destination.toLowerCase().trim();
@@ -254,18 +302,17 @@ async function processQRCard(
   const totalFare = fare + (baggageFee || 0);
 
   if (scanType === 'onboarding') {
-    // Check card has enough balance to cover baggage fee upfront (fare is deducted at alighting)
-    const upfrontCharge = baggageFee || 0;
-    if (upfrontCharge > 0 && card.balance < upfrontCharge) {
-      return { status: 'qr_fail_balance', balance: card.balance, fare: upfrontCharge, baggageFee, totalFare: upfrontCharge };
+    // For card payments, check balance. For cash payments, skip balance check.
+    if (paymentMethod === 'card' && card.balance < totalFare) {
+      return { status: 'qr_fail_balance', balance: card.balance, fare: totalFare, baggageFee, totalFare };
     }
 
     const updatePayload: Record<string, unknown> = {};
     if (currentDestination) updatePayload.destination = currentDestination;
 
-    // Deduct baggage fee immediately at boarding if applicable
-    if (upfrontCharge > 0) {
-      updatePayload.balance = card.balance - upfrontCharge;
+    // Only deduct balance for card payments
+    if (paymentMethod === 'card') {
+      updatePayload.balance = card.balance - totalFare;
     }
 
     if (Object.keys(updatePayload).length > 0) {
@@ -273,15 +320,22 @@ async function processQRCard(
       if (updateErr) {
         return { status: 'error', message: `Failed to update card: ${updateErr.message}` };
       }
+      
+      // Invalidate cache for this card after balance update
+      cache.delete(CacheKeys.card(card.card_uid));
+      console.log('[FareService] Cache invalidated for card:', card.card_uid);
     }
 
     const { error: txErr } = await supabase.from('transactions').insert({
       card_id: card.id,
       trip_id: tripId,
-      type: 'boarding',
-      amount: upfrontCharge,
-      channel: 'qr_card',
+      type: 'fare_validation',
+      amount: totalFare,
+      channel: paymentMethod === 'cash' ? 'cash' : 'qr_card',
       staff_id: conductorId,
+      baggage_category: baggageCategory || null,
+      baggage_weight: baggageWeight || null,
+      baggage_fee: baggageFee || null,
     });
     if (txErr) {
       return { status: 'error', message: `Failed to create boarding transaction: ${txErr.message}` };
@@ -296,55 +350,35 @@ async function processQRCard(
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
     }
 
-    const newBalance = card.balance - upfrontCharge;
+    const newBalance = paymentMethod === 'card' ? card.balance - totalFare : card.balance;
     return {
       status: 'qr_pass',
       newBalance,
       fare: 0,
       baggageFee,
-      totalFare: upfrontCharge,
+      totalFare,
       destination: currentDestination,
     };
   } else {
-    // Alighting — deduct base fare only (baggage fee was already charged at boarding)
-    if (card.balance < fare) {
-      return { status: 'qr_fail_balance', balance: card.balance, fare, baggageFee: 0, totalFare: fare };
+    // Alighting — no fare deduction since total fare was already charged at boarding
+    // Just record the alighting time
+    if (!boardedData) {
+      return { status: 'error', message: 'Passenger not boarded on this trip' };
     }
-
-    const newBalance = card.balance - fare;
-    const { error: updateErr } = await supabase.from('qr_cards').update({ balance: newBalance }).eq('id', card.id);
-    if (updateErr) {
-      return { status: 'error', message: `Failed to update balance: ${updateErr.message}` };
-    }
-
-    const { error: txErr } = await supabase.from('transactions').insert({
-      card_id: card.id,
-      trip_id: tripId,
-      type: 'fare_validation',
-      amount: fare,
-      channel: 'qr_card',
-      staff_id: conductorId,
-    });
-    if (txErr) {
-      console.error('Transaction insert error:', txErr);
-      console.error('Transaction data:', { card_id: card.id, trip_id: tripId, type: 'fare_validation', amount: fare, channel: 'qr_card', staff_id: conductorId });
-      return { status: 'error', message: `Failed to create payment transaction: ${txErr.message}` };
-    }
-
+    
     const { error: alightErr } = await supabase.from('boarded_passengers')
       .update({ alighted_at: new Date().toISOString() })
-      .eq('trip_id', tripId)
-      .eq('card_id', card.id);
+      .eq('id', boardedData.id);
     if (alightErr) {
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
 
     return {
       status: 'qr_pass',
-      newBalance,
-      fare,
+      newBalance: card.balance,
+      fare: 0,
       baggageFee: 0,
-      totalFare: fare,
+      totalFare: 0,
       destination: currentDestination,
     };
   }
@@ -373,6 +407,10 @@ async function processTemporaryTicket(
   if (updateErr) {
     return { status: 'error', message: `Failed to validate ticket: ${updateErr.message}` };
   }
+  
+  // Invalidate cache for this ticket after validation
+  cache.delete(CacheKeys.ticket(ticket.ticket_uid));
+  console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
 
   const { error: txErr } = await supabase.from('transactions').insert({
     temp_ticket_id: ticket.id,

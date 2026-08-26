@@ -3,32 +3,17 @@ import SoftCard from './SoftCard';
 
 // Card template images live in /assets/ (copied from public/assets/ by Vite)
 const REGULAR_TEMPLATES: Record<string, string> = {
-  regular:        '/assets/REGULAR.png',
-  student:        '/assets/STUDENT.png',
+  regular:        '/assets/regular.png',
+  student:        '/assets/student.png',
   senior_citizen: '/assets/SENIOR-CITIZIEN.png',
-  pwd:            '/assets/PWD.png',
+  pwd:            '/assets/pwd.png',
 };
 
 const TEMP_TEMPLATES: Record<string, string> = {
   regular:        '/assets/TEMP-REG.png',
   student:        '/assets/TEMP-STUD.png',
   senior_citizen: '/assets/temp-senior.png',
-  pwd:            '/assets/TEMP-PWD.png',
-};
-
-// Alternative paths to try if main path fails
-const ALT_REGULAR_TEMPLATES: Record<string, string> = {
-  regular:        './assets/REGULAR.png',
-  student:        './assets/STUDENT.png',
-  senior_citizen: './assets/SENIOR-CITIZIEN.png',
-  pwd:            './assets/PWD.png',
-};
-
-const ALT_TEMP_TEMPLATES: Record<string, string> = {
-  regular:        './assets/TEMP-REG.png',
-  student:        './assets/TEMP-STUD.png',
-  senior_citizen: './assets/temp-senior.png',
-  pwd:            './assets/TEMP-PWD.png',
+  pwd:            '/assets/temp-pwd.png',
 };
 
 const TEMP_ID_COLORS: Record<string, string> = {
@@ -38,21 +23,41 @@ const TEMP_ID_COLORS: Record<string, string> = {
   pwd:            '#7c3aed',
 };
 
+/**
+ * Derive passenger type + isTicket from the card UID prefix.
+ * This is the authoritative source — prefix always wins over the prop.
+ *
+ * Permanent cards:  RC- | SC- | SCC- | PC-
+ * Temporary cards:  TRC- | TSC- | TSCC- | TPC-
+ */
+function detectTypeFromUid(uid: string): { type: string; isTicket: boolean } {
+  const code = uid.toLowerCase().replace(/[\s-]/g, '');
+
+  // Temporary tickets (must check longer prefixes first)
+  if (code.startsWith('tscc')) return { type: 'senior_citizen', isTicket: true };
+  if (code.startsWith('trc'))  return { type: 'regular',        isTicket: true };
+  if (code.startsWith('tsc'))  return { type: 'student',        isTicket: true };
+  if (code.startsWith('tpc'))  return { type: 'pwd',            isTicket: true };
+
+  // Permanent cards (longer prefixes first)
+  if (code.startsWith('scc'))  return { type: 'senior_citizen', isTicket: false };
+  if (code.startsWith('rc'))   return { type: 'regular',        isTicket: false };
+  if (code.startsWith('sc'))   return { type: 'student',        isTicket: false };
+  if (code.startsWith('pc'))   return { type: 'pwd',            isTicket: false };
+
+  // Fallback — use prop-based hint if prefix is unrecognised
+  return { type: 'regular', isTicket: false };
+}
+
 function normaliseType(raw?: string): string {
   if (!raw) return 'regular';
-
-  const normalized = raw.toLowerCase()
-    .replace(/ /g, '_')
-    .replace(/-/g, '_');
-
-  // Map common variations to standard types
+  const normalized = raw.toLowerCase().replace(/ /g, '_').replace(/-/g, '_');
   const typeMap: Record<string, string> = {
     'senior': 'senior_citizen',
     'elderly': 'senior_citizen',
     'disabled': 'pwd',
     'handicapped': 'pwd',
   };
-
   return typeMap[normalized] || normalized;
 }
 
@@ -173,7 +178,7 @@ function drawRegularCard(
   ctx.textAlign     = 'left';
   // Show full card ID for regular cards (no masking)
   const displayId = cardUid.toUpperCase();
-  ctx.fillText(displayId, Math.round(W * 0.08), Math.round(H * 0.44));
+  ctx.fillText(displayId, Math.round(W * 0.08), Math.round(H * 0.51));
 
   // Balance removed to match customer service card format
 
@@ -199,7 +204,7 @@ function drawTempCard(
 
   const fontSize = Math.round(W * 0.050);
   const cardIdX  = Math.round(W * 0.78);
-  const cardIdY  = Math.round(H * 0.93);
+  const cardIdY  = Math.round(H * 0.91);
   const color    = TEMP_ID_COLORS[type] || '#1362e2';
 
   ctx.font      = `800 ${fontSize}px 'Courier New', monospace`;
@@ -240,26 +245,22 @@ const QRCardCanvas: React.FC<QRCardCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const type      = normaliseType(passengerType);
-    const templates = isTicket ? TEMP_TEMPLATES : REGULAR_TEMPLATES;
-    const altTemplates = isTicket ? ALT_TEMP_TEMPLATES : ALT_REGULAR_TEMPLATES;
-    const src       = templates[type] || templates.regular;
-    const altSrc    = altTemplates[type] || altTemplates.regular;
+    // Always derive type + isTicket from the card UID prefix first.
+    // Fall back to the prop only when the prefix is not recognised.
+    const detected   = detectTypeFromUid(cardUid);
+    const isUnknownPrefix = !cardUid.match(/^(rc|sc|scc|pc|trc|tsc|tscc|tpc)/i);
+    const type       = isUnknownPrefix ? (normaliseType(passengerType) || 'regular') : detected.type;
+    const ticketFlag = isUnknownPrefix ? !!isTicket : detected.isTicket;
 
-    console.log('QRCardCanvas: Loading template', { type, isTicket, src, altSrc, cardUid, balance });
+    const templates = ticketFlag ? TEMP_TEMPLATES : REGULAR_TEMPLATES;
+    const src       = templates[type] ?? templates.regular;
+
+    console.log('QRCardCanvas: resolved', { cardUid, type, ticketFlag, src });
 
     const applyDraw = (img: HTMLImageElement) => {
-      console.log('QRCardCanvas: Template loaded successfully', {
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        isTicket,
-        cardUid
-      });
-
       canvas.width  = img.naturalWidth  || 800;
       canvas.height = img.naturalHeight || 500;
-
-      if (isTicket) {
+      if (ticketFlag) {
         drawTempCard(ctx, img, cardUid, type);
       } else {
         drawRegularCard(ctx, img, cardUid, balance);
@@ -267,43 +268,21 @@ const QRCardCanvas: React.FC<QRCardCanvasProps> = ({
       setImageLoaded(true);
     };
 
-    const tryLoadImage = (imageSrc: string, isAlt: boolean = false) => {
-      const img = new Image();
-      // Allow cross-origin image loading
-      img.crossOrigin = 'anonymous';
-      img.src = imageSrc;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
 
-      // Check if image is already loaded
-      if (img.complete && img.naturalWidth > 0) {
-        console.log('QRCardCanvas: Image already loaded', { isAlt, imageSrc });
-        applyDraw(img);
-        return true;
-      } else {
-        console.log('QRCardCanvas: Waiting for image to load', { isAlt, imageSrc });
-        img.onload = () => {
-          console.log('QRCardCanvas: Image onload triggered', { isAlt, imageSrc });
-          applyDraw(img);
-        };
-        img.onerror = (error) => {
-          console.error('QRCardCanvas: Failed to load template', { imageSrc, isAlt, error });
-          if (!isAlt && altSrc) {
-            console.log('QRCardCanvas: Trying alternative path', { altSrc });
-            tryLoadImage(altSrc, true);
-          } else {
-            console.log('QRCardCanvas: Using fallback rendering');
-            drawFallback(ctx, canvas, cardUid, balance, !!isTicket, type);
-            setImageLoaded(true);
-          }
-        };
-        return false;
-      }
+    img.onload = () => applyDraw(img);
+    img.onerror = () => {
+      console.error('QRCardCanvas: Failed to load', src, '— using fallback');
+      drawFallback(ctx, canvas, cardUid, balance, ticketFlag, type);
+      setImageLoaded(true);
     };
 
-    // Try main path first
-    tryLoadImage(src, false);
+    // Trigger immediately if already cached
+    img.src = src;
+    if (img.complete && img.naturalWidth > 0) applyDraw(img);
 
-    // Cleanup — nothing to do for canvas
-    return () => {};
+    return () => { img.onload = null; img.onerror = null; };
   }, [cardUid, balance, passengerType, isTicket]);
 
   // Always render canvas — never conditionally hide it
