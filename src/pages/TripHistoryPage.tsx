@@ -11,9 +11,10 @@ import {
 } from '@ionic/react';
 import { Calendar, Users, Wallet, AlertTriangle, Bus } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState,
 } from '../components/ui';
@@ -36,7 +37,7 @@ const TripHistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
 
-  const { profile } = useAuth();
+  const { profile } = useApp();
   const history = useHistory();
 
   useEffect(() => {
@@ -104,6 +105,7 @@ const TripHistoryPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader showBack title="Trip History" subtitle="Your past trips" />
 
       <IonContent className="app-page-bg">
@@ -126,7 +128,7 @@ const TripHistoryPage: React.FC = () => {
           />
 
           {!loading && filteredTrips.length > 0 && (
-            <SoftCard variant="gradient" style={{ marginBottom: 20 }}>
+            <SoftCard variant="hero" style={{ marginBottom: 20 }}>
               <p style={{ margin: '0 0 4px', fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>
                 Total Earnings
               </p>
@@ -165,6 +167,7 @@ const TripHistoryPage: React.FC = () => {
             filteredTrips.map((trip, i) => (
               <SoftCard
                 key={trip.id}
+                variant="glass"
                 style={{ marginBottom: 12 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

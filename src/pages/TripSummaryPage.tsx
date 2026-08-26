@@ -6,10 +6,10 @@ import {
   CheckCircle, Wallet, Clock, AlertTriangle, Bus, User,
   Download, Share2, Home,
 } from 'lucide-react';
-import { useTrip } from '../context/TripContext';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, DashboardCard, LoadingSkeleton,
@@ -47,17 +47,17 @@ const TripSummaryPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
 
-  const { currentTrip, currentBus, validatedCount, fareCollected, clearTrip } = useTrip();
-  const { profile } = useAuth();
+  const { currentTrip, currentBus, validatedCount, fareCollected, profile, clearTrip } = useApp();
   const history = useHistory();
 
   useEffect(() => {
-    if (!currentTrip || !currentBus) {
-      history.replace('/trip-setup');
+    if (!currentTrip) {
+      // Trip was already cleared (e.g. page refresh) — go home
+      history.replace('/');
       return;
     }
     loadSummaryData();
-  }, [currentTrip]);
+  }, []);
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning') {
     setToastMessage(message);
@@ -82,22 +82,22 @@ const TripSummaryPage: React.FC = () => {
 
   function startNewTrip() {
     clearTrip();
-    showNotification('Ready for new trip', 'success');
-    history.replace('/trip-setup');
+    history.replace('/');
   }
 
   function exportSummary() { showNotification('Summary exported', 'success'); }
   function shareSummary() { showNotification('Summary shared', 'success'); }
 
-  if (!currentTrip || !currentBus) return null;
+  if (!currentTrip) return null;
 
   const tripDuration = currentTrip.ended_at
     ? Math.floor((new Date(currentTrip.ended_at).getTime() - new Date(currentTrip.started_at).getTime()) / (1000 * 60))
     : 0;
-  const completionRate = currentBus.seat_capacity > 0 ? (validatedCount / currentBus.seat_capacity) * 100 : 0;
+  const completionRate = (currentBus?.seat_capacity ?? 0) > 0 ? (validatedCount / currentBus!.seat_capacity) * 100 : 0;
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader title="Trip Summary" subtitle="Completed successfully" />
 
       <IonContent className="app-page-bg">
@@ -132,7 +132,7 @@ const TripSummaryPage: React.FC = () => {
                 transition={{ delay: 0.5 }}
                 style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}
               >
-                {currentBus.plate_number} · {tripDuration}m duration
+                {currentBus?.plate_number} · {tripDuration}m duration
               </motion.p>
             </div>
 
@@ -143,13 +143,13 @@ const TripSummaryPage: React.FC = () => {
               <DashboardCard label="Issues" value={irregularities.length} icon={AlertTriangle} iconBg={irregularities.length > 0 ? 'var(--color-warning-subtle)' : 'var(--bg-tertiary)'} iconColor={irregularities.length > 0 ? '#A16207' : 'var(--text-secondary)'} delay={0.25} />
             </div>
 
-            <SoftCard style={{ marginBottom: 16 }}>
+            <SoftCard variant="glass" style={{ marginBottom: 16 }}>
               <h3 className="heading-medium" style={{ marginBottom: 16 }}>Trip Details</h3>
               <div className="transport-list-item">
                 <Bus size={20} color="var(--color-primary)" />
                 <div>
-                  <p style={{ margin: '0 0 2px', fontWeight: 700 }}>{currentBus.plate_number}</p>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{currentBus.route}</p>
+                  <p style={{ margin: '0 0 2px', fontWeight: 700 }}>{currentBus?.plate_number ?? '—'}</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{currentBus?.route ?? '—'}</p>
                 </div>
               </div>
               <div className="transport-list-item">
@@ -173,7 +173,7 @@ const TripSummaryPage: React.FC = () => {
               </div>
             </SoftCard>
 
-            <SoftCard style={{ marginBottom: 24, background: 'var(--color-primary-subtle)', border: '1px solid rgba(249,115,22,0.2)' }}>
+            <SoftCard variant="accent-primary" style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <span style={{ fontSize: '2rem' }}>
                   {irregularities.length === 0 ? '⭐' : completionRate > 80 ? '🌟' : '✓'}
@@ -198,11 +198,11 @@ const TripSummaryPage: React.FC = () => {
             </SoftCard>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={exportSummary}>
+              <SoftCard variant="glass" padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={exportSummary}>
                 <Download size={24} color="var(--text-secondary)" style={{ margin: '0 auto 8px' }} />
                 <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem' }}>Export</p>
               </SoftCard>
-              <SoftCard padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={shareSummary}>
+              <SoftCard variant="glass" padding="sm" style={{ cursor: 'pointer', textAlign: 'center' }} onClick={shareSummary}>
                 <Share2 size={24} color="var(--text-secondary)" style={{ margin: '0 auto 8px' }} />
                 <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem' }}>Share</p>
               </SoftCard>
@@ -212,7 +212,7 @@ const TripSummaryPage: React.FC = () => {
               Start New Trip
             </PrimaryButton>
 
-            <SoftCard padding="sm" style={{ marginTop: 24, textAlign: 'center' }}>
+            <SoftCard variant="glass" padding="sm" style={{ marginTop: 24, textAlign: 'center' }}>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                 Thank you for your service!
               </p>

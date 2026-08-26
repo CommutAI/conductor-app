@@ -69,7 +69,7 @@ const PassengerDetailsCard: React.FC<PassengerDetailsProps> = ({
         <p className="passenger-details__message">{message}</p>
       )}
 
-      <SoftCard padding="md" className="passenger-details__profile">
+      <SoftCard variant="glass" padding="md" className="passenger-details__profile">
         <div className="passenger-details__profile-header">
           <div>
             <StatusBadge variant={variant} dot>

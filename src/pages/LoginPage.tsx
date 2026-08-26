@@ -3,8 +3,9 @@ import { IonContent, IonPage } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import Logo from '../components/Logo';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import { ModernInput, PrimaryButton, AppToast } from '../components/ui';
 
 const LoginPage: React.FC = () => {
@@ -15,7 +16,7 @@ const LoginPage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('danger');
-  const { signIn } = useAuth();
+  const { signIn } = useApp();
   const history = useHistory();
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning' = 'danger') {
@@ -50,7 +51,7 @@ const LoginPage: React.FC = () => {
         showNotification(errorMsg, 'danger');
       } else {
         showNotification('Welcome back!', 'success');
-        setTimeout(() => history.replace('/trip-setup'), 400);
+        setTimeout(() => history.replace('/'), 400);
       }
     } catch (err) {
       setLoading(false);
@@ -62,6 +63,7 @@ const LoginPage: React.FC = () => {
 
   return (
     <IonPage>
+      <InteractiveBackground />
       <IonContent fullscreen className="app-page-bg">
         <div className="login-hero">
           <div className="login-hero__content">
@@ -69,22 +71,22 @@ const LoginPage: React.FC = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              style={{ textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
             >
               <Logo size="xl" />
               <h1 style={{
                 fontSize: '2.25rem', fontWeight: 800, margin: '16px 0 6px',
-                color: '#1F2937', letterSpacing: '-0.03em',
+                color: 'var(--text-primary)', letterSpacing: '-0.03em',
               }}>
                 CommutAI
               </h1>
-              <p style={{ color: '#6B7280', margin: 0, fontSize: '1rem', fontWeight: 500 }}>
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1rem', fontWeight: 500 }}>
                 Conductor Portal
               </p>
             </motion.div>
 
             <motion.div
-              className="login-form-card"
+              className="login-form-card glass-card"
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.15 }}
@@ -117,13 +119,13 @@ const LoginPage: React.FC = () => {
                     animate={{ opacity: 1, height: 'auto' }}
                     style={{
                       background: 'var(--color-danger-subtle)',
-                      border: '1.5px solid #FECACA',
+                      border: '1.5px solid rgba(239, 68, 68, 0.3)',
                       borderRadius: 14,
                       padding: '12px 16px',
                       marginBottom: 20,
                     }}
                   >
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#B91C1C', fontWeight: 600 }}>
+                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-danger)', fontWeight: 600 }}>
                       {error}
                     </p>
                   </motion.div>

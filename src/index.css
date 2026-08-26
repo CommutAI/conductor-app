@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --slate-900: #0f172a;
+  --orange-950: #431407;
+
+  /* Dark shell text — readable on gradient background */
+  --text-primary: #F3F4F6;
+  --text-secondary: #CBD5E1;
+  --text-tertiary: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-bg-hover: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border-hover: rgba(255, 255, 255, 0.28);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.35);
+  --glass-highlight: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, transparent 50%);
+}
+
+html, body, #root {
+  background: linear-gradient(135deg, var(--slate-900) 0%, var(--orange-950) 50%, var(--slate-900) 100%) !important;
+  min-height: 100vh !important;
+}
+
+ion-app {
+  background: transparent !important;
+  position: relative;
+}
+
+ion-content {
+  --background: transparent !important;
+  background: transparent !important;
+}
+
+ion-content::part(background) {
+  background: transparent !important;
+}

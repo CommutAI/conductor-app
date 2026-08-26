@@ -3,17 +3,19 @@ import {
   IonPage,
   IonContent,
   IonAlert,
+  IonModal,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import {
   Mail, IdCard, Building2, Bell, Shield, HelpCircle,
-  LogOut, Moon, Sun, Info, ChevronRight, CreditCard,
+  LogOut, Moon, Sun, Info, ChevronRight, AlertCircle,
+  Stethoscope, Car, ShieldAlert, Wrench, ClipboardList, X,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useTrip } from '../context/TripContext';
-import { useTheme } from '../context/ThemeContext';
+import { useApp } from '../context/AppContext';
+import { supabase } from '../supabaseClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import PageHeader from '../components/layout/PageHeader';
+import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, StatusBadge, AppToast,
@@ -24,10 +26,10 @@ const ProfilePage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
+  const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
+  const [selectedEmergencyType, setSelectedEmergencyType] = useState<'medical' | 'accident' | 'security' | 'mechanical' | 'other'>('other');
 
-  const { profile, signOut } = useAuth();
-  const { currentTrip, fareCollected } = useTrip();
-  const { isDark, toggleTheme } = useTheme();
+  const { profile, signOut, isDark, toggleTheme } = useApp();
   const history = useHistory();
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
@@ -41,14 +43,44 @@ const ProfilePage: React.FC = () => {
     showNotification('Signed out successfully', 'success');
   }
 
+  async function sendEmergencyAlert() {
+    if (!profile) return;
+    try {
+      const position = await (window as any).Capacitor?.Geolocation?.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+      await supabase.from('emergency_alerts').insert({
+        conductor_id: profile.id,
+        lat: position?.coords.latitude,
+        lng: position?.coords.longitude,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
+    } catch (error) {
+      // Fallback: send alert without location
+      await supabase.from('emergency_alerts').insert({
+        conductor_id: profile.id,
+        status: 'active',
+        type: selectedEmergencyType,
+        created_at: new Date().toISOString(),
+      });
+      showNotification('Emergency alert sent! Admin notified.', 'success');
+      setShowEmergencyAlert(false);
+      setSelectedEmergencyType('other');
+    }
+  }
+
   return (
     <IonPage>
+      <InteractiveBackground />
       <PageHeader showBack title="Settings" subtitle="Manage your account" />
 
       <IonContent className="app-page-bg">
         <div className="page-content">
           {/* Profile Hero */}
-          <SoftCard variant="gradient" style={{ marginBottom: 24 }}>
+          <SoftCard variant="hero" style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
               <ProfileAvatar name={profile?.full_name || 'Conductor'} size="xl" />
               <div style={{ flex: 1, color: 'white' }}>
@@ -63,32 +95,12 @@ const ProfilePage: React.FC = () => {
                 </p>
               </div>
             </div>
-
-            {currentTrip ? (
-              <div style={{
-                background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: 16,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <div>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.7rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>Current Trip</p>
-                  <p style={{ margin: 0, fontWeight: 700, color: 'white' }}>Trip in Progress</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 4px', fontSize: '0.7rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>Earnings</p>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: '1.1rem', color: 'white' }}>₱{fareCollected.toFixed(0)}</p>
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 16, padding: 16, textAlign: 'center' }}>
-                <p style={{ margin: 0, fontWeight: 600, color: 'white', opacity: 0.9 }}>Off Duty</p>
-              </div>
-            )}
           </SoftCard>
 
           {/* Contact Info */}
           <div className="settings-group">
             <p className="settings-group__title">Profile</p>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <Mail size={20} />
               </div>
@@ -97,7 +109,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">{profile?.email || 'conductor@test.com'}</span>
               </div>
             </div>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <IdCard size={20} />
               </div>
@@ -106,7 +118,7 @@ const ProfilePage: React.FC = () => {
                 <span className="settings-item__desc">EMP-{profile?.id?.slice(-6).toUpperCase() || '001234'}</span>
               </div>
             </div>
-            <div className="settings-item" style={{ cursor: 'default' }}>
+            <div className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--color-success-subtle)', color: 'var(--color-success)' }}>
                 <Building2 size={20} />
               </div>
@@ -117,27 +129,11 @@ const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Card Management */}
-          <div className="settings-group">
-            <p className="settings-group__title">Card Management</p>
-
-            <button type="button" className="settings-item" onClick={() => history.push('/card-management')}>
-              <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
-                <CreditCard size={20} />
-              </div>
-              <div className="settings-item__content">
-                <span className="settings-item__label">QR Cards</span>
-                <span className="settings-item__desc">Create and manage QR cards</span>
-              </div>
-              <ChevronRight size={18} className="settings-item__chevron" />
-            </button>
-          </div>
-
           {/* Settings */}
           <div className="settings-group">
             <p className="settings-group__title">Preferences</p>
 
-            <div className="settings-item" style={{ cursor: 'pointer' }} onClick={toggleTheme}>
+            <div className="settings-item glass-card" style={{ cursor: 'pointer' }} onClick={toggleTheme}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
                 {isDark ? <Sun size={20} /> : <Moon size={20} />}
               </div>
@@ -155,7 +151,7 @@ const ProfilePage: React.FC = () => {
               </button>
             </div>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Notifications settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-warning-subtle)', color: '#A16207' }}>
                 <Bell size={20} />
               </div>
@@ -166,7 +162,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Security settings coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Security settings coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)' }}>
                 <Shield size={20} />
               </div>
@@ -182,7 +178,7 @@ const ProfilePage: React.FC = () => {
           <div className="settings-group">
             <p className="settings-group__title">Support</p>
 
-            <button type="button" className="settings-item" onClick={() => showNotification('Help center coming soon', 'warning')}>
+            <button type="button" className="settings-item glass-card" onClick={() => showNotification('Help center coming soon', 'warning')}>
               <div className="settings-item__icon" style={{ background: 'var(--color-info-subtle)', color: 'var(--color-info)' }}>
                 <HelpCircle size={20} />
               </div>
@@ -193,7 +189,7 @@ const ProfilePage: React.FC = () => {
               <ChevronRight size={18} className="settings-item__chevron" />
             </button>
 
-            <button type="button" className="settings-item" style={{ cursor: 'default' }}>
+            <button type="button" className="settings-item glass-card" style={{ cursor: 'default' }}>
               <div className="settings-item__icon" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
                 <Info size={20} />
               </div>
@@ -203,6 +199,18 @@ const ProfilePage: React.FC = () => {
               </div>
             </button>
           </div>
+
+          <button
+            type="button"
+            className="emergency-btn glass-card"
+            onClick={() => setShowEmergencyAlert(true)}
+          >
+            <AlertCircle size={20} />
+            <div style={{ textAlign: 'left' }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: 800, display: 'block' }}>EMERGENCY</span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.9, display: 'block' }}>Send Alert to Admin</span>
+            </div>
+          </button>
 
           <PrimaryButton
             onClick={() => setShowLogoutAlert(true)}
@@ -237,6 +245,112 @@ const ProfilePage: React.FC = () => {
           { text: 'Sign Out', handler: handleLogout },
         ]}
       />
+
+      <IonModal
+        isOpen={showEmergencyAlert}
+        onDidDismiss={() => setShowEmergencyAlert(false)}
+        breakpoints={[0, 1]}
+        initialBreakpoint={1}
+        style={{ '--height': 'auto' }}
+      >
+        <div className="glass-modal">
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                borderRadius: 10,
+                padding: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <AlertCircle size={20} color="#DC2626" />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Select Emergency Type
+                </h2>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  This will send your GPS location to the admin
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowEmergencyAlert(false)}
+              style={{
+                background: 'var(--bg-secondary)',
+                border: '2px solid var(--border-medium)',
+                borderRadius: 8,
+                padding: 6,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={18} color="var(--text-primary)" />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: 'rgba(255, 255, 255, 0.2)', margin: '16px 0' }} />
+
+          {/* Emergency Type Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { type: 'medical',    label: 'Medical',    desc: 'Medical emergency on board',      icon: Stethoscope,  color: '#DC2626', bg: 'rgba(220,38,38,0.08)' },
+              { type: 'accident',   label: 'Accident',   desc: 'Vehicle or road accident',        icon: Car,          color: '#D97706', bg: 'rgba(217,119,6,0.08)' },
+              { type: 'security',   label: 'Security',   desc: 'Threat or suspicious activity',   icon: ShieldAlert,  color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
+              { type: 'mechanical', label: 'Mechanical', desc: 'Bus breakdown or malfunction',    icon: Wrench,       color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
+              { type: 'other',      label: 'Other',      desc: 'Other emergency situation',       icon: ClipboardList, color: '#059669', bg: 'rgba(5,150,105,0.08)' },
+            ].map(({ type, label, desc, icon: Icon, color, bg }) => (
+              <button
+                key={type}
+                type="button"
+                className="glass-modal__option"
+                onClick={() => {
+                  setSelectedEmergencyType(type as any);
+                  sendEmergencyAlert();
+                }}
+                style={{ borderColor: `${color}40` }}
+              >
+                <div style={{
+                  background: `${color}18`,
+                  borderRadius: 10,
+                  width: 42,
+                  height: 42,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Icon size={20} color={color} />
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                    {label}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {desc}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Cancel */}
+          <button
+            type="button"
+            className="glass-modal__option"
+            onClick={() => setShowEmergencyAlert(false)}
+            style={{ marginTop: 14, justifyContent: 'center', fontWeight: 700 }}
+          >
+            Cancel
+          </button>
+        </div>
+      </IonModal>
 
       <AppToast
         isOpen={showToast}
