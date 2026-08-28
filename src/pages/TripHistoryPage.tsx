@@ -15,8 +15,10 @@ import {
   IonButtons,
   IonButton,
   IonTitle,
+  IonSelect,
+  IonSelectOption,
 } from '@ionic/react';
-import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Clock, User } from 'lucide-react';
+import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Navigation, Clock, User, CreditCard, Banknote } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
@@ -30,9 +32,11 @@ interface Trip {
   id: string;
   started_at: string;
   ended_at?: string;
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'completed' | 'cancelled';
   route: string;
   plate_number: string;
+  starting_point?: string;
+  end_point?: string;
   passenger_count: number;
   fare_collected: number;
   irregularities: number;
@@ -45,6 +49,8 @@ interface TripDetails {
   status: string;
   route: string;
   plate_number: string;
+  starting_point?: string;
+  end_point?: string;
   passengers: Array<{
     id: string;
     card_id?: string;
@@ -55,6 +61,9 @@ interface TripDetails {
     alighted_at?: string;
     fare?: number;
     baggage_fee?: number;
+    payment_method?: string;
+    boarding_stop?: string;
+    destination_stop?: string;
   }>;
   transactions: Array<{
     id: string;
@@ -64,11 +73,12 @@ interface TripDetails {
     baggage_fee?: number;
     card_id?: string;
     temp_ticket_id?: string;
+    payment_method?: string;
   }>;
 }
 
 const TripHistoryPage: React.FC = () => {
-  const [segment, setSegment] = useState<'all' | 'completed' | 'active'>('all');
+  const [segment, setSegment] = useState<'all' | 'today'>('today');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -89,11 +99,17 @@ const TripHistoryPage: React.FC = () => {
     try {
       let query = supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
         .eq('conductor_id', profile.id)
         .order('started_at', { ascending: false });
 
-      if (segment !== 'all') query = query.eq('status', segment);
+      if (segment === 'today') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        query = query.gte('started_at', today.toISOString()).lt('started_at', tomorrow.toISOString());
+      }
 
       const { data } = await query;
 
@@ -111,6 +127,8 @@ const TripHistoryPage: React.FC = () => {
             status: trip.status,
             route: (trip.buses as any).route,
             plate_number: (trip.buses as any).plate_number,
+            starting_point: trip.starting_point,
+            end_point: trip.end_point,
             passenger_count: passengerData?.length || 0,
             fare_collected: fareCollected,
             irregularities: irregData?.length || 0,
@@ -137,7 +155,7 @@ const TripHistoryPage: React.FC = () => {
       // Get trip details with bus info
       const { data: tripData } = await supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
         .eq('id', tripId)
         .single();
 
@@ -146,13 +164,13 @@ const TripHistoryPage: React.FC = () => {
       // Get boarded passengers
       const { data: passengers } = await supabase
         .from('boarded_passengers')
-        .select('id, card_id, temp_ticket_id, boarded_at, alighted_at')
+        .select('id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop')
         .eq('trip_id', tripId);
 
       // Get transactions for this trip
       const { data: transactions } = await supabase
         .from('transactions')
-        .select('id, amount, channel, created_at, baggage_fee, card_id, temp_ticket_id')
+        .select('id, amount, channel, created_at, baggage_fee, card_id, temp_ticket_id, payment_method')
         .eq('trip_id', tripId)
         .order('created_at', { ascending: false });
 
@@ -192,6 +210,9 @@ const TripHistoryPage: React.FC = () => {
           card_uid: cardUid,
           fare: passengerTx?.amount || 0,
           baggage_fee: passengerTx?.baggage_fee || 0,
+          payment_method: passenger.payment_method || passengerTx?.payment_method || passengerTx?.channel || 'qr_card',
+          boarding_stop: passenger.boarding_stop || null,
+          destination_stop: passenger.destination_stop || null,
         };
       });
 
@@ -202,6 +223,8 @@ const TripHistoryPage: React.FC = () => {
         status: tripData.status,
         route: (tripData.buses as any).route,
         plate_number: (tripData.buses as any).plate_number,
+        starting_point: tripData.starting_point,
+        end_point: tripData.end_point,
         passengers: passengersWithFare,
         transactions: transactions || [],
       });
@@ -222,7 +245,7 @@ const TripHistoryPage: React.FC = () => {
   const totalPassengers = filteredTrips.reduce((sum, trip) => sum + trip.passenger_count, 0);
 
   const statusVariant = (status: string) =>
-    status === 'completed' ? 'success' : status === 'active' ? 'info' : 'danger';
+    status === 'completed' ? 'success' : 'danger';
 
   return (
     <IonPage>
@@ -233,20 +256,21 @@ const TripHistoryPage: React.FC = () => {
         <div className="page-content page-content--no-nav">
           <IonSegment
             value={segment}
-            onIonChange={(e) => setSegment(e.detail.value as 'all' | 'completed' | 'active')}
+            onIonChange={(e) => setSegment(e.detail.value as 'all' | 'today')}
             style={{ marginBottom: 16 }}
           >
+            <IonSegmentButton value="today"><IonLabel>Today</IonLabel></IonSegmentButton>
             <IonSegmentButton value="all"><IonLabel>All</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="completed"><IonLabel>Completed</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="active"><IonLabel>Active</IonLabel></IonSegmentButton>
           </IonSegment>
 
           <IonSearchbar
             value={searchText}
             onIonInput={(e) => setSearchText(e.detail.value as string)}
             placeholder="Search trips..."
-            style={{ marginBottom: 16, padding: 0 }}
+            style={{ marginBottom: 16, padding: 0, '--background': 'rgba(255, 255, 255, 0.1)', '--color': 'white', '--placeholder-color': 'rgba(255, 255, 255, 0.7)' }}
+            className="searchbar-white"
           />
+
 
           {!loading && filteredTrips.length > 0 && (
             <SoftCard variant="hero" style={{ marginBottom: 20 }}>
@@ -279,10 +303,8 @@ const TripHistoryPage: React.FC = () => {
           ) : filteredTrips.length === 0 ? (
             <EmptyState
               title="No Trips Found"
-              description="Start your first trip to see history here"
+              description={segment === 'today' ? "No trips today" : "No trips found"}
               icon={Bus}
-              actionLabel="Start Trip"
-              onAction={() => history.push('/trip-setup')}
             />
           ) : (
             filteredTrips.map((trip, i) => (
@@ -316,6 +338,35 @@ const TripHistoryPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Route Details */}
+                {(trip.starting_point || trip.end_point) && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px',
+                    background: 'rgba(0, 0, 0, 0.03)',
+                    borderRadius: 8,
+                    marginBottom: 8,
+                  }}>
+                    <MapPin size={14} color="var(--color-success)" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>FROM</p>
+                      <p style={{ margin: '1px 0 0', fontSize: '0.75rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {trip.starting_point || '—'}
+                      </p>
+                    </div>
+                    <div style={{ width: 20, height: 1, background: 'var(--border-medium)', flexShrink: 0 }} />
+                    <Navigation size={14} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>TO</p>
+                      <p style={{ margin: '1px 0 0', fontSize: '0.75rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {trip.end_point || '—'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{
                   display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
                   paddingTop: 12, borderTop: '1px solid var(--border-subtle)',
@@ -340,10 +391,11 @@ const TripHistoryPage: React.FC = () => {
       </IonContent>
 
       {/* Trip Details Modal */}
-      <IonModal 
-        isOpen={showTripDetails} 
+      <IonModal
+        isOpen={showTripDetails}
         onDidDismiss={() => setShowTripDetails(false)}
-        style={{ '--background': 'var(--bg-primary)' }}
+        className="trip-details-modal"
+        style={{ '--background': '#ffffff' }}
       >
         <IonHeader>
           <IonToolbar>
@@ -355,14 +407,14 @@ const TripHistoryPage: React.FC = () => {
             <IonTitle>Trip Details</IonTitle>
           </IonToolbar>
         </IonHeader>
-        <IonContent style={{ '--background': 'var(--bg-primary)' }} className="app-page-bg">
+        <IonContent style={{ '--background': '#ffffff' }} className="app-page-bg trip-details-modal">
           <div className="page-content">
             {loadingDetails ? (
               <LoadingSkeleton variant="card" count={3} />
             ) : selectedTripDetails ? (
               <>
                 {/* Trip Overview */}
-                <SoftCard style={{ marginBottom: 16, background: 'var(--bg-primary)', backdropFilter: 'none', WebkitBackdropFilter: 'none' }}>
+                <SoftCard variant="glass" className="trip-details-card" style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                     <div>
                       <StatusBadge variant={statusVariant(selectedTripDetails.status)} style={{ marginBottom: 8 }}>
@@ -382,6 +434,35 @@ const TripHistoryPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Route Details */}
+                  {(selectedTripDetails.starting_point || selectedTripDetails.end_point) && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '12px',
+                      background: 'rgba(0, 0, 0, 0.03)',
+                      borderRadius: 10,
+                      marginBottom: 12,
+                    }}>
+                      <MapPin size={16} color="var(--color-success)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>FROM</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedTripDetails.starting_point || '—'}
+                        </p>
+                      </div>
+                      <div style={{ width: 24, height: 1, background: 'var(--border-medium)', flexShrink: 0 }} />
+                      <Navigation size={16} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>TO</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedTripDetails.end_point || '—'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{
                     display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
                     paddingTop: 12, borderTop: '1px solid var(--border-subtle)',
@@ -389,8 +470,8 @@ const TripHistoryPage: React.FC = () => {
                     {[
                       { icon: Users, value: selectedTripDetails.passengers.length, label: 'Passengers' },
                       { icon: Wallet, value: `₱${selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(0)}`, label: 'Fare' },
-                      { icon: Clock, value: selectedTripDetails.ended_at ? 
-                        `${Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000)}m` : 
+                      { icon: Clock, value: selectedTripDetails.ended_at ?
+                        `${Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000)}m` :
                         'Active', label: 'Duration' },
                     ].map(({ icon: Icon, value, label }) => (
                       <div key={label} style={{ textAlign: 'center' }}>
@@ -414,7 +495,9 @@ const TripHistoryPage: React.FC = () => {
                   selectedTripDetails.passengers.map((passenger, i) => (
                     <SoftCard
                       key={passenger.id}
-                      style={{ marginBottom: 8, background: 'var(--bg-secondary)', backdropFilter: 'none', WebkitBackdropFilter: 'none' }}
+                      variant="glass"
+                      className="trip-details-card"
+                      style={{ marginBottom: 8 }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -437,6 +520,25 @@ const TripHistoryPage: React.FC = () => {
                               {new Date(passenger.boarded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               {passenger.alighted_at && ` - ${new Date(passenger.alighted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                             </p>
+                            {(passenger.boarding_stop || passenger.destination_stop) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                {passenger.boarding_stop && (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.7rem', color: 'var(--color-success)', fontWeight: 600 }}>
+                                    <MapPin size={10} />
+                                    {passenger.boarding_stop}
+                                  </span>
+                                )}
+                                {passenger.boarding_stop && passenger.destination_stop && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>→</span>
+                                )}
+                                {passenger.destination_stop && (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                    <Navigation size={10} />
+                                    {passenger.destination_stop}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
@@ -448,6 +550,11 @@ const TripHistoryPage: React.FC = () => {
                               +₱{passenger.baggage_fee.toFixed(2)} baggage
                             </p>
                           )}
+                          <p style={{ margin: '4px 0 0', fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                            {(passenger.payment_method === 'card' || passenger.payment_method === 'qr_card')
+                              ? <><CreditCard size={11} /> QR Card</>
+                              : <><Banknote size={11} /> Cash</>}
+                          </p>
                         </div>
                       </div>
                     </SoftCard>
@@ -456,7 +563,7 @@ const TripHistoryPage: React.FC = () => {
 
                 {/* Transactions Summary */}
                 <h4 className="heading-small" style={{ marginBottom: 12, marginTop: 20 }}>Transactions</h4>
-                <SoftCard style={{ background: 'var(--bg-secondary)', backdropFilter: 'none', WebkitBackdropFilter: 'none' }}>
+                <SoftCard variant="glass" className="trip-details-card">
                   {selectedTripDetails.transactions.length === 0 ? (
                     <p style={{ margin: 0, textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions</p>
                   ) : (
@@ -466,7 +573,11 @@ const TripHistoryPage: React.FC = () => {
                         padding: '12px 0', borderBottom: i < selectedTripDetails.transactions.length - 1 ? '1px solid var(--border-subtle)' : 'none'
                       }}>
                         <div>
-                          <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem' }}>{tx.channel}</p>
+                          <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {(tx.payment_method === 'card' || tx.payment_method === 'qr_card' || tx.channel === 'qr_card')
+                              ? <><CreditCard size={14} /> QR Card</>
+                              : <><Banknote size={14} /> Cash</>}
+                          </p>
                           <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
                             {new Date(tx.created_at).toLocaleString()}
                           </p>

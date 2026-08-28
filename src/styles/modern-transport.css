@@ -24,18 +24,18 @@
   --color-neutral: #6B7280;
   --color-neutral-subtle: rgba(107, 114, 128, 0.1);
 
-  --bg-primary: transparent;
-  --bg-secondary: rgba(255, 255, 255, 0.08);
-  --bg-tertiary: rgba(255, 255, 255, 0.05);
-  --bg-elevated: rgba(255, 255, 255, 0.1);
+  --bg-primary: #F8F9FA;
+  --bg-secondary: rgba(0, 0, 0, 0.04);
+  --bg-tertiary: rgba(0, 0, 0, 0.03);
+  --bg-elevated: #FFFFFF;
 
-  --text-primary: #F3F4F6;
-  --text-secondary: #CBD5E1;
-  --text-tertiary: #94A3B8;
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-tertiary: #6B7280;
   --text-inverse: #FFFFFF;
 
-  --border-subtle: rgba(255, 255, 255, 0.12);
-  --border-medium: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.15);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -43,10 +43,10 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
   --shadow-primary: 0 8px 24px rgba(249, 115, 22, 0.25);
 
-  --glass-bg: rgba(255, 255, 255, 0.08);
-  --glass-bg-hover: rgba(255, 255, 255, 0.12);
-  --glass-border: rgba(255, 255, 255, 0.18);
-  --glass-border-hover: rgba(255, 255, 255, 0.28);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-bg-hover: rgba(255, 255, 255, 0.95);
+  --glass-border: rgba(0, 0, 0, 0.10);
+  --glass-border-hover: rgba(0, 0, 0, 0.18);
   --glass-blur: 20px;
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.35);
@@ -107,10 +107,10 @@
   --color-neutral: #9CA3AF;
   --color-neutral-subtle: rgba(107, 114, 128, 0.1);
 
-  --glass-bg: rgba(255, 255, 255, 0.06);
-  --glass-bg-hover: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-border-hover: rgba(255, 255, 255, 0.22);
+  --glass-bg: rgba(30, 33, 48, 0.85);
+  --glass-bg-hover: rgba(37, 40, 54, 0.9);
+  --glass-border: rgba(61, 66, 89, 0.5);
+  --glass-border-hover: rgba(61, 66, 89, 0.8);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
   --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.55);
 
@@ -170,6 +170,7 @@ ion-content.orange-geometric-bg {
   border: 1px solid var(--glass-border);
   border-radius: var(--glass-radius);
   box-shadow: var(--glass-shadow);
+  color: var(--text-primary);
   transition:
     box-shadow var(--transition-base),
     border-color var(--transition-fast),
@@ -217,20 +218,20 @@ ion-content.orange-geometric-bg {
   transform: none;
 }
 
-/* Hero — glass style (no gradient, pure glass) */
+/* Hero — primary gradient card */
 .soft-card--gradient,
 .soft-card--hero {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  color: var(--text-primary);
-  box-shadow: var(--glass-shadow);
+  background: var(--color-primary-gradient);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  color: #ffffff;
+  box-shadow: var(--shadow-primary);
 }
 
 .soft-card--gradient:hover,
 .soft-card--hero:hover {
-  background: var(--glass-bg-hover);
-  border-color: var(--glass-border-hover);
-  box-shadow: var(--glass-shadow-hover);
+  background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+  border-color: rgba(249, 115, 22, 0.4);
+  box-shadow: 0 12px 32px rgba(249, 115, 22, 0.35);
 }
 
 /* Glass variant — explicit glass style */
@@ -1017,6 +1018,24 @@ input:-webkit-autofill:active {
   color: var(--text-secondary);
   max-width: 280px;
   line-height: 1.5;
+}
+
+/* ─── Empty state on gradient page background — white text ─────────────────── */
+.app-page-bg .empty-state__title {
+  color: #ffffff;
+}
+
+.app-page-bg .empty-state__description {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.app-page-bg .empty-state__icon-ring {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.app-page-bg .empty-state__dots span {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 /* ─── Passenger Details ─────────────────────────────────────────────────────── */
@@ -2498,6 +2517,185 @@ p, h1, h2, h3, h4, h5, h6, span, div, button, a {
   transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
 
+/* ─── Light Theme — solid white cards for settings & emergency ───────────── */
+:root .settings-item.glass-card,
+[data-theme="light"] .settings-item.glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root .settings-item.glass-card:hover,
+[data-theme="light"] .settings-item.glass-card:hover {
+  background: #ffffff;
+  border-color: rgba(249, 115, 22, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* ─── Dark Theme — solid dark cards for settings & emergency ───────────── */
+[data-theme="dark"] .settings-item.glass-card {
+  background: rgba(30, 33, 48, 0.95);
+  border: 1px solid rgba(61, 66, 89, 0.5);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-theme="dark"] .settings-item.glass-card:hover {
+  background: rgba(37, 40, 54, 0.98);
+  border-color: rgba(61, 66, 89, 0.8);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ─── Trip Details card — solid white in light theme, solid dark in dark theme ───────────────────────── */
+:root .soft-card.trip-details-card,
+:root .glass-card.trip-details-card,
+[data-theme="light"] .soft-card.trip-details-card,
+[data-theme="light"] .glass-card.trip-details-card {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+  color: #1a1a1a !important;
+}
+
+[data-theme="dark"] .soft-card.trip-details-card,
+[data-theme="dark"] .glass-card.trip-details-card {
+  background: #1a1a1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3) !important;
+  color: #ffffff !important;
+}
+
+:root .soft-card.trip-details-card *,
+:root .glass-card.trip-details-card *,
+[data-theme="light"] .soft-card.trip-details-card *,
+[data-theme="light"] .glass-card.trip-details-card * {
+  color: #1a1a1a !important;
+}
+
+[data-theme="dark"] .soft-card.trip-details-card *,
+[data-theme="dark"] .glass-card.trip-details-card * {
+  color: #ffffff !important;
+}
+
+:root .soft-card.trip-details-card .text-secondary,
+:root .glass-card.trip-details-card .text-secondary,
+[data-theme="light"] .soft-card.trip-details-card .text-secondary,
+[data-theme="light"] .glass-card.trip-details-card .text-secondary {
+  color: #4a4a4a !important;
+}
+
+[data-theme="dark"] .soft-card.trip-details-card .text-secondary,
+[data-theme="dark"] .glass-card.trip-details-card .text-secondary {
+  color: #b0b0b0 !important;
+}
+
+:root .soft-card.trip-details-card .text-tertiary,
+:root .glass-card.trip-details-card .text-tertiary,
+[data-theme="light"] .soft-card.trip-details-card .text-tertiary,
+[data-theme="light"] .glass-card.trip-details-card .text-tertiary {
+  color: #6a6a6a !important;
+}
+
+[data-theme="dark"] .soft-card.trip-details-card .text-tertiary,
+[data-theme="dark"] .glass-card.trip-details-card .text-tertiary {
+  color: #808080 !important;
+}
+
+:root .trip-details-stats,
+[data-theme="light"] .trip-details-stats {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-stats {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* ─── Trip Details Modal content — always white background ───────────────────────── */
+.trip-details-modal ion-content {
+  --background: #ffffff !important;
+  background: #ffffff !important;
+}
+
+.trip-details-modal .page-content {
+  background: #ffffff !important;
+}
+
+.trip-details-modal ion-header {
+  --background: #ffffff !important;
+  background: #ffffff !important;
+}
+
+.trip-details-modal ion-toolbar {
+  --background: #ffffff !important;
+  background: #ffffff !important;
+}
+
+.trip-details-modal .heading-small,
+.trip-details-modal .heading-medium,
+.trip-details-modal h3,
+.trip-details-modal h4 {
+  color: #1a1a1a !important;
+}
+
+.trip-details-modal ion-title {
+  color: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-modal ion-content {
+  --background: #1a1a1a !important;
+  background: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-modal .page-content {
+  background: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-modal ion-header {
+  --background: #1a1a1a !important;
+  background: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-modal ion-toolbar {
+  --background: #1a1a1a !important;
+  background: #1a1a1a !important;
+}
+
+[data-theme="dark"] .trip-details-modal .heading-small,
+[data-theme="dark"] .trip-details-modal .heading-medium,
+[data-theme="dark"] .trip-details-modal h3,
+[data-theme="dark"] .trip-details-modal h4 {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .trip-details-modal ion-title {
+  color: #ffffff !important;
+}
+
+:root .emergency-btn,
+[data-theme="light"] .emergency-btn {
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid rgba(239, 68, 68, 0.35);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root .emergency-btn:hover,
+[data-theme="light"] .emergency-btn:hover {
+  background: #fff5f5;
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.18);
+}
+
 .hover-lift:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-md);
@@ -2669,4 +2867,57 @@ ion-router-outlet {
 /* Do NOT override ion-page display or position — Ionic requires flex layout */
 ion-page {
   z-index: 1;
+}
+
+/* ─── IonAlert solid background override ──────────────────────────────────── */
+.solid-alert {
+  --background: var(--bg-secondary);
+  --backdrop-opacity: 0.6;
+}
+
+.solid-alert .alert-wrapper {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.solid-alert .alert-head {
+  padding-bottom: 8px;
+}
+
+.solid-alert .alert-title {
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+  font-size: 1.05rem !important;
+}
+
+.solid-alert .alert-message {
+  color: var(--text-secondary) !important;
+  font-size: 0.9rem !important;
+}
+
+.solid-alert .alert-button-group {
+  border-top: 1px solid var(--border-subtle) !important;
+  padding: 8px !important;
+  gap: 8px;
+}
+
+.solid-alert .alert-button {
+  border-radius: var(--radius-md) !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.solid-alert .alert-button.ion-focused,
+.solid-alert .alert-button:hover {
+  background: var(--bg-tertiary) !important;
+}
+
+/* Sign Out confirm button — red */
+.solid-alert .alert-button:not([class*="cancel"]):last-child {
+  color: var(--color-danger) !important;
+  background: var(--color-danger-subtle) !important;
 }

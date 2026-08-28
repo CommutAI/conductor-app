@@ -121,8 +121,28 @@ CREATE TABLE IF NOT EXISTS trips (
   status          trip_status NOT NULL DEFAULT 'in_progress',
   current_lat     FLOAT8,
   current_lng     FLOAT8,
-  gps_updated_at  TIMESTAMPTZ
+  gps_updated_at  TIMESTAMPTZ,
+  starting_point  TEXT,
+  end_point       TEXT
 );
+
+-- Add starting_point and end_point columns if they don't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'starting_point'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN starting_point TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'end_point'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN end_point TEXT;
+  END IF;
+END $$;
 
 -- ── 4. QR Cards ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS qr_cards (
@@ -214,8 +234,20 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
   baggage_category TEXT,
   baggage_weight   NUMERIC(10,2),
-  baggage_fee      NUMERIC(10,2)
+  baggage_fee      NUMERIC(10,2),
+  payment_method   TEXT
 );
+
+-- Add payment_method column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'payment_method'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN payment_method TEXT;
+  END IF;
+END $$;
 
 -- Add baggage columns if they don't exist
 DO $$
@@ -279,6 +311,7 @@ CREATE TABLE IF NOT EXISTS boarded_passengers (
   temp_ticket_id  UUID        REFERENCES temporary_tickets (id),
   boarded_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   alighted_at     TIMESTAMPTZ,
+  payment_method  TEXT,
   CONSTRAINT chk_boarding_source CHECK (card_id IS NOT NULL OR temp_ticket_id IS NOT NULL)
 );
 
@@ -290,6 +323,27 @@ BEGIN
     WHERE table_name = 'boarded_passengers' AND column_name = 'alighted_at'
   ) THEN
     ALTER TABLE boarded_passengers ADD COLUMN alighted_at TIMESTAMPTZ;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'boarded_passengers' AND column_name = 'payment_method'
+  ) THEN
+    ALTER TABLE boarded_passengers ADD COLUMN payment_method TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'boarded_passengers' AND column_name = 'boarding_stop'
+  ) THEN
+    ALTER TABLE boarded_passengers ADD COLUMN boarding_stop TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'boarded_passengers' AND column_name = 'destination_stop'
+  ) THEN
+    ALTER TABLE boarded_passengers ADD COLUMN destination_stop TEXT;
   END IF;
 END $$;
 

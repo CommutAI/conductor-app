@@ -642,8 +642,7 @@ const ScanPage: React.FC = () => {
   }
 
   /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
-  async function commitBoardingWithDestination(code: string, destination: string, paymentMethod: 'card' | 'cash' = 'card') {
-    if (!currentTrip || !profile) {
+  async function commitBoardingWithDestination(code: string, destination: string, paymentMethod: 'card' | 'cash' = 'card') {    if (!currentTrip || !profile) {
       console.error('Missing currentTrip or profile in commitBoardingWithDestination');
       setFailedMsg('Missing trip or profile data');
       setScanState('failed');
@@ -667,6 +666,7 @@ const ScanPage: React.FC = () => {
         baggageSelection?.category,
         baggageSelection?.weight,
         paymentMethod,
+        currentStopName || undefined,
       );
       console.log('Process scan result:', result);
       console.log('Result status:', result.status);

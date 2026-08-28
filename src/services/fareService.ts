@@ -148,7 +148,8 @@ export async function processScan(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'cash' = 'card'
+  paymentMethod: 'card' | 'cash' = 'card',
+  boardingStop?: string,
 ): Promise<ScanResult> {
   const normalizedUid = normalizeQrCode(scannedUid);
 
@@ -156,7 +157,7 @@ export async function processScan(
   const cachedCard = cache.get<QRCard>(CacheKeys.card(normalizedUid));
   if (cachedCard) {
     console.log('[FareService] Cache hit for card:', normalizedUid);
-    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod);
+    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   // Check for QR card from database
@@ -174,7 +175,7 @@ export async function processScan(
       passenger_type: card.passenger_type as PassengerType
     };
     cache.set(CacheKeys.card(normalizedUid), cardData, CacheTTL.MEDIUM);
-    return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod);
+    return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   // Check cache for temporary ticket
@@ -211,7 +212,8 @@ async function processQRCard(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'cash' = 'card'
+  paymentMethod: 'card' | 'cash' = 'card',
+  boardingStop?: string,
 ): Promise<ScanResult> {
   // Check for fake QR
   if (!scannedUid || scannedUid.length < 8) {
@@ -345,6 +347,9 @@ async function processQRCard(
       trip_id: tripId,
       card_id: card.id,
       boarded_at: new Date().toISOString(),
+      payment_method: paymentMethod === 'cash' ? 'cash' : 'qr_card',
+      boarding_stop: boardingStop || null,
+      destination_stop: currentDestination || null,
     });
     if (boardErr) {
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };

@@ -18,6 +18,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
+import { getLocationAndDecode } from '../services/geoService';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -350,6 +351,17 @@ const HomePage: React.FC = () => {
         return;
       }
 
+      // Get current GPS location for starting point
+      let startingPoint = bus.route; // Default to route name if GPS fails
+      try {
+        const locationResult = await getLocationAndDecode();
+        if (locationResult.success && locationResult.locationName) {
+          startingPoint = locationResult.locationName;
+        }
+      } catch (err) {
+        console.log('[HomePage] GPS location not available, using route as starting point');
+      }
+
       const { data: trip, error: tripErr } = await supabase
         .from('trips')
         .insert({
@@ -357,6 +369,7 @@ const HomePage: React.FC = () => {
           conductor_id: profile.id,
           started_at: new Date().toISOString(),
           status: 'in_progress',
+          starting_point: startingPoint,
         })
         .select()
         .single();
@@ -393,11 +406,21 @@ const HomePage: React.FC = () => {
     if (!currentTrip) return;
 
     try {
+      // Try to get current GPS location for end_point
+      let endPoint: string | undefined;
+      try {
+        const locationResult = await getLocationAndDecode();
+        if (locationResult.success && locationResult.locationName) {
+          endPoint = locationResult.locationName;
+        }
+      } catch (_) { /* GPS optional — don't block trip end */ }
+
       const { error } = await supabase
         .from('trips')
         .update({
           ended_at: new Date().toISOString(),
-          status: 'completed'
+          status: 'completed',
+          ...(endPoint ? { end_point: endPoint } : {}),
         })
         .eq('id', currentTrip.id);
 
@@ -482,7 +505,7 @@ const HomePage: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
-              <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden' }}>
+              <SoftCard variant="glass" padding="none" style={{ overflow: 'hidden' }}>
                 {/* Decorative Elements */}
                 <div style={{
                   position: 'absolute',

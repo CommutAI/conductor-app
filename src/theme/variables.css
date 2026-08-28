@@ -52,7 +52,7 @@
 
   /* Force gradient background */
   --ion-background-color: transparent;
-  --ion-text-color: #F3F4F6;
+  --ion-text-color: #111827;
   --ion-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -115,6 +115,11 @@ ion-fab-button {
 ion-searchbar {
   --border-radius: 16px;
   --box-shadow: none;
+  --color: #ffffff;
+  --placeholder-color: rgba(255, 255, 255, 0.6);
+  --icon-color: rgba(255, 255, 255, 0.7);
+  --clear-button-color: rgba(255, 255, 255, 0.7);
+  --background: rgba(255, 255, 255, 0.15);
   padding: 0;
 }
 

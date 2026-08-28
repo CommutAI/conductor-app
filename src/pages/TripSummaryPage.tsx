@@ -143,7 +143,7 @@ const TripSummaryPage: React.FC = () => {
               <DashboardCard label="Issues" value={irregularities.length} icon={AlertTriangle} iconBg={irregularities.length > 0 ? 'var(--color-warning-subtle)' : 'var(--bg-tertiary)'} iconColor={irregularities.length > 0 ? '#A16207' : 'var(--text-secondary)'} delay={0.25} />
             </div>
 
-            <SoftCard variant="glass" style={{ marginBottom: 16 }}>
+            <SoftCard variant="glass" className="trip-details-card" style={{ marginBottom: 16 }}>
               <h3 className="heading-medium" style={{ marginBottom: 16 }}>Trip Details</h3>
               <div className="transport-list-item">
                 <Bus size={20} color="var(--color-primary)" />
@@ -159,7 +159,7 @@ const TripSummaryPage: React.FC = () => {
                   <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Conductor</p>
                 </div>
               </div>
-              <div style={{ background: 'var(--bg-tertiary)', borderRadius: 14, padding: 16, marginTop: 8 }}>
+              <div className="trip-details-stats" style={{ borderRadius: 14, padding: 16, marginTop: 8 }}>
                 {[
                   ['Started', new Date(currentTrip.started_at).toLocaleString()],
                   ['Completed', currentTrip.ended_at ? new Date(currentTrip.ended_at).toLocaleString() : 'N/A'],
