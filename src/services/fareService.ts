@@ -439,23 +439,13 @@ async function processTemporaryTicket(
 // ── API Functions ─────────────────────────────────────────────────────────────
 
 export async function getBaggageFees(): Promise<BaggageFee[]> {
-  const { data, error } = await supabase
-    .from('baggage_fee_matrix')
-    .select('*')
-    .order('max_weight_kg', { ascending: true });
-
-  if (error) {
-    console.error('Error fetching baggage fees:', error);
-    return [];
-  }
-
-  return (data || []).map(fee => ({
-    id: fee.id,
-    category: fee.category,
-    max_weight_kg: Number(fee.max_weight_kg),
-    fee: Number(fee.fee),
-    remarks: fee.remarks
-  }));
+  // Use hardcoded baggage fees - no database or cache needed
+  return [
+    { id: 'hardcoded-1', category: 'Extra Large', max_weight_kg: 20, fee: 50, remarks: 'Oversized baggage' },
+    { id: 'hardcoded-2', category: 'Large', max_weight_kg: 15, fee: 30, remarks: 'Large baggage' },
+    { id: 'hardcoded-3', category: 'Medium', max_weight_kg: 10, fee: 20, remarks: 'Medium baggage' },
+    { id: 'hardcoded-4', category: 'Small', max_weight_kg: 7, fee: 15, remarks: 'Small baggage' },
+  ];
 }
 
 export async function getQRCardByUID(cardUID: string): Promise<QRCard | null> {

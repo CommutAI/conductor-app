@@ -3,9 +3,97 @@
  * Free GPS reverse-geocoding via Nominatim (OpenStreetMap) +
  * known stop coordinates for the Manolo Fortich ↔ Agora route.
  * Includes circuit breaker pattern for GPS service resilience
+ * Network-aware caching for offline support
  */
 
 import { withCircuitBreaker } from './circuitBreaker';
+
+// ── GPS Cache for Offline Support ─────────────────────────────────────────────
+interface CachedLocation {
+  locationName: string;
+  fullAddress: string;
+  timestamp: number;
+  coordinates: { lat: number; lng: number };
+}
+
+const GPS_CACHE_KEY = 'commutai_gps_cache';
+const GPS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache TTL
+
+class GpsCache {
+  private cache: Map<string, CachedLocation> = new Map();
+
+  getCachedLocation(lat: number, lng: number): CachedLocation | null {
+    const key = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+    const cached = this.cache.get(key);
+    
+    if (!cached) {
+      // Try localStorage
+      try {
+        const stored = localStorage.getItem(GPS_CACHE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const allCache = parsed.all || {};
+          const storedItem = allCache[key];
+          if (storedItem && Date.now() - storedItem.timestamp < GPS_CACHE_TTL) {
+            this.cache.set(key, storedItem);
+            return storedItem;
+          }
+        }
+      } catch (err) {
+        console.error('[GpsCache] Error reading from localStorage:', err);
+      }
+      return null;
+    }
+
+    // Check if cache is still valid
+    if (Date.now() - cached.timestamp > GPS_CACHE_TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return cached;
+  }
+
+  cacheLocation(lat: number, lng: number, locationName: string, fullAddress: string): void {
+    const key = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+    const item: CachedLocation = {
+      locationName,
+      fullAddress,
+      timestamp: Date.now(),
+      coordinates: { lat, lng }
+    };
+
+    this.cache.set(key, item);
+
+    // Persist to localStorage
+    try {
+      const stored = localStorage.getItem(GPS_CACHE_KEY);
+      const parsed = stored ? JSON.parse(stored) : { all: {} };
+      parsed.all[key] = item;
+      localStorage.setItem(GPS_CACHE_KEY, JSON.stringify(parsed));
+    } catch (err) {
+      console.error('[GpsCache] Error writing to localStorage:', err);
+    }
+  }
+
+  clearOldCache(): void {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (now - item.timestamp > GPS_CACHE_TTL) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+const gpsCache = new GpsCache();
+
+// Auto-clear old cache periodically
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    gpsCache.clearOldCache();
+  }, 5 * 60 * 1000); // Every 5 minutes
+}
 
 export interface StopCoords {
   name: string;
@@ -296,13 +384,13 @@ export interface GpsLocationResult {
 
 export async function getLocationAndDecode(): Promise<GpsLocationResult> {
   try {
-    // 1. Get current GPS coordinates
+    // 1. Get current GPS coordinates (works offline - device GPS)
     const pos = await getCurrentPosition(10000);
     
-    // 2. Reverse-geocode to get readable location
-    const geo = await reverseGeocode(pos.lat, pos.lng);
-    
-    if (!geo) {
+    // 2. Check cache first for offline support
+    const cached = gpsCache.getCachedLocation(pos.lat, pos.lng);
+    if (cached && !navigator.onLine) {
+      console.log('[geoService] Using cached GPS location (offline mode)');
       return {
         success: true,
         coordinates: {
@@ -310,20 +398,52 @@ export async function getLocationAndDecode(): Promise<GpsLocationResult> {
           lng: pos.lng,
           accuracy: pos.accuracy,
         },
-        locationName: 'Unknown location',
-        fullAddress: `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`,
+        locationName: cached.locationName,
+        fullAddress: cached.fullAddress,
       };
     }
     
-    // Extract meaningful location name
-    const locationName = 
-      geo.address.village ||
-      geo.address.suburb ||
-      geo.address.city_district ||
-      geo.address.town ||
-      geo.address.city ||
-      geo.display_name.split(',')[0] ||
-      'Current location';
+    // 3. Try to match against known stops first (works offline - no API call)
+    const stopMatch = nearestStop(pos.lat, pos.lng);
+    
+    // 4. Try reverse-geocode for more precise location (requires internet)
+    let geo: NominatimResult | null = null;
+    let locationName: string;
+    let fullAddress: string;
+    
+    if (navigator.onLine) {
+      try {
+        geo = await reverseGeocode(pos.lat, pos.lng);
+      } catch {
+        // Reverse geocoding failed - will use stop match instead
+        console.log('[geoService] Reverse geocoding failed, using stop match');
+      }
+    } else {
+      console.log('[geoService] Offline mode, skipping reverse geocoding');
+    }
+    
+    // 5. Determine location name - prioritize known stops, then reverse geocode
+    if (stopMatch.isWithinRadius) {
+      locationName = stopMatch.stop.name;
+    } else if (geo) {
+      locationName = 
+        geo.address.village ||
+        geo.address.suburb ||
+        geo.address.city_district ||
+        geo.address.town ||
+        geo.address.city ||
+        geo.display_name.split(',')[0] ||
+        'Current location';
+    } else {
+      locationName = stopMatch.stop.name; // Fallback to nearest known stop
+    }
+    
+    fullAddress = geo?.display_name || `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`;
+    
+    // 6. Cache the result for offline use
+    if (navigator.onLine) {
+      gpsCache.cacheLocation(pos.lat, pos.lng, locationName, fullAddress);
+    }
     
     return {
       success: true,
@@ -333,7 +453,7 @@ export async function getLocationAndDecode(): Promise<GpsLocationResult> {
         accuracy: pos.accuracy,
       },
       locationName,
-      fullAddress: geo.display_name,
+      fullAddress,
     };
   } catch (error) {
     return {

@@ -25,7 +25,6 @@ import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
 import { realtimeService } from '../services/realtimeService';
 import PageHeader from '../components/layout/PageHeader';
-import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState,
 } from '../components/ui';
@@ -282,7 +281,6 @@ const TripHistoryPage: React.FC = () => {
 
   return (
     <IonPage>
-      <InteractiveBackground />
       <PageHeader showBack title="Trip History" subtitle="Your past trips" />
 
       <IonContent className="app-page-bg">

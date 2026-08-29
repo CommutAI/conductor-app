@@ -145,6 +145,7 @@ body {
 .page-content {
   padding: var(--space-2xl) var(--space-lg);
   padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  contain: layout style;
 }
 
 .page-content--no-nav {
@@ -1458,8 +1459,6 @@ input:-webkit-autofill:active {
   text-align: left;
   transition: all var(--transition-fast);
   background: rgba(239, 68, 68, 0.08);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   color: var(--text-primary);
   margin-bottom: 16px;
   position: relative;
@@ -2360,8 +2359,6 @@ p, h1, h2, h3, h4, h5, h6, span, div, button, a {
   border: 1px solid rgba(239, 68, 68, 0.35);
   border-radius: var(--card-radius);
   background: rgba(239, 68, 68, 0.12);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   color: #FCA5A5;
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
@@ -2725,22 +2722,16 @@ p, h1, h2, h3, h4, h5, h6, span, div, button, a {
 }
 
 .backdrop-blur {
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
 }
 
 .glass-effect {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border);
 }
 
 /* Nested glass chip inside hero cards */
 .glass-chip {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: var(--radius-md);
 }
@@ -2784,6 +2775,8 @@ p, h1, h2, h3, h4, h5, h6, span, div, button, a {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
+  will-change: auto;
+  contain: strict;
 }
 
 .interactive-bg__gradient {
@@ -2793,71 +2786,6 @@ p, h1, h2, h3, h4, h5, h6, span, div, button, a {
     radial-gradient(ellipse 80% 60% at 20% 10%, rgba(249, 115, 22, 0.18) 0%, transparent 60%),
     radial-gradient(ellipse 60% 50% at 80% 80%, rgba(251, 146, 60, 0.12) 0%, transparent 55%),
     radial-gradient(ellipse 50% 40% at 50% 50%, rgba(59, 130, 246, 0.06) 0%, transparent 50%);
-}
-
-.interactive-bg__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  animation: orb-float 12s ease-in-out infinite;
-}
-
-.interactive-bg__orb--1 {
-  width: 320px;
-  height: 320px;
-  background: rgba(249, 115, 22, 0.2);
-  top: -80px;
-  left: -60px;
-}
-
-.interactive-bg__orb--2 {
-  width: 260px;
-  height: 260px;
-  background: rgba(251, 146, 60, 0.15);
-  bottom: 15%;
-  right: -70px;
-  animation-duration: 15s;
-}
-
-.interactive-bg__orb--3 {
-  width: 200px;
-  height: 200px;
-  background: rgba(59, 130, 246, 0.1);
-  top: 45%;
-  left: 10%;
-  animation-duration: 18s;
-}
-
-.interactive-bg__orb--4 {
-  width: 180px;
-  height: 180px;
-  background: rgba(34, 197, 94, 0.08);
-  bottom: 30%;
-  left: 55%;
-  animation-duration: 14s;
-}
-
-@keyframes orb-float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(20px, -30px) scale(1.05); }
-  66% { transform: translate(-15px, 20px) scale(0.95); }
-}
-
-.interactive-bg__grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 80%);
-}
-
-.interactive-bg__noise {
-  position: absolute;
-  inset: 0;
-  opacity: 0.025;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 ion-router-outlet {
@@ -2920,4 +2848,14 @@ ion-page {
 .solid-alert .alert-button:not([class*="cancel"]):last-child {
   color: var(--color-danger) !important;
   background: var(--color-danger-subtle) !important;
+}
+
+/* ─── Keyboard / viewport performance ───────────────────────────────────── */
+ion-content {
+  --keyboard-offset: 0px;
+}
+
+/* Reduce motion for users who prefer it, and on low-end devices */
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

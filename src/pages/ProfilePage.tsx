@@ -17,7 +17,6 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import PageHeader from '../components/layout/PageHeader';
-import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, StatusBadge, AppToast,
@@ -88,7 +87,6 @@ const ProfilePage: React.FC = () => {
 
   return (
     <IonPage>
-      <InteractiveBackground />
       <PageHeader showBack title="Settings" subtitle="Manage your account" />
 
       <IonContent className="app-page-bg">
@@ -238,24 +236,43 @@ const ProfilePage: React.FC = () => {
             </div>
           </button>
 
-          <PrimaryButton
-            onClick={() => setShowLogoutAlert(true)}
-            variant="secondary"
-            fullWidth
-            icon={<LogOut size={20} />}
-            style={{ marginBottom: 16 }}
-          >
-            Sign Out
-          </PrimaryButton>
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 16,
+            padding: '12px',
+            marginBottom: 16,
+          }}>
+            <PrimaryButton
+              onClick={() => setShowLogoutAlert(true)}
+              variant="secondary"
+              fullWidth
+              icon={<LogOut size={20} />}
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1.5px solid rgba(239,68,68,0.3)',
+                color: '#DC2626',
+              }}
+            >
+              Sign Out
+            </PrimaryButton>
+          </div>
 
-          <SoftCard padding="sm" style={{ textAlign: 'center' }}>
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 16,
+            padding: '12px 16px',
+            textAlign: 'center',
+            marginBottom: 16,
+          }}>
             <p style={{ margin: '0 0 4px', fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
               OMANFORTSCO · Transportation Services
             </p>
             <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
               Made with care for Filipino commuters
             </p>
-          </SoftCard>
+          </div>
         </div>
 
         <BottomNav />

@@ -139,16 +139,21 @@ class RealtimeService {
   }
 
   /**
-   * Subscribe to passengers/scans for a specific conductor
+   * Subscribe to boarding/alighting events for a specific trip.
+   *
+   * BUG 7 FIX: The original implementation subscribed to a table named 'passengers'
+   * which does not exist. The actual table is 'boarded_passengers'. Additionally,
+   * 'boarded_passengers' has no conductor_id column — the correct filter is trip_id.
+   * Without this fix, real-time passenger updates NEVER fired across devices.
    */
-  subscribeToPassengers(conductorId: string, callbacks: {
+  subscribeToPassengers(tripId: string, callbacks: {
     onInsert?: (passenger: any) => void;
     onUpdate?: (passenger: any, oldPassenger: any) => void;
     onDelete?: (passenger: any) => void;
   }): () => void {
     return this.subscribe({
-      table: 'passengers',
-      filter: `conductor_id=eq.${conductorId}`,
+      table: 'boarded_passengers',
+      filter: `trip_id=eq.${tripId}`,
       onInsert: callbacks.onInsert,
       onUpdate: callbacks.onUpdate,
       onDelete: callbacks.onDelete,

@@ -1,76 +1,123 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
-import { StorageService, SyncResult } from '../services/storageService';
+import { StorageService } from '../services/storageService';
+import { offlineQueueService } from '../services/offlineQueueService';
+import { cache } from '../services/cacheService';
 
 interface NetworkContextType {
   isOnline: boolean;
   pendingCount: number;
   isSyncing: boolean;
-  lastSyncResult: SyncResult | null;
-  triggerSync: () => Promise<SyncResult | null>;
+  lastSyncAt: number | null;
+  triggerSync: () => Promise<void>;
   bumpPending: (count?: number) => void;
+  syncInProgress: boolean;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingCount, setPendingCount] = useState(StorageService.getPendingSyncCount());
+  const [pendingCount, setPendingCount] = useState(offlineQueueService.getPendingCount());
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
+  const [syncInProgress, setSyncInProgress] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const syncingRef = useRef(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const triggerSync = useCallback(async (): Promise<SyncResult | null> => {
-    if (!navigator.onLine || syncingRef.current) return null;
-    if (StorageService.getPendingSyncCount() === 0) return null;
+  const refreshPendingCount = useCallback(() => {
+    setPendingCount(offlineQueueService.getPendingCount());
+  }, []);
+
+  const triggerSync = useCallback(async (): Promise<void> => {
+    if (!navigator.onLine || syncingRef.current) {
+      console.log('[NetworkContext] Sync skipped - offline or already syncing');
+      return;
+    }
+
+    StorageService.purgeLegacyOfflineScansIfNeeded();
+
+    const pendingScans = offlineQueueService.getPendingCount();
+    const hasCachedTrip = !!StorageService.loadTripState()?.currentTrip;
+
+    if (pendingScans === 0 && !hasCachedTrip) {
+      console.log('[NetworkContext] Sync skipped - no pending scans or cached trip');
+      return;
+    }
 
     syncingRef.current = true;
     setIsSyncing(true);
+    setSyncInProgress(true);
 
     try {
-      const result = await StorageService.syncOfflineScans();
-      setLastSyncResult(result);
-      setPendingCount(StorageService.getPendingSyncCount());
-      return result;
+      // Phase 1: Ensure offline-started trip exists in DB before scan inserts
+      await StorageService.syncTripStateToDatabase();
+
+      // Phase 2: Flush the typed boarding/alighting queue
+      if (offlineQueueService.getPendingCount() > 0) {
+        console.log('[NetworkContext] Flushing offlineQueueService...');
+        const { success, failed } = await offlineQueueService.syncQueue();
+        console.log(`[NetworkContext] offlineQueueService sync: ${success} ok, ${failed} failed`);
+      }
+
+      refreshPendingCount();
+      setLastSyncAt(Date.now());
     } catch (err) {
       console.error('[NetworkContext] Sync failed:', err);
-      return null;
     } finally {
       syncingRef.current = false;
       setIsSyncing(false);
+      setSyncInProgress(false);
     }
-  }, []);
+  }, [refreshPendingCount]);
 
   useEffect(() => {
+    StorageService.purgeLegacyOfflineScansIfNeeded();
+
     function handleOnline() {
       setIsOnline(true);
-      triggerSync();
+      cache.invalidateOfflineEntries();
+
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      syncTimeoutRef.current = setTimeout(() => {
+        triggerSync();
+      }, 1000);
     }
 
     function handleOffline() {
       setIsOnline(false);
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
     }
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const interval = setInterval(() => {
-      setPendingCount(StorageService.getPendingSyncCount());
-    }, 10_000);
+    const interval = setInterval(refreshPendingCount, 10_000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
     };
-  }, [triggerSync]);
+  }, [triggerSync, refreshPendingCount]);
 
-  const bumpPending = useCallback((count?: number) => {
-    if (count !== undefined) {
-      setPendingCount(count);
-    } else {
-      setPendingCount(StorageService.getPendingSyncCount());
-    }
-  }, []);
+  const bumpPending = useCallback(
+    (count?: number) => {
+      if (count !== undefined) {
+        setPendingCount(count);
+      } else {
+        refreshPendingCount();
+      }
+    },
+    [refreshPendingCount],
+  );
 
   return (
     <NetworkContext.Provider
@@ -78,9 +125,10 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
         isOnline,
         pendingCount,
         isSyncing,
-        lastSyncResult,
+        lastSyncAt,
         triggerSync,
         bumpPending,
+        syncInProgress,
       }}
     >
       {children}

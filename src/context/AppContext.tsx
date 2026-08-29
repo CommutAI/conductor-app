@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import { StorageService, CachedTripState } from '../services/storageService';
@@ -22,6 +22,7 @@ interface Bus {
   route: string;
   seat_capacity: number;
   status: string;
+  cachedAt?: number; // Timestamp for cache invalidation
 }
 
 interface Trip {
@@ -65,6 +66,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const THEME_STORAGE_KEY = 'commutai-theme';
+const PROFILE_CACHE_KEY = 'commutai_profile_cache';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   // ── Theme State ─────────────────────────────────────────────────────────────
@@ -81,12 +83,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // ── Trip State ──────────────────────────────────────────────────────────────
-  const cached = StorageService.loadTripState();
-  const [currentTrip, _setCurrentTrip] = useState<Trip | null>(cached?.currentTrip ?? null);
-  const [currentBus, _setCurrentBus] = useState<Bus | null>(cached?.currentBus ?? null);
-  const [validatedCount, _setValidatedCount] = useState(cached?.validatedCount ?? 0);
-  const [fareCollected, _setFareCollected] = useState(cached?.fareCollected ?? 0);
+  // BUG 6 FIX: Load cached state once for initial useState values only.
+  // The 'cached' variable must NOT be reused inside async functions (like restoreTrip)
+  // because by the time those run the state may have changed. Instead, call
+  // StorageService.loadTripState() fresh inside restoreTrip.
+  const initialCached = StorageService.loadTripState();
+  const [currentTrip, _setCurrentTrip] = useState<Trip | null>(initialCached?.currentTrip ?? null);
+  const [currentBus, _setCurrentBus] = useState<Bus | null>(initialCached?.currentBus ?? null);
+  const [validatedCount, _setValidatedCount] = useState(initialCached?.validatedCount ?? 0);
+  const [fareCollected, _setFareCollected] = useState(initialCached?.fareCollected ?? 0);
   const [isRestoringTrip, setIsRestoringTrip] = useState(false);
+  const restoredOfflineOnlyRef = useRef(false);
+
+  const validateTripWithDatabase = useCallback(async () => {
+    if (!profile || !navigator.onLine) return;
+
+    setIsRestoringTrip(true);
+    const freshCached = StorageService.loadTripState();
+
+    try {
+      if (freshCached?.currentTrip) {
+        const { data: dbTrip } = await supabase
+          .from('trips')
+          .select('*')
+          .eq('id', freshCached.currentTrip.id)
+          .eq('status', 'in_progress')
+          .maybeSingle();
+
+        if (dbTrip) {
+          console.log('[AppContext] Cached trip confirmed active in DB:', dbTrip.id);
+          _setCurrentTrip(dbTrip);
+          restoredOfflineOnlyRef.current = false;
+          return;
+        }
+
+        console.log('[AppContext] Cached trip no longer active, clearing cache');
+        StorageService.clearTripState();
+        _setCurrentTrip(null);
+        _setCurrentBus(null);
+        _setValidatedCount(0);
+        _setFareCollected(0);
+      }
+
+      const { data: activeTrip } = await supabase
+        .from('trips')
+        .select('*')
+        .eq('conductor_id', profile.id)
+        .eq('status', 'in_progress')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeTrip) {
+        console.log('[AppContext] Found active trip in DB, restoring:', activeTrip.id);
+
+        const { data: bus } = await supabase
+          .from('buses')
+          .select('*')
+          .eq('id', activeTrip.bus_id)
+          .maybeSingle();
+
+        _setCurrentTrip(activeTrip);
+        if (bus) _setCurrentBus(bus);
+        _setValidatedCount(0);
+        _setFareCollected(0);
+
+        StorageService.saveTripState({
+          currentTrip: activeTrip,
+          currentBus: bus,
+          validatedCount: 0,
+          fareCollected: 0,
+        });
+      } else {
+        console.log('[AppContext] No active trip found in DB');
+      }
+    } catch (err) {
+      console.error('[AppContext] Error validating trip with DB:', err);
+    } finally {
+      setIsRestoringTrip(false);
+      restoredOfflineOnlyRef.current = false;
+    }
+  }, [profile]);
 
   // ── Theme Effects ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -96,39 +173,80 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Auth Effects ────────────────────────────────────────────────────────────
   async function fetchProfile(userId: string): Promise<StaffProfile | null> {
-    const { data, error } = await supabase
-      .from('staff_users')
-      .select('id, full_name, email, role, is_active, bus_id')
-      .eq('id', userId)
-      .single();
+    // Network-aware profile fetch with retry logic
+    let retryCount = 0;
+    const maxRetries = 2;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const { data, error } = await supabase
+          .from('staff_users')
+          .select('id, full_name, email, role, is_active, bus_id')
+          .eq('id', userId)
+          .single();
 
-    if (error || !data) {
-      console.error('[AppContext] Profile fetch error:', error);
-      return null;
+        if (error || !data) {
+          console.error('[AppContext] Profile fetch error:', error);
+          
+          // Retry transient failures while online (not when genuinely offline)
+          if (error && navigator.onLine && retryCount < maxRetries) {
+            retryCount++;
+            console.log(`[AppContext] Retrying profile fetch (${retryCount}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            continue;
+          }
+          
+          return null;
+        }
+        console.log('[AppContext] Profile fetched:', data);
+        return data as StaffProfile;
+      } catch (err) {
+        console.error('[AppContext] Profile fetch exception:', err);
+        
+        // Retry transient failures while online
+        if (navigator.onLine && retryCount < maxRetries) {
+          retryCount++;
+          console.log(`[AppContext] Retrying profile fetch after exception (${retryCount}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          continue;
+        }
+        
+        return null;
+      }
     }
-    console.log('[AppContext] Profile fetched:', data);
-    return data as StaffProfile;
+    
+    return null;
   }
 
   useEffect(() => {
+    // Only restore session on initial mount, not on network changes
+    let hasMounted = false;
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const p = await fetchProfile(session.user.id);
-        setProfile(p);
+      if (!hasMounted) {
+        hasMounted = true;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          const p = await fetchProfile(session.user.id);
+          setProfile(p);
+        }
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const p = await fetchProfile(session.user.id);
-        setProfile(p);
-      } else {
-        setProfile(null);
+      // Only update session if it's a real auth event, not network-related
+      if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          // Network-aware profile fetch
+          const p = await fetchProfile(session.user.id);
+          setProfile(p);
+        } else {
+          setProfile(null);
+        }
       }
     });
 
@@ -142,80 +260,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!profile) return;
 
+    let hasRestored = false;
+
     const restoreTrip = async () => {
-      setIsRestoringTrip(true);
+      if (hasRestored) return;
+      hasRestored = true;
 
-      try {
-        // Check if the cached trip is still valid in the DB first
-        if (cached?.currentTrip) {
-          const { data: dbTrip } = await supabase
-            .from('trips')
-            .select('*')
-            .eq('id', cached.currentTrip.id)
-            .eq('status', 'in_progress')
-            .maybeSingle();
-
-          if (dbTrip) {
-            // Cache is valid and trip is still active — keep using it
-            console.log('[AppContext] Cached trip confirmed active in DB:', dbTrip.id);
-            _setCurrentTrip(dbTrip);
-            setIsRestoringTrip(false);
-            return;
-          } else {
-            // Cached trip is stale (completed/cancelled on another device)
-            console.log('[AppContext] Cached trip no longer active, clearing cache');
-            StorageService.clearTripState();
-            _setCurrentTrip(null);
-            _setCurrentBus(null);
-            _setValidatedCount(0);
-            _setFareCollected(0);
-          }
-        }
-
-        // No valid cache — query DB for an active trip for this conductor
-        const { data: activeTrip } = await supabase
-          .from('trips')
-          .select('*')
-          .eq('conductor_id', profile.id)
-          .eq('status', 'in_progress')
-          .order('started_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (activeTrip) {
-          console.log('[AppContext] Found active trip in DB, restoring:', activeTrip.id);
-
-          // Also load the associated bus
-          const { data: bus } = await supabase
-            .from('buses')
-            .select('*')
-            .eq('id', activeTrip.bus_id)
-            .maybeSingle();
-
-          _setCurrentTrip(activeTrip);
-          if (bus) _setCurrentBus(bus);
-          _setValidatedCount(0);
-          _setFareCollected(0);
-
-          // Persist to localStorage so subsequent loads are instant
-          StorageService.saveTripState({
-            currentTrip: activeTrip,
-            currentBus: bus,
-            validatedCount: 0,
-            fareCollected: 0,
-          });
-        } else {
-          console.log('[AppContext] No active trip found in DB');
-        }
-      } catch (err) {
-        console.error('[AppContext] Error restoring trip from DB:', err);
-      } finally {
+      if (!navigator.onLine) {
+        console.log('[AppContext] Offline — using cached trip state only');
+        restoredOfflineOnlyRef.current = true;
         setIsRestoringTrip(false);
+        return;
       }
+
+      await validateTripWithDatabase();
     };
 
     restoreTrip();
-  }, [profile?.id]); // runs once per authenticated session
+  }, [profile?.id, validateTripWithDatabase]);
+
+  // Re-validate cached trip against DB when connectivity returns after offline startup
+  useEffect(() => {
+    function handleOnline() {
+      if (restoredOfflineOnlyRef.current && profile) {
+        console.log('[AppContext] Back online — re-validating cached trip with DB');
+        validateTripWithDatabase();
+      }
+    }
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [profile?.id, validateTripWithDatabase]);
 
   useEffect(() => {
     if (currentTrip) {
@@ -230,6 +305,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Auth Functions ──────────────────────────────────────────────────────────
   async function signIn(email: string, password: string): Promise<{ error: string | null }> {
+    // ── Offline fallback: use cached credentials ──────────────────────────
+    if (!navigator.onLine) {
+      try {
+        const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+        if (raw) {
+          const { profile: cachedProfile, email: cachedEmail } = JSON.parse(raw);
+          if (cachedEmail === email.trim() && cachedProfile) {
+            console.log('[AppContext] Offline login using cached profile');
+            setProfile(cachedProfile);
+            setLoading(false);
+            // Re-use the existing Supabase session if it is still stored locally
+            const { data: { session: existing } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+            if (existing) {
+              setSession(existing);
+              // BUG 8 FIX: setUser was never called in the offline login path.
+              // Components reading `user` (e.g. ProtectedRoute) saw null and
+              // treated the conductor as signed out, even after a valid offline login.
+              setUser(existing.user);
+            }
+            return { error: null };
+          }
+        }
+      } catch (_) {}
+      return { error: 'No internet connection. Please connect to log in for the first time.' };
+    }
+
+    // ── Online login ──────────────────────────────────────────────────────
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
@@ -238,13 +340,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (p.role !== 'conductor') return { error: 'Access denied. This app is for conductors only.' };
     if (!p.is_active) return { error: 'Your account is inactive. Contact your administrator.' };
 
+    // Cache the profile so offline login works on subsequent sessions
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ email: email.trim(), profile: p }));
+
+    setSession(data.session);
     setProfile(p);
     return { error: null };
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    // Keep PROFILE_CACHE_KEY so offline login still works after signing out.
+    // The Supabase session is cleared below — the cached profile data
+    // (name, role, bus_id) is not sensitive and enables offline re-login.
+    StorageService.clearTripState();
+    setSession(null);
     setProfile(null);
+    setUser(null);
+    await supabase.auth.signOut();
   }
 
   // ── Trip Functions ──────────────────────────────────────────────────────────

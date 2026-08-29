@@ -62,13 +62,83 @@ export interface SyncResult {
 
 const OFFLINE_SCANS_KEY = 'commutai_offline_scans';
 const TRIP_STATE_KEY = 'commutai_trip_state';
+const CARD_CACHE_KEY = 'commutai_card_cache';
+
+// ── Persistent Card Cache (survives app restarts, used for offline lookups) ───
+export interface CachedCard {
+  id: string;
+  card_uid: string;
+  balance: number;
+  status: string;
+  passenger_type: string;
+  destination?: string;
+  allowed_routes: string[];
+  owner_name?: string;
+  cachedAt: number;
+}
+
+export interface CachedTicket {
+  id: string;
+  ticket_uid: string;
+  fare_amount: number;
+  status: string;
+  destination?: string;
+  passenger_type?: string;
+  cachedAt: number;
+}
 
 // ── Storage Service ───────────────────────────────────────────────────────────
+
+const LEGACY_QUEUE_PURGED_KEY = 'commutai_legacy_queue_purged_v1';
 
 export class StorageService {
   // ── Network Status ───────────────────────────────────────────────────────────
   static isOnline(): boolean {
     return navigator.onLine;
+  }
+
+  /**
+   * One-time purge of the legacy offline scan queue (commutai_offline_scans).
+   * ScanPage no longer writes to this queue (BUG 1 fix); leftover entries from
+   * before that fix could duplicate boardings if synced alongside offlineQueueService.
+   */
+  static purgeLegacyOfflineScansIfNeeded(): void {
+    if (localStorage.getItem(LEGACY_QUEUE_PURGED_KEY)) return;
+
+    const legacy = this.getOfflineScans();
+    if (legacy.length > 0) {
+      console.warn(
+        `[StorageService] Purging ${legacy.length} legacy offline scan(s) to prevent duplicate sync`,
+      );
+      localStorage.removeItem(OFFLINE_SCANS_KEY);
+    }
+
+    localStorage.setItem(LEGACY_QUEUE_PURGED_KEY, '1');
+  }
+
+  // ── Persistent Card/Ticket Cache (offline lookups) ────────────────────────
+  static cacheCard(card: Omit<CachedCard, 'cachedAt'>): void {
+    const all = this._read<Record<string, CachedCard>>(CARD_CACHE_KEY) ?? {};
+    all[card.card_uid.toUpperCase()] = { ...card, cachedAt: Date.now() };
+    this._write(CARD_CACHE_KEY, all);
+  }
+
+  static getCachedCard(cardUid: string): CachedCard | null {
+    const all = this._read<Record<string, CachedCard>>(CARD_CACHE_KEY) ?? {};
+    return all[cardUid.toUpperCase()] ?? null;
+  }
+
+  static cacheTicket(ticket: Omit<CachedTicket, 'cachedAt'>): void {
+    const key = `ticket_${CARD_CACHE_KEY}`;
+    const all = this._read<Record<string, CachedTicket>>(key) ?? {};
+    all[ticket.ticket_uid.toUpperCase()] = { ...ticket, cachedAt: Date.now() };
+    this._write(key, all);
+  }
+
+  static getCachedTicket(ticketUid: string): CachedTicket | null {
+    const key = `ticket_${CARD_CACHE_KEY}`;
+    const all = this._read<Record<string, CachedTicket>>(key) ?? {};
+    return all[ticketUid.toUpperCase()] ?? null;
   }
 
   // ── Scan Queue with Message Queue Patterns ───────────────────────────────────

@@ -10,7 +10,6 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
-import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState, DashboardCard,
 } from '../components/ui';
@@ -111,7 +110,6 @@ const PassengerListPage: React.FC = () => {
 
   return (
     <IonPage>
-      <InteractiveBackground />
       <PageHeader
         showBack
         onBack={() => history.push('/')}

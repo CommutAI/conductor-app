@@ -11,9 +11,11 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component }) => {
-  const { session, profile, loading, isRestoringTrip } = useApp();
+  const { profile, loading, isRestoringTrip } = useApp();
 
-  if (loading || isRestoringTrip) {
+  // Only show loading if we don't have a profile yet and aren't restoring a trip
+  // This prevents the loading overlay from showing after offline login when profile is already set
+  if (loading && !profile && !isRestoringTrip) {
     return (
       <IonPage>
         <IonContent fullscreen className="app-page-bg">
@@ -26,7 +28,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component })
               <Logo size="lg" />
               <Loader2 size={36} color="var(--color-primary)" style={{ animation: 'spin 0.8s linear infinite' }} />
               <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
-                {isRestoringTrip ? 'Resuming your active trip…' : 'Loading your workspace…'}
+                Loading your workspace…
               </p>
             </motion.div>
           </div>
@@ -35,7 +37,30 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component })
     );
   }
 
-  if (!session || !profile) {
+  // Show loading specifically for trip restoration
+  if (isRestoringTrip) {
+    return (
+      <IonPage>
+        <IonContent fullscreen className="app-page-bg">
+          <div className="login-hero" style={{ minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}
+            >
+              <Logo size="lg" />
+              <Loader2 size={36} color="var(--color-primary)" style={{ animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
+                Resuming your active trip…
+              </p>
+            </motion.div>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
+  if (!profile) {
     return <Redirect to="/login" />;
   }
 

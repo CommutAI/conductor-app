@@ -9,7 +9,6 @@ import {
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/layout/PageHeader';
-import InteractiveBackground from '../components/layout/InteractiveBackground';
 import BottomNav from '../components/layout/BottomNav';
 import {
   SoftCard, PrimaryButton, DashboardCard, LoadingSkeleton,
@@ -97,7 +96,6 @@ const TripSummaryPage: React.FC = () => {
 
   return (
     <IonPage>
-      <InteractiveBackground />
       <PageHeader title="Trip Summary" subtitle="Completed successfully" />
 
       <IonContent className="app-page-bg">

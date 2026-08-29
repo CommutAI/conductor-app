@@ -23,7 +23,6 @@ import { realtimeService } from '../services/realtimeService';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
-import InteractiveBackground from '../components/layout/InteractiveBackground';
 import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, DashboardCard,
@@ -79,16 +78,18 @@ const HomePage: React.FC = () => {
   const [notifiedPassengers, setNotifiedPassengers] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Context
+  const { profile, currentTrip, currentBus, validatedCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, loading: authLoading } = useApp();
+  const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
+
   // Refs
   const gpsTrackerRef = useRef<any>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastGpsUpdateRef = useRef<number>(0);
   const proximityCheckRef = useRef<NodeJS.Timeout | null>(null);
   const realtimeCleanupRef = useRef<(() => void) | null>(null);
-
-  // Context
-  const { profile, currentTrip, currentBus, validatedCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, loading: authLoading } = useApp();
-  const { isOnline } = useNetwork();
+  const networkStateRef = useRef<boolean>(isOnline);
+  const prevSyncInProgressRef = useRef(false);
   const history = useHistory();
 
   // Computed Values
@@ -130,6 +131,24 @@ const HomePage: React.FC = () => {
   const loadBusInfo = useCallback(async () => {
     if (!profile?.bus_id) return;
 
+    // ── OFFLINE: Try to load from cache first ───────────────────────────────
+    if (!isOnline) {
+      const cachedBus = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+      if (cachedBus) {
+        try {
+          const bus = JSON.parse(cachedBus);
+          console.log('[HomePage] Loaded bus from cache:', bus);
+          setCurrentBus(bus);
+          return;
+        } catch (err) {
+          console.error('[HomePage] Error parsing cached bus:', err);
+        }
+      }
+      console.log('[HomePage] Offline - no cached bus available');
+      return;
+    }
+
+    // ── ONLINE: Fetch from database and cache ───────────────────────────────
     try {
       const { data: bus, error } = await supabase
         .from('buses')
@@ -146,15 +165,30 @@ const HomePage: React.FC = () => {
       if (bus) {
         console.log('[HomePage] Bus info loaded:', bus);
         setCurrentBus(bus);
+        // Cache for offline use
+        localStorage.setItem(`cached_bus_${profile.bus_id}`, JSON.stringify(bus));
       }
     } catch (err) {
       console.error('[HomePage] Error loading bus info:', err);
     }
-  }, [profile?.bus_id, setCurrentBus]);
+  }, [profile?.bus_id, setCurrentBus, isOnline]);
 
   const loadData = useCallback(async () => {
     if (!currentTrip) return;
 
+    // ── OFFLINE: Use cached/local state only ──────────────────────────────
+    if (!isOnline) {
+      console.log('[HomePage] Offline - using local state for stats');
+      // Use local state that's already updated by scan operations
+      setTripStats({
+        passengerCount: validatedCount,
+        irregularities: [],
+        capacityPercent: currentBus ? (validatedCount / currentBus.seat_capacity) * 100 : 0,
+      });
+      return;
+    }
+
+    // ── ONLINE: Sync with database ───────────────────────────────────────
     // Check if trip is actually still active in database
     const { data: tripStatus } = await supabase
       .from('trips')
@@ -197,17 +231,19 @@ const HomePage: React.FC = () => {
         .limit(10);
 
       setTripStats({
-        passengerCount: passengerCount || 0,
+        passengerCount: Math.max(validatedCount, passengerCount || 0),
         irregularities: irregularities || [],
-        capacityPercent: currentBus ? ((passengerCount || 0) / currentBus.seat_capacity) * 100 : 0,
+        capacityPercent: currentBus
+          ? (Math.max(validatedCount, passengerCount || 0) / currentBus.seat_capacity) * 100
+          : 0,
       });
 
-      setValidatedCount(passengerCount || 0);
-      setFareCollected(totalFare);
+      setValidatedCount(Math.max(validatedCount, passengerCount || 0));
+      setFareCollected(Math.max(fareCollected, totalFare));
     } catch (err) {
       console.error('[HomePage] Error loading data:', err);
     }
-  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setFareCollected]);
+  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setFareCollected, isOnline, validatedCount, fareCollected]);
 
   // Effects
 
@@ -228,6 +264,8 @@ const HomePage: React.FC = () => {
     // Subscribe regardless of whether a trip is active so that Device 2
     // can pick up a trip that was started on Device 1 (INSERT event).
     if (profile?.id && isOnline) {
+      console.log('[HomePage] Setting up realtime subscriptions');
+      
       // Subscribe to trip changes
       const tripCleanup = realtimeService.subscribeToTrips(profile.id, {
         onInsert: async (newTrip) => {
@@ -272,26 +310,41 @@ const HomePage: React.FC = () => {
         },
       });
 
-      // Subscribe to passenger changes
-      const passengerCleanup = realtimeService.subscribeToPassengers(profile.id, {
-        onInsert: (passenger) => {
-          console.log('[Realtime] New passenger added:', passenger);
-          if (currentTrip && passenger.trip_id === currentTrip.id) {
-            loadData(); // Refresh stats when new passenger is added
-          }
-        },
-        onUpdate: (passenger) => {
-          console.log('[Realtime] Passenger updated:', passenger);
-          if (currentTrip && passenger.trip_id === currentTrip.id) {
-            loadData(); // Refresh stats when passenger is updated (e.g., alighted)
-          }
-        },
-      });
+      // Subscribe to passenger changes for the current trip
+      // BUG 7 FIX: subscribeToPassengers now takes tripId (not conductorId)
+      // and subscribes to 'boarded_passengers' (not the non-existent 'passengers' table)
+      const passengerCleanup = currentTrip
+        ? realtimeService.subscribeToPassengers(currentTrip.id, {
+            onInsert: (passenger) => {
+              console.log('[Realtime] New passenger boarded:', passenger);
+              loadData(); // Refresh stats when new passenger is added
+            },
+            onUpdate: (passenger) => {
+              console.log('[Realtime] Passenger updated (alighted?):', passenger);
+              loadData(); // Refresh stats when passenger is updated (e.g., alighted)
+            },
+          })
+        : () => {}; // No-op cleanup if there is no active trip yet
 
       realtimeCleanupRef.current = () => {
+        console.log('[HomePage] Cleaning up realtime subscriptions');
         tripCleanup();
         passengerCleanup();
       };
+      
+      networkStateRef.current = true; // Track that we're online with subscriptions
+    } else if (!isOnline && networkStateRef.current) {
+      // Clean up subscriptions when going offline
+      console.log('[HomePage] Going offline, cleaning up realtime subscriptions');
+      if (realtimeCleanupRef.current) {
+        realtimeCleanupRef.current();
+        realtimeCleanupRef.current = null;
+      }
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      networkStateRef.current = false;
     }
 
     return () => {
@@ -309,12 +362,49 @@ const HomePage: React.FC = () => {
     }
   }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load bus info when profile is available
+  // Load bus info when profile is available (works offline too)
   useEffect(() => {
     if (profile?.bus_id && !currentBus) {
       loadBusInfo();
     }
   }, [profile?.bus_id, currentBus, loadBusInfo]);
+
+  // Refresh bus info when network status changes (debounced to avoid frequent calls)
+  useEffect(() => {
+    if (profile?.bus_id) {
+      const timeoutId = setTimeout(() => {
+        loadBusInfo();
+      }, 1000); // 1 second debounce for smoother transitions
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isOnline, profile?.bus_id, loadBusInfo]);
+
+  // Refresh data when network status changes (debounced to avoid frequent calls)
+  useEffect(() => {
+    if (currentTrip && currentBus) {
+      const timeoutId = setTimeout(() => {
+        loadData();
+      }, 1000); // 1 second debounce for smoother transitions
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isOnline, currentTrip?.id, currentBus?.id, loadData]);
+
+  // Refresh stats after offline queue sync completes (avoids stale counts on reconnect)
+  useEffect(() => {
+    const wasSyncing = prevSyncInProgressRef.current;
+    prevSyncInProgressRef.current = syncInProgress;
+
+    if (wasSyncing && !syncInProgress && isOnline && currentTrip && currentBus) {
+      loadData();
+    }
+  }, [syncInProgress, isOnline, currentTrip, currentBus, loadData]);
+
+  // Also refresh when sync finishes (lastSyncAt updates even if syncInProgress flickers)
+  useEffect(() => {
+    if (lastSyncAt && currentTrip && currentBus && isOnline) {
+      loadData();
+    }
+  }, [lastSyncAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-complete trip if outside allowed hours (4 AM - 10 PM)
   useEffect(() => {
@@ -407,7 +497,48 @@ const HomePage: React.FC = () => {
 
     try {
       console.log('[HomePage] Starting trip for conductor:', profile.id, 'bus:', profile.bus_id);
-      
+
+      // ── OFFLINE: create local trip — synced to DB on reconnect ─────────────
+      if (!isOnline) {
+        const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+        if (!cachedBusRaw) {
+          const msg = 'Bus info not cached. Connect once while online before starting offline.';
+          setError(msg);
+          showNotification(msg, 'warning');
+          setStarting(false);
+          return;
+        }
+
+        let bus;
+        try {
+          bus = JSON.parse(cachedBusRaw);
+        } catch {
+          const msg = 'Cached bus data is invalid. Connect while online and try again.';
+          setError(msg);
+          showNotification(msg, 'danger');
+          setStarting(false);
+          return;
+        }
+
+        const localTrip = {
+          id: crypto.randomUUID(),
+          bus_id: bus.id,
+          conductor_id: profile.id,
+          started_at: new Date().toISOString(),
+          ended_at: null,
+          status: 'in_progress' as const,
+        };
+
+        console.log('[HomePage] Trip started offline (local):', localTrip.id);
+        setCurrentTrip(localTrip);
+        setCurrentBus(bus);
+        setValidatedCount(0);
+        setFareCollected(0);
+        setStarting(false);
+        showNotification('Trip started offline — will sync when online', 'warning');
+        return;
+      }
+
       const { data: bus, error: busErr } = await supabase
         .from('buses')
         .select('*')
@@ -495,7 +626,7 @@ const HomePage: React.FC = () => {
       showNotification(msg, 'danger');
       setStarting(false);
     }
-  }, [profile, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification]);
+  }, [profile, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification, isOnline, loadData]);
 
   const endTrip = useCallback(async () => {
     if (!currentTrip) return;
@@ -549,7 +680,6 @@ const HomePage: React.FC = () => {
 
   return (
     <IonPage>
-      <InteractiveBackground />
       <PageHeader
         showLogo={true}
         statusBadge={{

@@ -51,7 +51,7 @@ const bannerBase: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   padding: '10px 16px',
-  transition: 'all 0.3s ease',
+  transition: 'all 0.5s ease', // Slower transition for smoother network changes
 };
 
 const textStyle: React.CSSProperties = {
