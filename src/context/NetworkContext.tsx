@@ -7,7 +7,7 @@ interface NetworkContextType {
   isSyncing: boolean;
   lastSyncResult: SyncResult | null;
   triggerSync: () => Promise<SyncResult | null>;
-  bumpPending: () => void;
+  bumpPending: (count?: number) => void;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
@@ -64,8 +64,12 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     };
   }, [triggerSync]);
 
-  const bumpPending = useCallback(() => {
-    setPendingCount(StorageService.getPendingSyncCount());
+  const bumpPending = useCallback((count?: number) => {
+    if (count !== undefined) {
+      setPendingCount(count);
+    } else {
+      setPendingCount(StorageService.getPendingSyncCount());
+    }
   }, []);
 
   return (

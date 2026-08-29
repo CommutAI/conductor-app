@@ -135,28 +135,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ── Trip Effects ────────────────────────────────────────────────────────────
+  // ── Trip Restoration from Database ─────────────────────────────────────────
+  // After the profile is loaded, check the DB for an active trip.
+  // This is the key to cross-device sync: Device 2 opens the app, has no
+  // localStorage cache, but finds the in-progress trip Device 1 created.
   useEffect(() => {
-    console.log('[AppContext] Trip effect triggered, cached trip:', cached?.currentTrip);
-    
-    // Only restore from cache (localStorage), not from database
-    // This prevents automatically restoring old/stuck trips
-    if (cached?.currentTrip) {
-      console.log('[AppContext] Using cached trip state from localStorage');
-      
-      // Sync the cached trip state to database to ensure consistency
-      StorageService.syncTripStateToDatabase().then((synced) => {
-        if (synced) {
-          console.log('[AppContext] Cached trip synced to database');
-        }
-      });
-      
-      return;
-    }
+    if (!profile) return;
 
-    console.log('[AppContext] No cached trip found, starting fresh');
-    setIsRestoringTrip(false);
-  }, []);
+    const restoreTrip = async () => {
+      setIsRestoringTrip(true);
+
+      try {
+        // Check if the cached trip is still valid in the DB first
+        if (cached?.currentTrip) {
+          const { data: dbTrip } = await supabase
+            .from('trips')
+            .select('*')
+            .eq('id', cached.currentTrip.id)
+            .eq('status', 'in_progress')
+            .maybeSingle();
+
+          if (dbTrip) {
+            // Cache is valid and trip is still active — keep using it
+            console.log('[AppContext] Cached trip confirmed active in DB:', dbTrip.id);
+            _setCurrentTrip(dbTrip);
+            setIsRestoringTrip(false);
+            return;
+          } else {
+            // Cached trip is stale (completed/cancelled on another device)
+            console.log('[AppContext] Cached trip no longer active, clearing cache');
+            StorageService.clearTripState();
+            _setCurrentTrip(null);
+            _setCurrentBus(null);
+            _setValidatedCount(0);
+            _setFareCollected(0);
+          }
+        }
+
+        // No valid cache — query DB for an active trip for this conductor
+        const { data: activeTrip } = await supabase
+          .from('trips')
+          .select('*')
+          .eq('conductor_id', profile.id)
+          .eq('status', 'in_progress')
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (activeTrip) {
+          console.log('[AppContext] Found active trip in DB, restoring:', activeTrip.id);
+
+          // Also load the associated bus
+          const { data: bus } = await supabase
+            .from('buses')
+            .select('*')
+            .eq('id', activeTrip.bus_id)
+            .maybeSingle();
+
+          _setCurrentTrip(activeTrip);
+          if (bus) _setCurrentBus(bus);
+          _setValidatedCount(0);
+          _setFareCollected(0);
+
+          // Persist to localStorage so subsequent loads are instant
+          StorageService.saveTripState({
+            currentTrip: activeTrip,
+            currentBus: bus,
+            validatedCount: 0,
+            fareCollected: 0,
+          });
+        } else {
+          console.log('[AppContext] No active trip found in DB');
+        }
+      } catch (err) {
+        console.error('[AppContext] Error restoring trip from DB:', err);
+      } finally {
+        setIsRestoringTrip(false);
+      }
+    };
+
+    restoreTrip();
+  }, [profile?.id]); // runs once per authenticated session
 
   useEffect(() => {
     if (currentTrip) {

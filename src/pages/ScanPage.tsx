@@ -14,6 +14,7 @@ import { useNetwork } from '../context/NetworkContext';
 import { processScan, ScanResult } from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
+import { offlineQueueService } from '../services/offlineQueueService';
 import { supabase } from '../supabaseClient';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
@@ -172,6 +173,7 @@ const ScanPage: React.FC = () => {
   const cameraReadyRef = useRef(false);
   const lastScanTimeRef = useRef(0);
   const lastScanCodeRef = useRef('');
+  const offlineQueueCleanupRef = useRef<(() => void) | null>(null);
 
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
   const displayStops = routeStops.length >= 2 ? routeStops : [
@@ -248,6 +250,33 @@ const ScanPage: React.FC = () => {
     }, 2000);
     return () => clearTimeout(timeout);
   }, [scanState, scanType, failedMsg]);
+
+  // Subscribe to offline queue changes and sync when online
+  useEffect(() => {
+    const cleanup = offlineQueueService.subscribe((queue) => {
+      const pendingCount = queue.filter(q => q.status === 'pending').length;
+      bumpPending(pendingCount);
+    });
+
+    offlineQueueCleanupRef.current = cleanup;
+
+    // Auto-sync when coming back online
+    if (isOnline && offlineQueueService.getPendingCount() > 0) {
+      console.log('[ScanPage] Coming back online, syncing offline queue');
+      offlineQueueService.syncQueue().then(({ success, failed }) => {
+        if (success > 0) {
+          showNotification(`Synced ${success} offline scans`, 'success');
+        }
+        if (failed > 0) {
+          showNotification(`${failed} scans failed to sync`, 'danger');
+        }
+      });
+    }
+
+    return () => {
+      cleanup();
+    };
+  }, [isOnline, bumpPending]);
 
   // ── Scanner helpers ───────────────────────────────────────────────────────
 
@@ -642,7 +671,8 @@ const ScanPage: React.FC = () => {
   }
 
   /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
-  async function commitBoardingWithDestination(code: string, destination: string, paymentMethod: 'card' | 'cash' = 'card') {    if (!currentTrip || !profile) {
+  async function commitBoardingWithDestination(code: string, destination: string, paymentMethod: 'card' | 'cash' = 'card') {
+    if (!currentTrip || !profile) {
       console.error('Missing currentTrip or profile in commitBoardingWithDestination');
       setFailedMsg('Missing trip or profile data');
       setScanState('failed');
@@ -655,6 +685,49 @@ const ScanPage: React.FC = () => {
       console.log('Current trip ID:', currentTrip.id);
       console.log('Profile ID:', profile.id);
       console.log('Bus route:', currentBus?.route);
+      console.log('Is online:', isOnline);
+
+      // If offline, queue the scan instead of processing immediately
+      if (!isOnline) {
+        console.log('[Offline] Queuing boarding scan');
+        const { isTicket } = detectCardTypeFromPrefix(code);
+        const cardUid = isTicket ? undefined : code;
+        const ticketUid = isTicket ? code : undefined;
+
+        offlineQueueService.addScan({
+          type: 'boarding',
+          cardUid,
+          ticketUid,
+          fare: pendingScan?.fare,
+          baggageFee: baggageSelection?.fee,
+          paymentMethod,
+          tripId: currentTrip.id,
+        });
+
+        bumpPending(offlineQueueService.getPendingCount());
+
+        setValidatedCount(validatedCount + 1);
+        setBoardedCount(c => c + 1);
+        setPendingScan(null);
+        setBaggageSelection(null);
+        setSelectedDestination('');
+        setScanState('success');
+        setSuccessMsg('Boarded — saved offline, will sync when online');
+        setSuccessAmount(pendingScan?.fare || 0);
+        setSuccessBalance(null);
+
+        setTimeout(async () => {
+          setSuccessMsg('');
+          setSuccessAmount(0);
+          processingRef.current = false;
+          lastScanTimeRef.current = 0;
+          lastScanCodeRef.current = '';
+          await cleanupScanner();
+          setScanState('idle');
+        }, 1500);
+        return;
+      }
+
       const result = await processScan(
         code,
         currentTrip.id,
@@ -1116,6 +1189,42 @@ const ScanPage: React.FC = () => {
         route: currentBus?.route,
         destination: pendingAlighting.destination,
       });
+      console.log('Is online:', isOnline);
+
+      // If offline, queue the alighting scan instead of processing immediately
+      if (!isOnline) {
+        console.log('[Offline] Queuing alighting scan');
+        const { isTicket } = detectCardTypeFromPrefix(pendingAlighting.code);
+        const cardUid = isTicket ? undefined : pendingAlighting.code;
+        const ticketUid = isTicket ? pendingAlighting.code : undefined;
+
+        offlineQueueService.addScan({
+          type: 'alighting',
+          cardUid,
+          ticketUid,
+          tripId: currentTrip.id,
+        });
+
+        bumpPending(offlineQueueService.getPendingCount());
+
+        setAlightedCount(c => c + 1);
+        setGpsResult(null);
+        setPendingAlighting(null);
+        setScanState('success');
+        setSuccessMsg('Alighted — saved offline, will sync when online');
+        setSuccessAmount(0);
+        setSuccessBalance(null);
+
+        setTimeout(() => {
+          setSuccessMsg('');
+          setSuccessAmount(0);
+          processingRef.current = false;
+          lastScanTimeRef.current = 0;
+          lastScanCodeRef.current = '';
+          setScanState('scanning');
+        }, 1500);
+        return;
+      }
 
       const result = await processScan(
         pendingAlighting.code,

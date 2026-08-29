@@ -668,6 +668,12 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_trips_conductor_status
   ON trips(conductor_id, status) WHERE status = 'in_progress';
 
+-- Enforce one active trip per conductor at the database level.
+-- This is the hard stop that prevents duplicate in_progress trips
+-- regardless of which device or client inserts the row.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trips_conductor_one_active
+  ON trips(conductor_id) WHERE status = 'in_progress';
+
 CREATE INDEX IF NOT EXISTS idx_qr_cards_uid
   ON qr_cards(card_uid);
 

@@ -21,7 +21,9 @@ import {
 import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Navigation, Clock, User, CreditCard, Banknote } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
+import { realtimeService } from '../services/realtimeService';
 import PageHeader from '../components/layout/PageHeader';
 import InteractiveBackground from '../components/layout/InteractiveBackground';
 import {
@@ -87,11 +89,42 @@ const TripHistoryPage: React.FC = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
 
   const { profile } = useApp();
+  const { isOnline } = useNetwork();
   const history = useHistory();
 
   useEffect(() => {
     loadTrips();
   }, [segment]);
+
+  // Set up real-time subscriptions for cross-device sync
+  useEffect(() => {
+    if (!profile?.id || !isOnline) return;
+
+    const cleanup = realtimeService.subscribeToTrips(profile.id, {
+      onInsert: (newTrip) => {
+        console.log('[Realtime] New trip added:', newTrip);
+        loadTrips(); // Refresh trip list when new trip is added
+      },
+      onUpdate: (updatedTrip) => {
+        console.log('[Realtime] Trip updated:', updatedTrip);
+        // Update the trip in the local state if it exists
+        setTrips(prevTrips =>
+          prevTrips.map(trip =>
+            trip.id === updatedTrip.id ? { ...trip, ...updatedTrip } : trip
+          )
+        );
+      },
+      onDelete: (deletedTrip) => {
+        console.log('[Realtime] Trip deleted:', deletedTrip);
+        // Remove the trip from local state
+        setTrips(prevTrips => prevTrips.filter(trip => trip.id !== deletedTrip.id));
+      },
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [profile?.id, isOnline]);
 
   async function loadTrips() {
     if (!profile) return;

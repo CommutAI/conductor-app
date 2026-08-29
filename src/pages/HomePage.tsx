@@ -19,6 +19,7 @@ import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
 import { getLocationAndDecode } from '../services/geoService';
+import { realtimeService } from '../services/realtimeService';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -26,7 +27,7 @@ import InteractiveBackground from '../components/layout/InteractiveBackground';
 import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, DashboardCard,
-  LoadingSkeleton, EmptyState, TripTimeline,
+  LoadingSkeleton, TripTimeline,
 } from '../components/ui';
 import '../styles/modern-transport.css';
 
@@ -83,6 +84,7 @@ const HomePage: React.FC = () => {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastGpsUpdateRef = useRef<number>(0);
   const proximityCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const realtimeCleanupRef = useRef<(() => void) | null>(null);
 
   // Context
   const { profile, currentTrip, currentBus, validatedCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, loading: authLoading } = useApp();
@@ -215,19 +217,90 @@ const HomePage: React.FC = () => {
       setLoading(false);
     }
 
-    if (!currentTrip || !currentBus) {
-      return;
+    let dataInterval: NodeJS.Timeout | undefined;
+
+    if (currentTrip && currentBus) {
+      loadData();
+      dataInterval = setInterval(loadData, DATA_REFRESH_INTERVAL);
     }
 
-    loadData();
-    const dataInterval = setInterval(loadData, DATA_REFRESH_INTERVAL);
+    // Set up real-time subscriptions for cross-device sync.
+    // Subscribe regardless of whether a trip is active so that Device 2
+    // can pick up a trip that was started on Device 1 (INSERT event).
+    if (profile?.id && isOnline) {
+      // Subscribe to trip changes
+      const tripCleanup = realtimeService.subscribeToTrips(profile.id, {
+        onInsert: async (newTrip) => {
+          console.log('[Realtime] New trip started on another device:', newTrip);
+          if (!currentTrip) {
+            // Load the associated bus so the UI renders correctly
+            const { data: bus } = await supabase
+              .from('buses')
+              .select('*')
+              .eq('id', newTrip.bus_id)
+              .single();
+            setCurrentTrip(newTrip);
+            if (bus) setCurrentBus(bus);
+            setValidatedCount(0);
+            setFareCollected(0);
+            showNotification('Trip started from another device', 'warning');
+          }
+        },
+        onUpdate: (updatedTrip) => {
+          console.log('[Realtime] Trip updated:', updatedTrip);
+          if (currentTrip && updatedTrip.id === currentTrip.id) {
+            // If trip was completed on another device
+            if (updatedTrip.status === 'completed' && currentTrip.status !== 'completed') {
+              console.log('[Realtime] Trip completed on another device');
+              setCurrentTrip(updatedTrip);
+              showNotification('Trip completed from another device', 'warning');
+              history.push('/trip-summary');
+            } else {
+              // Update current trip with latest data
+              setCurrentTrip(updatedTrip);
+            }
+          }
+        },
+        onDelete: (deletedTrip) => {
+          if (currentTrip && deletedTrip.id === currentTrip.id) {
+            console.log('[Realtime] Trip deleted on another device');
+            setCurrentTrip(null);
+            setCurrentBus(null);
+            setValidatedCount(0);
+            setFareCollected(0);
+          }
+        },
+      });
+
+      // Subscribe to passenger changes
+      const passengerCleanup = realtimeService.subscribeToPassengers(profile.id, {
+        onInsert: (passenger) => {
+          console.log('[Realtime] New passenger added:', passenger);
+          if (currentTrip && passenger.trip_id === currentTrip.id) {
+            loadData(); // Refresh stats when new passenger is added
+          }
+        },
+        onUpdate: (passenger) => {
+          console.log('[Realtime] Passenger updated:', passenger);
+          if (currentTrip && passenger.trip_id === currentTrip.id) {
+            loadData(); // Refresh stats when passenger is updated (e.g., alighted)
+          }
+        },
+      });
+
+      realtimeCleanupRef.current = () => {
+        tripCleanup();
+        passengerCleanup();
+      };
+    }
 
     return () => {
-      clearInterval(dataInterval);
+      if (dataInterval) clearInterval(dataInterval);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (proximityCheckRef.current) clearTimeout(proximityCheckRef.current);
+      if (realtimeCleanupRef.current) realtimeCleanupRef.current();
     };
-  }, [currentTrip?.id, authLoading, initialLoadDone, loadData]);
+  }, [currentTrip?.id, authLoading, initialLoadDone, loadData, profile?.id, isOnline, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification, history]);
 
   // Refresh data when component mounts (handles navigation back from scan page)
   useEffect(() => {
@@ -362,6 +435,28 @@ const HomePage: React.FC = () => {
         console.log('[HomePage] GPS location not available, using route as starting point');
       }
 
+      // Guard: check if this conductor already has an active trip in the DB.
+      // This prevents a second device from creating a duplicate trip before
+      // the realtime INSERT event arrives.
+      const { data: existingTrip } = await supabase
+        .from('trips')
+        .select('id, bus_id, started_at, status')
+        .eq('conductor_id', profile.id)
+        .eq('status', 'in_progress')
+        .maybeSingle();
+
+      if (existingTrip) {
+        console.log('[HomePage] Active trip already exists in DB, adopting it:', existingTrip);
+        setCurrentTrip(existingTrip as any);
+        setCurrentBus(bus);
+        setValidatedCount(0);
+        setFareCollected(0);
+        setStarting(false);
+        showNotification('Trip already in progress — synced from another device', 'warning');
+        loadData();
+        return;
+      }
+
       const { data: trip, error: tripErr } = await supabase
         .from('trips')
         .insert({
@@ -482,7 +577,7 @@ const HomePage: React.FC = () => {
               margin: 0,
               fontSize: '1.75rem',
               fontWeight: 800,
-              color: 'var(--text-primary)',
+              color: '#ffffff',
               marginBottom: 4,
               letterSpacing: '-0.5px'
             }}>
@@ -491,7 +586,7 @@ const HomePage: React.FC = () => {
             <p style={{
               margin: 0,
               fontSize: '0.95rem',
-              color: 'var(--text-secondary)',
+              color: 'rgba(255, 255, 255, 0.85)',
               fontWeight: 500
             }}>
               {hasActiveTrip ? 'Your trip is in progress' : 'Ready to start your shift'}
@@ -505,7 +600,7 @@ const HomePage: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
-              <SoftCard variant="glass" padding="none" style={{ overflow: 'hidden' }}>
+              <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden' }}>
                 {/* Decorative Elements */}
                 <div style={{
                   position: 'absolute',
@@ -800,11 +895,42 @@ const HomePage: React.FC = () => {
                         </div>
                       ))
                     ) : (
-                      <EmptyState
-                        title="All Clear!"
-                        description="No irregularities detected on this trip"
-                        variant="success"
-                      />
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center', 
+                        padding: '24px 16px',
+                        gap: 10
+                      }}>
+                        <div style={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: '50%',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 4
+                        }}>
+                          <CheckCircle size={28} color="#10b981" />
+                        </div>
+                        <p style={{ 
+                          margin: 0, 
+                          fontWeight: 700, 
+                          fontSize: '1rem', 
+                          color: 'var(--text-primary)' 
+                        }}>
+                          All Clear!
+                        </p>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '0.85rem', 
+                          color: 'var(--text-secondary)',
+                          textAlign: 'center'
+                        }}>
+                          No irregularities detected on this trip
+                        </p>
+                      </div>
                     )}
                   </SoftCard>
                 )}
