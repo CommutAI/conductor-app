@@ -11,6 +11,7 @@ export interface QueuedScan {
   baggageFee?: number;
   paymentMethod?: string;
   destination?: string;
+  boardingPoint?: string;
   tripId?: string;
   timestamp: string;
   status: 'pending' | 'syncing' | 'failed';
@@ -208,7 +209,17 @@ class OfflineQueueService {
       return { success: 0, failed: 0 };
     }
 
-    const pendingScans = this.queue.filter(scan => scan.status === 'pending');
+    const rawPending = this.queue.filter(scan => scan.status === 'pending');
+
+    // Sort: boarding scans MUST be synced before alighting scans.
+    // If both are queued offline (e.g. full trip offline), the boarded_passengers
+    // row must exist in the DB before the alighting UPDATE can reference it.
+    // Within each type, preserve the original timestamp order.
+    const pendingScans = [
+      ...rawPending.filter(s => s.type === 'boarding').sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+      ...rawPending.filter(s => s.type === 'alighting').sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    ];
+
     if (pendingScans.length === 0) {
       console.log('[OfflineQueue] No pending scans to sync');
       return { success: 0, failed: 0 };
@@ -281,21 +292,41 @@ class OfflineQueueService {
     let tempTicketId = scan.tempTicketId;
 
     if (!cardId && scan.cardUid) {
+      const uid = scan.cardUid.toUpperCase();
       const { data: card } = await supabase
         .from('qr_cards')
         .select('id')
-        .eq('card_uid', scan.cardUid.toUpperCase())
+        .eq('card_uid', uid)
         .maybeSingle();
       cardId = card?.id;
+
+      if (!cardId) {
+        const { data: cardLoose } = await supabase
+          .from('qr_cards')
+          .select('id')
+          .ilike('card_uid', uid)
+          .maybeSingle();
+        cardId = cardLoose?.id;
+      }
     }
 
     if (!tempTicketId && scan.ticketUid) {
+      const uid = scan.ticketUid.toUpperCase();
       const { data: ticket } = await supabase
         .from('temporary_tickets')
         .select('id')
-        .eq('ticket_uid', scan.ticketUid.toUpperCase())
+        .eq('ticket_uid', uid)
         .maybeSingle();
       tempTicketId = ticket?.id;
+
+      if (!tempTicketId) {
+        const { data: ticketLoose } = await supabase
+          .from('temporary_tickets')
+          .select('id')
+          .ilike('ticket_uid', uid)
+          .maybeSingle();
+        tempTicketId = ticketLoose?.id;
+      }
     }
 
     return { cardId, tempTicketId };
@@ -350,6 +381,7 @@ class OfflineQueueService {
           temp_ticket_id: tempTicketId ?? null,
           payment_method: paymentMethod,
           destination_stop: scan.destination || null,
+          boarding_stop: scan.boardingPoint || null,
           boarded_at: scan.timestamp,
         })
         .select('id')

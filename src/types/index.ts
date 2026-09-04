@@ -186,6 +186,7 @@ export interface CachedTripState {
   currentTrip: Trip | null;
   currentBus: Bus | null;
   validatedCount: number;
+  currentPassengersCount: number;
   fareCollected: number;
   savedAt: string;
 }

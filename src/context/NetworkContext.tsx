@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { StorageService } from '../services/storageService';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { cache } from '../services/cacheService';
+import { realtimeService } from '../services/realtimeService';
 
 interface NetworkContextType {
   isOnline: boolean;
@@ -37,10 +38,10 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     StorageService.purgeLegacyOfflineScansIfNeeded();
 
     const pendingScans = offlineQueueService.getPendingCount();
-    const hasCachedTrip = !!StorageService.loadTripState()?.currentTrip;
+    const hasUnsyncedTrip = StorageService.hasUnsyncedTripData();
 
-    if (pendingScans === 0 && !hasCachedTrip) {
-      console.log('[NetworkContext] Sync skipped - no pending scans or cached trip');
+    if (pendingScans === 0 && !hasUnsyncedTrip) {
+      console.log('[NetworkContext] Sync skipped - nothing to sync');
       return;
     }
 
@@ -57,6 +58,12 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
         console.log('[NetworkContext] Flushing offlineQueueService...');
         const { success, failed } = await offlineQueueService.syncQueue();
         console.log(`[NetworkContext] offlineQueueService sync: ${success} ok, ${failed} failed`);
+      }
+
+      // Phase 3: Sync trip completion if ended offline
+      if (StorageService.loadTripState()?.pendingTripEndSync) {
+        console.log('[NetworkContext] Syncing offline trip end...');
+        await StorageService.syncTripEndToDatabase();
       }
 
       refreshPendingCount();
@@ -76,6 +83,10 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     function handleOnline() {
       setIsOnline(true);
       cache.invalidateOfflineEntries();
+
+      // Reconnect realtime subscriptions when network is restored
+      console.log('[NetworkContext] Network restored, reconnecting realtime subscriptions');
+      realtimeService.reconnectAll();
 
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);

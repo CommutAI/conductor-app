@@ -8,7 +8,7 @@
 
 -- ── 0. Custom Enum Types ──────────────────────────────────────────────────────
 DO $$ BEGIN
-  CREATE TYPE staff_role AS ENUM ('admin', 'conductor', 'cs_desk');
+  CREATE TYPE staff_role AS ENUM ('admin', 'conductor', 'driver', 'cs_desk');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -41,13 +41,18 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_users (
-  id          UUID        PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
-  full_name   TEXT        NOT NULL,
-  email       TEXT        NOT NULL UNIQUE,
-  role        staff_role  NOT NULL DEFAULT 'conductor',
-  is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
-  bus_id      UUID        REFERENCES buses (id),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                UUID        PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
+  full_name         TEXT        NOT NULL,
+  email             TEXT        NOT NULL UNIQUE,
+  role              staff_role  NOT NULL DEFAULT 'conductor',
+  is_active         BOOLEAN     NOT NULL DEFAULT TRUE,
+  bus_id            UUID        REFERENCES buses (id),
+  phone_number      TEXT,
+  license_number    TEXT,
+  license_expiry    DATE,
+  emergency_contact TEXT,
+  emergency_phone   TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Add bus_id column to existing staff_users table if it doesn't exist
@@ -61,6 +66,45 @@ BEGIN
   END IF;
 END $$;
 
+-- Add driver-specific columns if they don't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff_users' AND column_name = 'phone_number'
+  ) THEN
+    ALTER TABLE staff_users ADD COLUMN phone_number TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff_users' AND column_name = 'license_number'
+  ) THEN
+    ALTER TABLE staff_users ADD COLUMN license_number TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff_users' AND column_name = 'license_expiry'
+  ) THEN
+    ALTER TABLE staff_users ADD COLUMN license_expiry DATE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff_users' AND column_name = 'emergency_contact'
+  ) THEN
+    ALTER TABLE staff_users ADD COLUMN emergency_contact TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'staff_users' AND column_name = 'emergency_phone'
+  ) THEN
+    ALTER TABLE staff_users ADD COLUMN emergency_phone TEXT;
+  END IF;
+END $$;
+
 -- Auto-create staff_users row when a new auth user is created
 CREATE OR REPLACE FUNCTION handle_new_staff_user()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -70,7 +114,7 @@ BEGIN
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     NEW.email,
-    COALESCE((NEW.raw_user_meta_data->>'role')::staff_role, 'conductor')
+    COALESCE((NEW.raw_user_meta_data->>'role')::staff_role, 'conductor')::staff_role
   )
   ON CONFLICT (id) DO UPDATE SET
     full_name = EXCLUDED.full_name,
@@ -91,13 +135,19 @@ CREATE TRIGGER on_auth_user_created
 
 -- ── 2. Buses ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS buses (
-  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  plate_number   TEXT        NOT NULL UNIQUE,
-  bus_number     INTEGER     UNIQUE,
-  route          TEXT        NOT NULL,
-  seat_capacity  INTEGER     NOT NULL DEFAULT 50,
-  status         bus_status  NOT NULL DEFAULT 'active',
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  plate_number     TEXT        NOT NULL UNIQUE,
+  bus_number       INTEGER     UNIQUE,
+  route            TEXT        NOT NULL,
+  seat_capacity    INTEGER     NOT NULL DEFAULT 50,
+  status           bus_status  NOT NULL DEFAULT 'active',
+  assigned_driver_id UUID      REFERENCES staff_users (id),
+  assigned_conductor_id UUID REFERENCES staff_users (id),
+  vehicle_type     TEXT        DEFAULT 'standard',
+  year_manufactured INTEGER,
+  last_maintenance_date DATE,
+  next_maintenance_date DATE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Add bus_number column if it doesn't exist
@@ -111,11 +161,58 @@ BEGIN
   END IF;
 END $$;
 
+-- Add driver and conductor assignment columns if they don't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'assigned_driver_id'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN assigned_driver_id UUID REFERENCES staff_users (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'assigned_conductor_id'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN assigned_conductor_id UUID REFERENCES staff_users (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'vehicle_type'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN vehicle_type TEXT DEFAULT 'standard';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'year_manufactured'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN year_manufactured INTEGER;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'last_maintenance_date'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN last_maintenance_date DATE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'buses' AND column_name = 'next_maintenance_date'
+  ) THEN
+    ALTER TABLE buses ADD COLUMN next_maintenance_date DATE;
+  END IF;
+END $$;
+
 -- ── 3. Trips ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trips (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   bus_id          UUID        NOT NULL REFERENCES buses (id),
   conductor_id    UUID        NOT NULL REFERENCES staff_users (id),
+  driver_id       UUID        REFERENCES staff_users (id),
   started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at        TIMESTAMPTZ,
   status          trip_status NOT NULL DEFAULT 'in_progress',
@@ -141,6 +238,13 @@ BEGIN
     WHERE table_name = 'trips' AND column_name = 'end_point'
   ) THEN
     ALTER TABLE trips ADD COLUMN end_point TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'driver_id'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN driver_id UUID REFERENCES staff_users (id);
   END IF;
 END $$;
 
@@ -454,6 +558,24 @@ RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT role::TEXT FROM staff_users WHERE id = auth.uid();
 $$;
 
+-- Returns the assigned bus for the current conductor/driver
+CREATE OR REPLACE FUNCTION get_assigned_bus()
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT bus_id FROM staff_users WHERE id = auth.uid();
+$$;
+
+-- Returns the active driver for a given bus
+CREATE OR REPLACE FUNCTION get_bus_driver(bus_uuid UUID)
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT assigned_driver_id FROM buses WHERE id = bus_uuid;
+$$;
+
+-- Returns the active conductor for a given bus
+CREATE OR REPLACE FUNCTION get_bus_conductor(bus_uuid UUID)
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT assigned_conductor_id FROM buses WHERE id = bus_uuid;
+$$;
+
 -- ── 14. Row-Level Security ────────────────────────────────────────────────────
 ALTER TABLE staff_users           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE buses                 ENABLE ROW LEVEL SECURITY;
@@ -492,7 +614,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Conductors can read/write their own trips; admins see all
+-- Conductors and drivers can read/write their own trips; admins see all
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
@@ -500,8 +622,8 @@ DO $$ BEGIN
   ) THEN
     CREATE POLICY "trips_conductor_rw"
       ON trips FOR ALL
-      USING (conductor_id = auth.uid() OR current_user_role() = 'admin')
-      WITH CHECK (conductor_id = auth.uid());
+      USING (conductor_id = auth.uid() OR driver_id = auth.uid() OR current_user_role() = 'admin')
+      WITH CHECK (conductor_id = auth.uid() OR driver_id = auth.uid());
   END IF;
 END $$;
 
@@ -664,6 +786,32 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Bus assignment policies - admins can assign drivers/conductors to buses
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'buses' AND policyname = 'buses_update_admin'
+  ) THEN
+    CREATE POLICY "buses_update_admin"
+      ON buses FOR UPDATE
+      USING (current_user_role() = 'admin')
+      WITH CHECK (current_user_role() = 'admin');
+  END IF;
+END $$;
+
+-- Staff can update their own profile information
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'staff_users' AND policyname = 'staff_users_update_self'
+  ) THEN
+    CREATE POLICY "staff_users_update_self"
+      ON staff_users FOR UPDATE
+      USING (id = auth.uid() OR current_user_role() = 'admin')
+      WITH CHECK (id = auth.uid() OR current_user_role() = 'admin');
+  END IF;
+END $$;
+
 -- ── 15. Indexes for Performance ───────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_trips_conductor_status
   ON trips(conductor_id, status) WHERE status = 'in_progress';
@@ -709,6 +857,22 @@ CREATE INDEX IF NOT EXISTS idx_emergency_alerts_triggered_at
 
 CREATE INDEX IF NOT EXISTS idx_baggage_fee_matrix_category
   ON baggage_fee_matrix(category);
+
+-- Indexes for driver/conductor assignments
+CREATE INDEX IF NOT EXISTS idx_buses_assigned_driver
+  ON buses(assigned_driver_id) WHERE assigned_driver_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_buses_assigned_conductor
+  ON buses(assigned_conductor_id) WHERE assigned_conductor_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_trips_driver
+  ON trips(driver_id) WHERE driver_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_staff_users_bus
+  ON staff_users(bus_id) WHERE bus_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_staff_users_role
+  ON staff_users(role);
 
 -- ── 16. Realtime Publications ─────────────────────────────────────────────────
 DO $$ BEGIN
@@ -787,7 +951,22 @@ INSERT INTO baggage_fee_matrix (category, max_weight_kg, fee, remarks) VALUES
   ('Oversized', 31, 100, 'Subject to conductor approval')
 ON CONFLICT DO NOTHING;
 
--- ── 19. Create Admin Test User Instructions ─────────────────────────────────────
+-- ── 18.5 Seed: Sample Driver and Conductor Assignments ───────────────────────
+-- Note: These assignments assume you have created test users as described in section 19
+-- Replace the UUIDs with actual user UUIDs from your authentication system
+
+-- Example: Assign driver and conductor to BUS-001
+-- UPDATE buses 
+-- SET assigned_driver_id = 'replace-with-driver-uuid',
+--     assigned_conductor_id = 'replace-with-conductor-uuid'
+-- WHERE plate_number = 'BUS-001';
+
+-- Example: Update staff users with bus assignments
+-- UPDATE staff_users 
+-- SET bus_id = (SELECT id FROM buses WHERE plate_number = 'BUS-001')
+-- WHERE email = 'driver@commutai.test' OR email = 'conductor@commutai.test';
+
+-- ── 20. Create Admin Test User Instructions ─────────────────────────────────────
 -- To create test users, follow these steps in the Supabase Dashboard:
 --
 -- 1. Go to Supabase Dashboard → Authentication → Users → Add user
@@ -807,8 +986,69 @@ ON CONFLICT DO NOTHING;
 --    Email: conductor@commutai.test  Password: Conductor123!
 --    Role: conductor
 --
--- 5. Repeat for CS Desk:
+-- 5. Repeat for driver:
+--    Email: driver@commutai.test  Password: Driver123!
+--    Role: driver
+--
+-- 6. Repeat for CS Desk:
 --    Email: csdesk@commutai.test  Password: CSDesk123!
 --    Role: cs_desk
+--
+-- ── 21. Assign Drivers and Conductors to Buses ───────────────────────────────────
+-- After creating staff users, you can assign them to buses:
+--
+-- UPDATE buses 
+-- SET assigned_driver_id = '<driver-uuid>',
+--     assigned_conductor_id = '<conductor-uuid>'
+-- WHERE plate_number = 'BUS-001';
+--
+-- Or update staff user to have bus assignment:
+--
+-- UPDATE staff_users 
+-- SET bus_id = (SELECT id FROM buses WHERE plate_number = 'BUS-001')
+-- WHERE id = '<conductor-uuid>';
+--
+-- UPDATE staff_users 
+-- SET bus_id = (SELECT id FROM buses WHERE plate_number = 'BUS-001')
+-- WHERE id = '<driver-uuid>';
+
+-- ── 22. Driver Information Summary ──────────────────────────────────────────────
+-- The schema now includes comprehensive driver information and bus assignment:
+--
+-- DRIVER PROFILE FIELDS (in staff_users table):
+-- - phone_number: Contact number for the driver
+-- - license_number: Driver's license number
+-- - license_expiry: License expiration date for compliance tracking
+-- - emergency_contact: Emergency contact person name
+-- - emergency_phone: Emergency contact phone number
+--
+-- BUS ASSIGNMENT FIELDS (in buses table):
+-- - assigned_driver_id: UUID reference to the assigned driver (staff_users.id)
+-- - assigned_conductor_id: UUID reference to the assigned conductor (staff_users.id)
+-- - vehicle_type: Type of vehicle (standard, deluxe, etc.)
+-- - year_manufactured: Year the bus was manufactured
+-- - last_maintenance_date: Date of last maintenance
+-- - next_maintenance_date: Scheduled next maintenance date
+--
+-- TRIP ASSIGNMENT FIELDS (in trips table):
+-- - driver_id: UUID reference to the driver for this specific trip
+-- - conductor_id: UUID reference to the conductor for this specific trip
+--
+-- HELPER FUNCTIONS:
+-- - get_assigned_bus(): Returns the bus assigned to current authenticated user
+-- - get_bus_driver(bus_uuid): Returns the driver assigned to a specific bus
+-- - get_bus_conductor(bus_uuid): Returns the conductor assigned to a specific bus
+--
+-- SECURITY POLICIES:
+-- - Drivers and conductors can access their own trips
+-- - Admins can assign drivers/conductors to buses
+-- - Staff can update their own profile information
+--
+-- This enables:
+-- 1. Complete driver profile management
+-- 2. Proper bus assignment workflow
+-- 3. Trip-specific driver/conductor tracking
+-- 4. Maintenance scheduling compliance
+-- 5. Emergency contact management
 
 -- Note: Additional maintenance and utility queries have been moved to maintenance_queries.sql

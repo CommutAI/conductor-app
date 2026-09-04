@@ -18,8 +18,10 @@ import {
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
+import { StorageService } from '../services/storageService';
 import { getLocationAndDecode } from '../services/geoService';
 import { realtimeService } from '../services/realtimeService';
+import { isLikelyNetworkError } from '../utils/networkUtils';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -56,6 +58,22 @@ const DATA_REFRESH_INTERVAL = 30000; // 30 seconds
 const PROXIMITY_THRESHOLD_KM = 0.5;
 const MAX_DESTINATION_ALERTS = 5;
 
+// Common starting points for offline trip start
+const COMMON_STARTING_POINTS = [
+  'Main Terminal',
+  'Central Station',
+  'Bus Depot',
+  'City Center',
+  'Mall/Shopping Center',
+  'Hospital',
+  'School/University',
+  'Airport',
+  'Train Station',
+  'Industrial Area',
+  'Residential Area',
+  'Other',
+];
+
 // Component
 
 const HomePage: React.FC = () => {
@@ -77,9 +95,12 @@ const HomePage: React.FC = () => {
   const [destinationAlerts, setDestinationAlerts] = useState<DestinationAlert[]>([]);
   const [notifiedPassengers, setNotifiedPassengers] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showStartingPointModal, setShowStartingPointModal] = useState(false);
+  const [selectedStartingPoint, setSelectedStartingPoint] = useState<string>('');
+  const [customStartingPoint, setCustomStartingPoint] = useState<string>('');
 
   // Context
-  const { profile, currentTrip, currentBus, validatedCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, loading: authLoading } = useApp();
+  const { profile, currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, loading: authLoading } = useApp();
   const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
 
   // Refs
@@ -158,7 +179,22 @@ const HomePage: React.FC = () => {
         .single();
 
       if (error) {
-        console.error('[HomePage] Error loading bus info:', error);
+        if (isLikelyNetworkError(error)) {
+          console.log('[HomePage] Network error loading bus info, trying cache');
+          const cachedBus = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+          if (cachedBus) {
+            try {
+              const bus = JSON.parse(cachedBus);
+              console.log('[HomePage] Loaded bus from cache due to network error:', bus);
+              setCurrentBus(bus);
+              return;
+            } catch (err) {
+              console.error('[HomePage] Error parsing cached bus:', err);
+            }
+          }
+        } else {
+          console.error('[HomePage] Error loading bus info:', error);
+        }
         return;
       }
 
@@ -169,7 +205,22 @@ const HomePage: React.FC = () => {
         localStorage.setItem(`cached_bus_${profile.bus_id}`, JSON.stringify(bus));
       }
     } catch (err) {
-      console.error('[HomePage] Error loading bus info:', err);
+      if (isLikelyNetworkError(err)) {
+        console.log('[HomePage] Network exception loading bus info, trying cache');
+        const cachedBus = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+        if (cachedBus) {
+          try {
+            const bus = JSON.parse(cachedBus);
+            console.log('[HomePage] Loaded bus from cache due to network exception:', bus);
+            setCurrentBus(bus);
+            return;
+          } catch (parseErr) {
+            console.error('[HomePage] Error parsing cached bus:', parseErr);
+          }
+        }
+      } else {
+        console.error('[HomePage] Error loading bus info:', err);
+      }
     }
   }, [profile?.bus_id, setCurrentBus, isOnline]);
 
@@ -179,71 +230,137 @@ const HomePage: React.FC = () => {
     // ── OFFLINE: Use cached/local state only ──────────────────────────────
     if (!isOnline) {
       console.log('[HomePage] Offline - using local state for stats');
-      // Use local state that's already updated by scan operations
+      // Use currentPassengersCount for passengers currently on board
       setTripStats({
-        passengerCount: validatedCount,
+        passengerCount: currentPassengersCount,
         irregularities: [],
-        capacityPercent: currentBus ? (validatedCount / currentBus.seat_capacity) * 100 : 0,
+        capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
       });
       return;
     }
 
     // ── ONLINE: Sync with database ───────────────────────────────────────
-    // Check if trip is actually still active in database
-    const { data: tripStatus } = await supabase
-      .from('trips')
-      .select('status, ended_at')
-      .eq('id', currentTrip.id)
-      .single();
-
-    if (tripStatus && (tripStatus.status === 'completed' || tripStatus.ended_at)) {
-      console.log('[HomePage] Trip already ended in database, clearing state');
-      setCurrentTrip(null);
-      setCurrentBus(null);
-      setValidatedCount(0);
-      setFareCollected(0);
-      return;
-    }
-
     try {
-      // Load passenger count - only count passengers who have NOT alighted yet
-      const { count: passengerCount } = await supabase
+      // Check if trip is actually still active in database
+      const { data: tripStatus, error: tripError } = await supabase
+        .from('trips')
+        .select('status, ended_at')
+        .eq('id', currentTrip.id)
+        .single();
+
+      if (tripError && isLikelyNetworkError(tripError)) {
+        console.log('[HomePage] Network error checking trip status, using local state');
+        setTripStats({
+          passengerCount: currentPassengersCount,
+          irregularities: [],
+          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
+        });
+        return;
+      }
+
+      if (tripStatus && (tripStatus.status === 'completed' || tripStatus.ended_at)) {
+        console.log('[HomePage] Trip already ended in database, clearing state');
+        setCurrentTrip(null);
+        setCurrentBus(null);
+        setValidatedCount(0);
+        setCurrentPassengersCount(0);
+        setFareCollected(0);
+        return;
+      }
+
+      // Load current passenger count - only count passengers who have NOT alighted yet
+      const { count: dbCurrentPassengerCount, error: passengerError } = await supabase
         .from('boarded_passengers')
         .select('id', { count: 'exact', head: true })
         .eq('trip_id', currentTrip.id)
         .is('alighted_at', null);
 
+      // Load total validated count - count all fare validations for this trip
+      const { count: totalValidatedCount, error: validatedError } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('trip_id', currentTrip.id)
+        .eq('type', 'fare_validation');
+
+      if (passengerError && isLikelyNetworkError(passengerError)) {
+        console.log('[HomePage] Network error loading passenger count, using local state');
+        setTripStats({
+          passengerCount: currentPassengersCount,
+          irregularities: [],
+          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
+        });
+        return;
+      }
+
+      // Update validatedCount from database for total validated passengers
+      if (!validatedError && totalValidatedCount !== null) {
+        setValidatedCount(totalValidatedCount);
+      }
+
       // Load total fare collected from transactions
-      const { data: transactions } = await supabase
+      const { data: transactions, error: txError } = await supabase
         .from('transactions')
         .select('amount')
         .eq('trip_id', currentTrip.id)
         .eq('type', 'fare_validation');
 
+      if (txError && isLikelyNetworkError(txError)) {
+        console.log('[HomePage] Network error loading transactions, using local state');
+        setTripStats({
+          passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
+          irregularities: [],
+          capacityPercent: currentBus ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100 : 0,
+        });
+        return;
+      }
+
       const totalFare = transactions?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
 
       // Load irregularities
-      const { data: irregularities } = await supabase
+      const { data: irregularities, error: irregularityError } = await supabase
         .from('fare_irregularities')
         .select('*')
         .eq('trip_id', currentTrip.id)
         .order('detected_at', { ascending: false })
         .limit(10);
 
+      if (irregularityError && isLikelyNetworkError(irregularityError)) {
+        console.log('[HomePage] Network error loading irregularities, using local state');
+        setTripStats({
+          passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
+          irregularities: [],
+          capacityPercent: currentBus
+            ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100
+            : 0,
+        });
+        setCurrentPassengersCount(dbCurrentPassengerCount ?? currentPassengersCount);
+        setFareCollected(Math.max(fareCollected, totalFare));
+        return;
+      }
+
       setTripStats({
-        passengerCount: Math.max(validatedCount, passengerCount || 0),
+        passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
         irregularities: irregularities || [],
         capacityPercent: currentBus
-          ? (Math.max(validatedCount, passengerCount || 0) / currentBus.seat_capacity) * 100
+          ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100
           : 0,
       });
 
-      setValidatedCount(Math.max(validatedCount, passengerCount || 0));
+      setCurrentPassengersCount(dbCurrentPassengerCount ?? currentPassengersCount);
       setFareCollected(Math.max(fareCollected, totalFare));
     } catch (err) {
-      console.error('[HomePage] Error loading data:', err);
+      if (isLikelyNetworkError(err)) {
+        console.log('[HomePage] Network error in loadData, using local state');
+        setTripStats({
+          passengerCount: currentPassengersCount,
+          irregularities: [],
+          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
+        });
+      } else {
+        console.error('[HomePage] Error loading data:', err);
+      }
     }
-  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setFareCollected, isOnline, validatedCount, fareCollected]);
+  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setCurrentPassengersCount, setFareCollected, isOnline, currentPassengersCount, fareCollected]);
 
   // Effects
 
@@ -263,7 +380,8 @@ const HomePage: React.FC = () => {
     // Set up real-time subscriptions for cross-device sync.
     // Subscribe regardless of whether a trip is active so that Device 2
     // can pick up a trip that was started on Device 1 (INSERT event).
-    if (profile?.id && isOnline) {
+    // The realtimeService now handles network changes and reconnection automatically.
+    if (profile?.id) {
       console.log('[HomePage] Setting up realtime subscriptions');
       
       // Subscribe to trip changes
@@ -280,6 +398,7 @@ const HomePage: React.FC = () => {
             setCurrentTrip(newTrip);
             if (bus) setCurrentBus(bus);
             setValidatedCount(0);
+            setCurrentPassengersCount(0);
             setFareCollected(0);
             showNotification('Trip started from another device', 'warning');
           }
@@ -305,6 +424,7 @@ const HomePage: React.FC = () => {
             setCurrentTrip(null);
             setCurrentBus(null);
             setValidatedCount(0);
+            setCurrentPassengersCount(0);
             setFareCollected(0);
           }
         },
@@ -332,19 +452,7 @@ const HomePage: React.FC = () => {
         passengerCleanup();
       };
       
-      networkStateRef.current = true; // Track that we're online with subscriptions
-    } else if (!isOnline && networkStateRef.current) {
-      // Clean up subscriptions when going offline
-      console.log('[HomePage] Going offline, cleaning up realtime subscriptions');
-      if (realtimeCleanupRef.current) {
-        realtimeCleanupRef.current();
-        realtimeCleanupRef.current = null;
-      }
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-      networkStateRef.current = false;
+      networkStateRef.current = true; // Track that we have subscriptions set up
     }
 
     return () => {
@@ -353,7 +461,7 @@ const HomePage: React.FC = () => {
       if (proximityCheckRef.current) clearTimeout(proximityCheckRef.current);
       if (realtimeCleanupRef.current) realtimeCleanupRef.current();
     };
-  }, [currentTrip?.id, authLoading, initialLoadDone, loadData, profile?.id, isOnline, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification, history]);
+  }, [currentTrip?.id, authLoading, initialLoadDone, loadData, profile?.id, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, showNotification, history]);
 
   // Refresh data when component mounts (handles navigation back from scan page)
   useEffect(() => {
@@ -468,6 +576,55 @@ const HomePage: React.FC = () => {
     }
   }, [currentTrip, showNotification, loadData]);
 
+  const confirmOfflineTripStart = useCallback(async () => {
+    const finalStartingPoint = selectedStartingPoint === 'Other' 
+      ? customStartingPoint.trim() 
+      : selectedStartingPoint.trim();
+
+    if (!finalStartingPoint) {
+      showNotification('Please select or enter a starting point', 'warning');
+      return;
+    }
+
+    setStarting(true);
+    setShowStartingPointModal(false);
+    showNotification('Starting trip offline...', 'warning');
+
+    try {
+      const bus = currentBus;
+      if (!bus) {
+        throw new Error('Bus information not available');
+      }
+
+      if (!profile) {
+        throw new Error('Profile information not available');
+      }
+
+      const localTrip = {
+        id: crypto.randomUUID(),
+        bus_id: bus.id,
+        conductor_id: profile.id,
+        started_at: new Date().toISOString(),
+        ended_at: null,
+        status: 'in_progress' as const,
+        starting_point: finalStartingPoint,
+      };
+
+      console.log('[HomePage] Trip started offline (local):', localTrip.id, 'from:', finalStartingPoint);
+      setCurrentTrip(localTrip);
+      setValidatedCount(0);
+      setFareCollected(0);
+      setStarting(false);
+      setSelectedStartingPoint('');
+      setCustomStartingPoint('');
+      showNotification('Trip started offline — will sync when online', 'warning');
+    } catch (err) {
+      console.error('[HomePage] Error starting offline trip:', err);
+      showNotification('Failed to start trip offline', 'danger');
+      setStarting(false);
+    }
+  }, [selectedStartingPoint, customStartingPoint, currentBus, profile, setCurrentTrip, setValidatedCount, setFareCollected, showNotification]);
+
   const startTrip = useCallback(async () => {
     console.log('[HomePage] Profile data:', profile);
     console.log('[HomePage] Bus ID check:', profile?.bus_id);
@@ -492,67 +649,73 @@ const HomePage: React.FC = () => {
     }
 
     setError(null);
+    
+    // ── OFFLINE: Show starting point selection modal ─────────────────────
+    if (!isOnline) {
+      const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+      if (!cachedBusRaw) {
+        const msg = 'Bus info not cached. Connect once while online before starting offline.';
+        setError(msg);
+        showNotification(msg, 'warning');
+        return;
+      }
+
+      let bus;
+      try {
+        bus = JSON.parse(cachedBusRaw);
+      } catch {
+        const msg = 'Cached bus data is invalid. Connect while online and try again.';
+        setError(msg);
+        showNotification(msg, 'danger');
+        return;
+      }
+
+      // Show starting point selection modal for offline
+      setCurrentBus(bus);
+      setShowStartingPointModal(true);
+      return;
+    }
+
     setStarting(true);
     showNotification('Starting trip...', 'warning');
 
     try {
       console.log('[HomePage] Starting trip for conductor:', profile.id, 'bus:', profile.bus_id);
 
-      // ── OFFLINE: create local trip — synced to DB on reconnect ─────────────
-      if (!isOnline) {
-        const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
-        if (!cachedBusRaw) {
-          const msg = 'Bus info not cached. Connect once while online before starting offline.';
-          setError(msg);
-          showNotification(msg, 'warning');
-          setStarting(false);
-          return;
-        }
-
-        let bus;
-        try {
-          bus = JSON.parse(cachedBusRaw);
-        } catch {
-          const msg = 'Cached bus data is invalid. Connect while online and try again.';
-          setError(msg);
-          showNotification(msg, 'danger');
-          setStarting(false);
-          return;
-        }
-
-        const localTrip = {
-          id: crypto.randomUUID(),
-          bus_id: bus.id,
-          conductor_id: profile.id,
-          started_at: new Date().toISOString(),
-          ended_at: null,
-          status: 'in_progress' as const,
-        };
-
-        console.log('[HomePage] Trip started offline (local):', localTrip.id);
-        setCurrentTrip(localTrip);
-        setCurrentBus(bus);
-        setValidatedCount(0);
-        setFareCollected(0);
-        setStarting(false);
-        showNotification('Trip started offline — will sync when online', 'warning');
-        return;
-      }
-
-      const { data: bus, error: busErr } = await supabase
+      let bus;
+      const { data: busData, error: busErr } = await supabase
         .from('buses')
         .select('*')
         .eq('id', profile.bus_id)
         .eq('status', 'active')
         .single();
 
-      if (busErr || !bus) {
-        const msg = busErr?.message || 'Failed to load assigned bus';
-        console.error('[HomePage] Bus load error:', busErr);
-        setError(msg);
-        showNotification(msg, 'danger');
-        setStarting(false);
-        return;
+      if (busErr || !busData) {
+        if (busErr && isLikelyNetworkError(busErr)) {
+          // Fall back to cached bus data on network error
+          const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
+          if (cachedBusRaw) {
+            try {
+              bus = JSON.parse(cachedBusRaw);
+              console.log('[HomePage] Network error loading bus, using cached data');
+            } catch (parseErr) {
+              console.error('[HomePage] Error parsing cached bus:', parseErr);
+            }
+          }
+        }
+        
+        if (!bus) {
+          const msg = busErr?.message || 'Failed to load assigned bus';
+          console.error('[HomePage] Bus load error:', busErr);
+          setError(msg);
+          showNotification(msg, 'danger');
+          setStarting(false);
+          return;
+        }
+      } else {
+        bus = busData;
+        // Cache the bus data for offline use
+        localStorage.setItem(`cached_bus_${profile.bus_id}`, JSON.stringify(bus));
       }
 
       // Get current GPS location for starting point
@@ -629,22 +792,45 @@ const HomePage: React.FC = () => {
   }, [profile, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification, isOnline, loadData]);
 
   const endTrip = useCallback(async () => {
-    if (!currentTrip) return;
+    if (!currentTrip || !currentBus) return;
 
     try {
-      // Try to get current GPS location for end_point
       let endPoint: string | undefined;
       try {
         const locationResult = await getLocationAndDecode();
         if (locationResult.success && locationResult.locationName) {
           endPoint = locationResult.locationName;
         }
-      } catch (_) { /* GPS optional — don't block trip end */ }
+      } catch (_) { /* GPS optional */ }
+
+      const endedAt = new Date().toISOString();
+      const completedTrip = {
+        ...currentTrip,
+        status: 'completed' as const,
+        ended_at: endedAt,
+      };
+
+      if (!isOnline || !navigator.onLine) {
+        StorageService.saveTripState({
+          currentTrip: completedTrip,
+          currentBus,
+          validatedCount,
+          currentPassengersCount,
+          fareCollected,
+          pendingTripEndSync: true,
+          endPoint,
+        });
+        StorageService.archiveCompletedTrip();
+        setCurrentTrip(completedTrip);
+        showNotification('Trip ended offline — will sync when online', 'warning');
+        history.push('/trip-summary');
+        return;
+      }
 
       const { error } = await supabase
         .from('trips')
         .update({
-          ended_at: new Date().toISOString(),
+          ended_at: endedAt,
           status: 'completed',
           ...(endPoint ? { end_point: endPoint } : {}),
         })
@@ -652,14 +838,13 @@ const HomePage: React.FC = () => {
 
       if (error) throw error;
 
-      // Navigate FIRST — TripSummaryPage still reads trip state
-      // State is cleared by startNewTrip() on that page
+      setCurrentTrip(completedTrip);
       history.push('/trip-summary');
     } catch (err) {
       console.error('[HomePage] Error ending trip:', err);
       showNotification('Failed to end trip', 'danger');
     }
-  }, [currentTrip, history, showNotification, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected]);
+  }, [currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, isOnline, history, showNotification, setCurrentTrip]);
 
   // Render
 
@@ -1088,6 +1273,154 @@ const HomePage: React.FC = () => {
         color={toastColor}
         position="top"
       />
+
+      {/* Starting Point Selection Modal for Offline Mode */}
+      {showStartingPointModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            background: 'var(--color-card-bg)',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 400,
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
+          }}>
+            <h3 style={{
+              margin: '0 0 16px',
+              fontSize: '1.25rem',
+              fontWeight: 700,
+              color: 'var(--color-text-primary)'
+            }}>
+              Select Starting Point
+            </h3>
+            <p style={{
+              margin: '0 0 20px',
+              fontSize: '0.9rem',
+              color: 'var(--color-text-secondary)'
+            }}>
+              Since you're offline, please select your starting point for this trip:
+            </p>
+            
+            <div style={{ marginBottom: 20 }}>
+              <label style={{
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--color-text-primary)'
+              }}>
+                Starting Point
+              </label>
+              <select
+                value={selectedStartingPoint}
+                onChange={(e) => setSelectedStartingPoint(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-input-bg)',
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">-- Select a location --</option>
+                {COMMON_STARTING_POINTS.map((point) => (
+                  <option key={point} value={point}>
+                    {point}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedStartingPoint === 'Other' && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: 8,
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text-primary)'
+                }}>
+                  Specify Location
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter starting point..."
+                  value={selectedStartingPoint === 'Other' ? '' : selectedStartingPoint}
+                  onChange={(e) => setSelectedStartingPoint(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-input-bg)',
+                    color: 'var(--color-text-primary)',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              marginTop: 24
+            }}>
+              <button
+                onClick={() => {
+                  setShowStartingPointModal(false);
+                  setSelectedStartingPoint('');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: '1px solid var(--color-border)',
+                  background: 'transparent',
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmOfflineTripStart}
+                disabled={!selectedStartingPoint.trim() || starting}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: 'var(--color-primary)',
+                  color: 'white',
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  cursor: !selectedStartingPoint.trim() || starting ? 'not-allowed' : 'pointer',
+                  opacity: !selectedStartingPoint.trim() || starting ? 0.6 : 1
+                }}
+              >
+                {starting ? 'Starting...' : 'Start Trip'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </IonPage>
   );
 };

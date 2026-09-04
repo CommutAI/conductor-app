@@ -7,6 +7,7 @@
  */
 
 import { withCircuitBreaker } from './circuitBreaker';
+import { Geolocation } from '@capacitor/geolocation';
 
 // ── GPS Cache for Offline Support ─────────────────────────────────────────────
 interface CachedLocation {
@@ -76,6 +77,37 @@ class GpsCache {
     }
   }
 
+  getLastKnownLocation(): CachedLocation | null {
+    let newest: CachedLocation | null = null;
+
+    for (const item of this.cache.values()) {
+      if (!newest || item.timestamp > newest.timestamp) {
+        newest = item;
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem(GPS_CACHE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const allCache = parsed.all || {};
+        for (const item of Object.values(allCache) as CachedLocation[]) {
+          if (!newest || item.timestamp > newest.timestamp) {
+            newest = item;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[GpsCache] Error reading last known location:', err);
+    }
+
+    // Allow last-known for up to 24 h when live GPS is unavailable
+    if (newest && Date.now() - newest.timestamp < 24 * 60 * 60 * 1000) {
+      return newest;
+    }
+    return null;
+  }
+
   clearOldCache(): void {
     const now = Date.now();
     for (const [key, item] of this.cache.entries()) {
@@ -141,77 +173,35 @@ export interface GpsPosition {
   accuracy: number; // metres
 }
 
-export async function getCurrentPosition(timeoutMs = 10000): Promise<GpsPosition> {
-  const cap = (window as any).Capacitor;
-  
-  // Progressive strategy: try fast cached position first, then high accuracy
-  const tryFastPosition = async (): Promise<GpsPosition | null> => {
-    try {
-      if (cap?.Plugins?.Geolocation) {
-        const pos = await cap.Plugins.Geolocation.getCurrentPosition({
-          enableHighAccuracy: false,
-          timeout: Math.min(8000, timeoutMs), // Increased from 5000ms to 8000ms for better indoor/bus performance
-          maximumAge: 30000, // Accept positions up to 30 seconds old for better caching
-        });
-        return {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        };
-      }
-      // Web fallback for fast position
-      return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation not supported'));
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-          (e) => reject(new Error(e.message)),
-          { enableHighAccuracy: false, timeout: Math.min(8000, timeoutMs), maximumAge: 30000 },
-        );
-      });
-    } catch {
-      return null;
-    }
+export async function getCurrentPosition(timeoutMs = 15000): Promise<GpsPosition> {
+  const options = {
+    enableHighAccuracy: false,
+    timeout: timeoutMs,
+    maximumAge: 120000, // accept a recent fix up to 2 minutes old
   };
 
-  const tryHighAccuracyPosition = async (): Promise<GpsPosition> => {
-    if (cap?.Plugins?.Geolocation) {
-      const pos = await cap.Plugins.Geolocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: timeoutMs,
-        maximumAge: 30000, // Increased cache age for better performance
-      });
-      return {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      };
-    }
-    // Web fallback
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation not supported'));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-        (e) => reject(new Error(e.message)),
-        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
-      );
-    });
-  };
-
-  // Try fast position first (cached or low accuracy)
-  const fastPos = await tryFastPosition();
-  if (fastPos && fastPos.accuracy < 150) { // Increased threshold from 100m to 150m for more lenient acceptance
-    // If fast position is reasonably accurate (< 150m), use it
-    return fastPos;
+  try {
+    const pos = await Geolocation.getCurrentPosition(options);
+    return {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+    };
+  } catch (fastErr) {
+    console.warn('[geoService] Fast GPS failed, trying high accuracy:', fastErr);
   }
 
-  // Fall back to high accuracy position
-  return tryHighAccuracyPosition();
+  const pos = await Geolocation.getCurrentPosition({
+    enableHighAccuracy: true,
+    timeout: timeoutMs,
+    maximumAge: 120000,
+  });
+
+  return {
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude,
+    accuracy: pos.coords.accuracy,
+  };
 }
 
 // ── Nominatim reverse-geocode (free, no key) ──────────────────────────────────
@@ -382,80 +372,97 @@ export interface GpsLocationResult {
   error?: string;
 }
 
-export async function getLocationAndDecode(): Promise<GpsLocationResult> {
+export async function requestLocationAccess(): Promise<'granted' | 'denied'> {
   try {
-    // 1. Get current GPS coordinates (works offline - device GPS)
-    const pos = await getCurrentPosition(10000);
-    
-    // 2. Check cache first for offline support
-    const cached = gpsCache.getCachedLocation(pos.lat, pos.lng);
-    if (cached && !navigator.onLine) {
-      console.log('[geoService] Using cached GPS location (offline mode)');
+    let status = await Geolocation.checkPermissions();
+    if (status.location !== 'granted' && status.coarseLocation !== 'granted') {
+      status = await Geolocation.requestPermissions();
+    }
+    if (status.location === 'denied' && status.coarseLocation !== 'granted') {
+      return 'denied';
+    }
+    return 'granted';
+  } catch (err) {
+    console.warn('[geoService] Permission check failed, will attempt GPS anyway:', err);
+    return 'granted';
+  }
+}
+
+function decodeCoordinates(pos: GpsPosition): GpsLocationResult {
+  const cached = gpsCache.getCachedLocation(pos.lat, pos.lng);
+  if (cached) {
+    return {
+      success: true,
+      coordinates: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
+      locationName: cached.locationName,
+      fullAddress: cached.fullAddress,
+    };
+  }
+
+  const stopMatch = nearestStop(pos.lat, pos.lng);
+  const locationName = stopMatch.isWithinRadius
+    ? stopMatch.stop.name
+    : `${stopMatch.stop.name} (${(stopMatch.distanceKm * 1000).toFixed(0)}m away)`;
+
+  const fullAddress = `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`;
+  gpsCache.cacheLocation(pos.lat, pos.lng, stopMatch.stop.name, fullAddress);
+
+  return {
+    success: true,
+    coordinates: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
+    locationName,
+    fullAddress,
+  };
+}
+
+export async function getLocationAndDecode(): Promise<GpsLocationResult> {
+  await requestLocationAccess();
+
+  try {
+    const pos = await getCurrentPosition(15000);
+    const decoded = decodeCoordinates(pos);
+
+    // Enrich with reverse-geocode when online (non-blocking for the stop name)
+    if (navigator.onLine) {
+      try {
+        const geo = await reverseGeocode(pos.lat, pos.lng);
+        if (geo) {
+          const preciseName =
+            geo.address.village ||
+            geo.address.suburb ||
+            geo.address.city_district ||
+            geo.address.town ||
+            geo.address.city ||
+            geo.display_name.split(',')[0];
+          if (preciseName) {
+            decoded.locationName = preciseName;
+            decoded.fullAddress = geo.display_name;
+            gpsCache.cacheLocation(pos.lat, pos.lng, preciseName, geo.display_name);
+          }
+        }
+      } catch {
+        /* keep stop-based name */
+      }
+    }
+
+    return decoded;
+  } catch (error) {
+    console.warn('[geoService] Live GPS failed:', error);
+
+    const lastKnown = gpsCache.getLastKnownLocation();
+    if (lastKnown) {
       return {
         success: true,
         coordinates: {
-          lat: pos.lat,
-          lng: pos.lng,
-          accuracy: pos.accuracy,
+          lat: lastKnown.coordinates.lat,
+          lng: lastKnown.coordinates.lng,
+          accuracy: 999,
         },
-        locationName: cached.locationName,
-        fullAddress: cached.fullAddress,
+        locationName: lastKnown.locationName,
+        fullAddress: lastKnown.fullAddress,
       };
     }
-    
-    // 3. Try to match against known stops first (works offline - no API call)
-    const stopMatch = nearestStop(pos.lat, pos.lng);
-    
-    // 4. Try reverse-geocode for more precise location (requires internet)
-    let geo: NominatimResult | null = null;
-    let locationName: string;
-    let fullAddress: string;
-    
-    if (navigator.onLine) {
-      try {
-        geo = await reverseGeocode(pos.lat, pos.lng);
-      } catch {
-        // Reverse geocoding failed - will use stop match instead
-        console.log('[geoService] Reverse geocoding failed, using stop match');
-      }
-    } else {
-      console.log('[geoService] Offline mode, skipping reverse geocoding');
-    }
-    
-    // 5. Determine location name - prioritize known stops, then reverse geocode
-    if (stopMatch.isWithinRadius) {
-      locationName = stopMatch.stop.name;
-    } else if (geo) {
-      locationName = 
-        geo.address.village ||
-        geo.address.suburb ||
-        geo.address.city_district ||
-        geo.address.town ||
-        geo.address.city ||
-        geo.display_name.split(',')[0] ||
-        'Current location';
-    } else {
-      locationName = stopMatch.stop.name; // Fallback to nearest known stop
-    }
-    
-    fullAddress = geo?.display_name || `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`;
-    
-    // 6. Cache the result for offline use
-    if (navigator.onLine) {
-      gpsCache.cacheLocation(pos.lat, pos.lng, locationName, fullAddress);
-    }
-    
-    return {
-      success: true,
-      coordinates: {
-        lat: pos.lat,
-        lng: pos.lng,
-        accuracy: pos.accuracy,
-      },
-      locationName,
-      fullAddress,
-    };
-  } catch (error) {
+
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get location',

@@ -11,11 +11,10 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component }) => {
-  const { profile, loading, isRestoringTrip } = useApp();
+  const { profile, loading, isRestoringTrip, currentTrip } = useApp();
 
-  // Only show loading if we don't have a profile yet and aren't restoring a trip
-  // This prevents the loading overlay from showing after offline login when profile is already set
-  if (loading && !profile && !isRestoringTrip) {
+  // Initial auth bootstrap only — not background trip revalidation
+  if (loading && !profile) {
     return (
       <IonPage>
         <IonContent fullscreen className="app-page-bg">
@@ -37,8 +36,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component })
     );
   }
 
-  // Show loading specifically for trip restoration
-  if (isRestoringTrip) {
+  // Block UI only on cold start when we have no local trip yet but are checking the DB
+  if (isRestoringTrip && !currentTrip) {
     return (
       <IonPage>
         <IonContent fullscreen className="app-page-bg">

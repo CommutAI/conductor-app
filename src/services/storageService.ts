@@ -23,6 +23,37 @@ export interface OfflineScan {
   retryDelay?: number; // Exponential backoff delay
 }
 
+export interface LocalPassengerRecord {
+  id: string;
+  cardUid?: string;
+  ticketUid?: string;
+  cardId?: string;
+  tempTicketId?: string;
+  destination?: string;
+  fare: number;
+  baggageFee?: number;
+  paymentMethod?: string;
+  boardedAt: string;
+  alightedAt?: string;
+  isTicket: boolean;
+}
+
+export interface CachedTripHistoryEntry {
+  id: string;
+  started_at: string;
+  ended_at?: string;
+  status: 'completed' | 'cancelled';
+  route: string;
+  plate_number: string;
+  starting_point?: string;
+  end_point?: string;
+  passenger_count: number;
+  fare_collected: number;
+  irregularities: number;
+  passengers: LocalPassengerRecord[];
+  pendingSync?: boolean;
+}
+
 export interface CachedTripState {
   currentTrip: {
     id: string;
@@ -40,8 +71,13 @@ export interface CachedTripState {
     status: string;
   } | null;
   validatedCount: number;
+  currentPassengersCount: number;
   fareCollected: number;
   savedAt: string;
+  pendingTripEndSync?: boolean;
+  endPoint?: string;
+  startingPoint?: string;
+  localPassengers?: LocalPassengerRecord[];
 }
 
 export interface SyncProgress {
@@ -62,6 +98,8 @@ export interface SyncResult {
 
 const OFFLINE_SCANS_KEY = 'commutai_offline_scans';
 const TRIP_STATE_KEY = 'commutai_trip_state';
+const TRIP_HISTORY_KEY = 'commutai_trip_history';
+const OFFLINE_QUEUE_KEY = 'offline_scan_queue';
 const CARD_CACHE_KEY = 'commutai_card_cache';
 
 // ── Persistent Card Cache (survives app restarts, used for offline lookups) ───
@@ -245,9 +283,159 @@ export class StorageService {
 
   // ── Trip State Cache ──────────────────────────────────────────────────────
   static saveTripState(state: Omit<CachedTripState, 'savedAt'>): void {
+    const existing = this.loadTripState();
     this._write<CachedTripState>(TRIP_STATE_KEY, {
-      ...state,
+      currentTrip: state.currentTrip,
+      currentBus: state.currentBus,
+      validatedCount: state.validatedCount,
+      currentPassengersCount: state.currentPassengersCount ?? existing?.currentPassengersCount ?? 0,
+      fareCollected: state.fareCollected,
+      localPassengers: state.localPassengers ?? existing?.localPassengers ?? [],
+      pendingTripEndSync: state.pendingTripEndSync ?? existing?.pendingTripEndSync,
+      endPoint: state.endPoint ?? existing?.endPoint,
+      startingPoint: state.startingPoint ?? existing?.startingPoint,
       savedAt: new Date().toISOString(),
+    });
+  }
+
+  static hasPendingScans(): boolean {
+    try {
+      const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+      if (!raw) return false;
+      const queue = JSON.parse(raw);
+      return Array.isArray(queue) && queue.some((s: { status?: string }) => s.status === 'pending');
+    } catch {
+      return false;
+    }
+  }
+
+  static hasUnsyncedTripData(): boolean {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip) return false;
+    return (
+      cached.pendingTripEndSync === true ||
+      cached.currentTrip.status === 'in_progress' ||
+      this.hasPendingScans()
+    );
+  }
+
+  static addLocalPassenger(tripId: string, passenger: Omit<LocalPassengerRecord, 'id'>): void {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || cached.currentTrip.id !== tripId) return;
+
+    const passengers = [...(cached.localPassengers ?? [])];
+    passengers.push({
+      ...passenger,
+      id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    });
+
+    this.saveTripState({ ...cached, localPassengers: passengers });
+  }
+
+  static markLocalAlighted(
+    tripId: string,
+    cardUid?: string,
+    ticketUid?: string,
+  ): boolean {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || cached.currentTrip.id !== tripId) return false;
+
+    const cardNorm = cardUid?.toUpperCase();
+    const ticketNorm = ticketUid?.toUpperCase();
+    let found = false;
+
+    const passengers = (cached.localPassengers ?? []).map((p) => {
+      if (p.alightedAt) return p;
+      const match =
+        (cardNorm && p.cardUid?.toUpperCase() === cardNorm) ||
+        (ticketNorm && p.ticketUid?.toUpperCase() === ticketNorm);
+      if (match) {
+        found = true;
+        return { ...p, alightedAt: new Date().toISOString() };
+      }
+      return p;
+    });
+
+    if (found) {
+      this.saveTripState({ ...cached, localPassengers: passengers });
+    }
+    return found;
+  }
+
+  static isLocallyBoarded(tripId: string, cardUid?: string, ticketUid?: string): boolean {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || cached.currentTrip.id !== tripId) return false;
+
+    const cardNorm = cardUid?.toUpperCase();
+    const ticketNorm = ticketUid?.toUpperCase();
+
+    return (cached.localPassengers ?? []).some(
+      (p) =>
+        !p.alightedAt &&
+        ((cardNorm && p.cardUid?.toUpperCase() === cardNorm) ||
+          (ticketNorm && p.ticketUid?.toUpperCase() === ticketNorm)),
+    );
+  }
+
+  static getLocalPassengers(tripId: string): LocalPassengerRecord[] {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || cached.currentTrip.id !== tripId) return [];
+    return cached.localPassengers ?? [];
+  }
+
+  static archiveCompletedTrip(): void {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || !cached.currentBus) return;
+    if (cached.currentTrip.status !== 'completed') return;
+
+    const history = this.getTripHistory();
+    const entry: CachedTripHistoryEntry = {
+      id: cached.currentTrip.id,
+      started_at: cached.currentTrip.started_at,
+      ended_at: cached.currentTrip.ended_at ?? undefined,
+      status: 'completed',
+      route: cached.currentBus.route,
+      plate_number: cached.currentBus.plate_number,
+      starting_point: cached.startingPoint,
+      end_point: cached.endPoint,
+      passenger_count: cached.validatedCount,
+      fare_collected: cached.fareCollected,
+      irregularities: 0,
+      passengers: cached.localPassengers ?? [],
+      pendingSync: true,
+    };
+
+    const withoutDup = history.filter((t) => t.id !== entry.id);
+    this._write<CachedTripHistoryEntry[]>(TRIP_HISTORY_KEY, [entry, ...withoutDup]);
+  }
+
+  static getTripHistory(): CachedTripHistoryEntry[] {
+    return this._read<CachedTripHistoryEntry[]>(TRIP_HISTORY_KEY) ?? [];
+  }
+
+  static getTripHistoryEntry(tripId: string): CachedTripHistoryEntry | null {
+    return this.getTripHistory().find((t) => t.id === tripId) ?? null;
+  }
+
+  static markTripHistorySynced(tripId: string): void {
+    const history = this.getTripHistory().map((t) =>
+      t.id === tripId ? { ...t, pendingSync: false } : t,
+    );
+    this._write(TRIP_HISTORY_KEY, history);
+  }
+
+  static getTripHistoryForDisplay(segment: 'all' | 'today'): CachedTripHistoryEntry[] {
+    const history = this.getTripHistory();
+    if (segment === 'all') return history;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return history.filter((t) => {
+      const started = new Date(t.started_at);
+      return started >= today && started < tomorrow;
     });
   }
 
@@ -267,79 +455,83 @@ export class StorageService {
       return false;
     }
 
-    // Don't sync completed trips - they're already handled by endTrip
-    if (cached.currentTrip.status === 'completed' || cached.currentTrip.status === 'cancelled') {
-      console.log('[StorageService] Cached trip is already ended, skipping sync');
-      this.clearTripState();
-      return false;
+    // Completed trips with pending end sync are handled by syncTripEndToDatabase
+    if (cached.currentTrip.status === 'completed' && cached.pendingTripEndSync) {
+      return true;
     }
 
-    // Check if trip is too old (more than 1 hour) - don't sync stale trips
-    const tripAge = Date.now() - new Date(cached.savedAt).getTime();
-    const MAX_SYNC_AGE = 60 * 60 * 1000; // 1 hour
-    if (tripAge > MAX_SYNC_AGE) {
-      console.log('[StorageService] Cached trip is too old to sync, clearing');
-      this.clearTripState();
+    if (cached.currentTrip.status === 'completed' && !this.hasPendingScans()) {
       return false;
     }
 
     try {
-      // Check if trip exists in database
       const { data: existingTrip } = await supabase
         .from('trips')
         .select('id, status, ended_at')
         .eq('id', cached.currentTrip.id)
-        .single();
+        .maybeSingle();
 
       if (existingTrip) {
-        // Trip exists in database
-        // If it's already completed in database, clear the cache
         if (existingTrip.status === 'completed' || existingTrip.status === 'cancelled') {
-          console.log('[StorageService] Trip is already completed in database, clearing cache');
-          this.clearTripState();
-          return false;
-        }
-        
-        // Trip exists and is in_progress, update if needed
-        if (existingTrip.status !== cached.currentTrip.status) {
-          await supabase
-            .from('trips')
-            .update({ 
-              status: cached.currentTrip.status,
-              ended_at: cached.currentTrip.ended_at 
-            })
-            .eq('id', cached.currentTrip.id);
-          console.log('[StorageService] Synced trip status to database');
-        }
-      } else {
-        // Trip doesn't exist in database, recreate it (only if in_progress)
-        if (cached.currentTrip.status === 'in_progress') {
-          const { error } = await supabase
-            .from('trips')
-            .insert({
-              id: cached.currentTrip.id,
-              bus_id: cached.currentTrip.bus_id,
-              conductor_id: cached.currentTrip.conductor_id,
-              started_at: cached.currentTrip.started_at,
-              ended_at: cached.currentTrip.ended_at,
-              status: cached.currentTrip.status,
-            });
-
-          if (error) {
-            console.error('[StorageService] Failed to recreate trip in database:', error);
-            return false;
+          if (!this.hasPendingScans()) {
+            this.clearTripState();
           }
-          console.log('[StorageService] Recreated trip in database from cache');
-        } else {
-          console.log('[StorageService] Cached trip is not in_progress, skipping recreation');
-          this.clearTripState();
           return false;
         }
+        return true;
       }
 
+      // Trip not in DB — insert as in_progress so scan FK references work
+      const { error } = await supabase.from('trips').insert({
+        id: cached.currentTrip.id,
+        bus_id: cached.currentTrip.bus_id,
+        conductor_id: cached.currentTrip.conductor_id,
+        started_at: cached.currentTrip.started_at,
+        status: 'in_progress',
+        starting_point: cached.startingPoint ?? null,
+      });
+
+      if (error) {
+        console.error('[StorageService] Failed to insert trip in database:', error);
+        return false;
+      }
+      console.log('[StorageService] Inserted offline trip into database');
       return true;
     } catch (err) {
       console.error('[StorageService] Error syncing trip state:', err);
+      return false;
+    }
+  }
+
+  static async syncTripEndToDatabase(): Promise<boolean> {
+    const cached = this.loadTripState();
+    if (!cached?.currentTrip || !cached.pendingTripEndSync) {
+      return false;
+    }
+
+    try {
+      await this.syncTripStateToDatabase();
+
+      const { error } = await supabase
+        .from('trips')
+        .update({
+          status: 'completed',
+          ended_at: cached.currentTrip.ended_at ?? new Date().toISOString(),
+          end_point: cached.endPoint ?? null,
+        })
+        .eq('id', cached.currentTrip.id);
+
+      if (error) {
+        console.error('[StorageService] Failed to sync trip end:', error);
+        return false;
+      }
+
+      this.markTripHistorySynced(cached.currentTrip.id);
+      this.clearTripState();
+      console.log('[StorageService] Trip end synced to database');
+      return true;
+    } catch (err) {
+      console.error('[StorageService] Error syncing trip end:', err);
       return false;
     }
   }

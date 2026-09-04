@@ -47,11 +47,15 @@ interface AppContextType {
   currentTrip: Trip | null;
   currentBus: Bus | null;
   validatedCount: number;
+  currentPassengersCount: number;
   fareCollected: number;
   isRestoringTrip: boolean;
   setCurrentTrip: (trip: Trip | null) => void;
   setCurrentBus: (bus: Bus | null) => void;
   setValidatedCount: (n: number) => void;
+  setCurrentPassengersCount: (n: number) => void;
+  incrementCurrentPassengers: () => void;
+  decrementCurrentPassengers: () => void;
   setFareCollected: (n: number) => void;
   incrementValidated: (fare: number) => void;
   clearTrip: () => void;
@@ -91,14 +95,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentTrip, _setCurrentTrip] = useState<Trip | null>(initialCached?.currentTrip ?? null);
   const [currentBus, _setCurrentBus] = useState<Bus | null>(initialCached?.currentBus ?? null);
   const [validatedCount, _setValidatedCount] = useState(initialCached?.validatedCount ?? 0);
+  const [currentPassengersCount, _setCurrentPassengersCount] = useState(initialCached?.currentPassengersCount ?? 0);
   const [fareCollected, _setFareCollected] = useState(initialCached?.fareCollected ?? 0);
   const [isRestoringTrip, setIsRestoringTrip] = useState(false);
   const restoredOfflineOnlyRef = useRef(false);
 
-  const validateTripWithDatabase = useCallback(async () => {
+  const validateTripWithDatabase = useCallback(async (showLoading = false) => {
     if (!profile || !navigator.onLine) return;
 
-    setIsRestoringTrip(true);
+    if (showLoading) {
+      setIsRestoringTrip(true);
+    }
     const freshCached = StorageService.loadTripState();
 
     try {
@@ -113,6 +120,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (dbTrip) {
           console.log('[AppContext] Cached trip confirmed active in DB:', dbTrip.id);
           _setCurrentTrip(dbTrip);
+          restoredOfflineOnlyRef.current = false;
+          return;
+        }
+
+        // Trip not in DB yet — keep local state if scans or offline trip data pending sync
+        if (StorageService.hasUnsyncedTripData()) {
+          console.log('[AppContext] Trip not in DB yet — preserving local state until sync');
           restoredOfflineOnlyRef.current = false;
           return;
         }
@@ -145,14 +159,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         _setCurrentTrip(activeTrip);
         if (bus) _setCurrentBus(bus);
-        _setValidatedCount(0);
-        _setFareCollected(0);
+
+        const cached = StorageService.loadTripState();
+        const preserveCounts =
+          cached?.currentTrip?.id === activeTrip.id &&
+          (StorageService.hasPendingScans() || (cached?.validatedCount ?? 0) > 0);
+
+        _setValidatedCount(preserveCounts ? (cached?.validatedCount ?? 0) : 0);
+        _setFareCollected(preserveCounts ? (cached?.fareCollected ?? 0) : 0);
 
         StorageService.saveTripState({
           currentTrip: activeTrip,
           currentBus: bus,
-          validatedCount: 0,
-          fareCollected: 0,
+          validatedCount: preserveCounts ? cached!.validatedCount : 0,
+          currentPassengersCount: preserveCounts ? cached!.currentPassengersCount ?? 0 : 0,
+          fareCollected: preserveCounts ? cached!.fareCollected : 0,
+          localPassengers: preserveCounts ? cached!.localPassengers : [],
         });
       } else {
         console.log('[AppContext] No active trip found in DB');
@@ -160,7 +182,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[AppContext] Error validating trip with DB:', err);
     } finally {
-      setIsRestoringTrip(false);
+      if (showLoading) {
+        setIsRestoringTrip(false);
+      }
       restoredOfflineOnlyRef.current = false;
     }
   }, [profile]);
@@ -218,6 +242,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return null;
   }
 
+  function loadCachedProfile(userId: string): StaffProfile | null {
+    try {
+      const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+      if (!raw) return null;
+      const { profile: cachedProfile } = JSON.parse(raw);
+      if (cachedProfile?.id === userId) {
+        return cachedProfile as StaffProfile;
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  async function applySession(session: Session | null) {
+    setSession(session);
+    setUser(session?.user ?? null);
+
+    if (!session?.user) {
+      setProfile(null);
+      return;
+    }
+
+    const p = await fetchProfile(session.user.id);
+    if (p) {
+      setProfile(p);
+      return;
+    }
+
+    // Offline or transient failure — keep cached profile so the user isn't logged out
+    const cached = loadCachedProfile(session.user.id);
+    if (cached) {
+      console.log('[AppContext] Using cached profile (offline or fetch failed)');
+      setProfile(cached);
+    }
+  }
+
   useEffect(() => {
     // Only restore session on initial mount, not on network changes
     let hasMounted = false;
@@ -225,12 +286,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!hasMounted) {
         hasMounted = true;
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          const p = await fetchProfile(session.user.id);
-          setProfile(p);
-        }
+        await applySession(session);
         setLoading(false);
       }
     });
@@ -238,15 +294,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       // Only update session if it's a real auth event, not network-related
       if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          // Network-aware profile fetch
-          const p = await fetchProfile(session.user.id);
-          setProfile(p);
-        } else {
+        if (_event === 'SIGNED_OUT') {
+          setSession(null);
+          setUser(null);
           setProfile(null);
+          return;
         }
+        await applySession(session);
       }
     });
 
@@ -273,7 +327,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      await validateTripWithDatabase();
+      await validateTripWithDatabase(true);
     };
 
     restoreTrip();
@@ -283,8 +337,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function handleOnline() {
       if (restoredOfflineOnlyRef.current && profile) {
-        console.log('[AppContext] Back online — re-validating cached trip with DB');
-        validateTripWithDatabase();
+        console.log('[AppContext] Back online — re-validating cached trip with DB (silent)');
+        validateTripWithDatabase(false);
       }
     }
 
@@ -298,10 +352,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentTrip,
         currentBus,
         validatedCount,
+        currentPassengersCount,
         fareCollected,
       });
     }
-  }, [currentTrip, currentBus, validatedCount, fareCollected]);
+  }, [currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected]);
 
   // ── Auth Functions ──────────────────────────────────────────────────────────
   async function signIn(email: string, password: string): Promise<{ error: string | null }> {
@@ -375,6 +430,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _setValidatedCount(n);
   }
 
+  function setCurrentPassengersCount(n: number) {
+    _setCurrentPassengersCount(n);
+  }
+
+  function incrementCurrentPassengers() {
+    _setCurrentPassengersCount((c) => c + 1);
+  }
+
+  function decrementCurrentPassengers() {
+    _setCurrentPassengersCount((c) => Math.max(0, c - 1));
+  }
+
   function setFareCollected(n: number) {
     _setFareCollected(n);
   }
@@ -410,11 +477,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentTrip,
         currentBus,
         validatedCount,
+        currentPassengersCount,
         fareCollected,
         isRestoringTrip,
         setCurrentTrip,
         setCurrentBus,
         setValidatedCount,
+        setCurrentPassengersCount,
+        incrementCurrentPassengers,
+        decrementCurrentPassengers,
         setFareCollected,
         incrementValidated,
         clearTrip,

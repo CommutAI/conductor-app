@@ -11,13 +11,14 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
-import { processScan, ScanResult } from '../services/fareService';
+import { processScan, ScanResult, calculateFare, PassengerType } from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { supabase } from '../supabaseClient';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
+import { shouldUseOfflineScanPath, isLikelyNetworkError } from '../utils/networkUtils';
 import { Camera } from '@capacitor/camera';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
@@ -114,11 +115,33 @@ type PendingScan = {
   isTicket?: boolean;    // true if this is a temporary ticket
   cardId?: string;       // qr_cards.id — required for offline sync
   tempTicketId?: string; // temporary_tickets.id — required for offline sync
+  boardingPoint?: string; // boarding point selected during offline onboarding
 };
+
+// Common boarding points for offline onboarding
+const COMMON_BOARDING_POINTS = [
+  'Main Terminal',
+  'Central Station',
+  'Bus Depot',
+  'City Center',
+  'Mall/Shopping Center',
+  'Hospital',
+  'School/University',
+  'Airport',
+  'Train Station',
+  'Industrial Area',
+  'Residential Area',
+  'Other',
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_FARE = 12;
+
+function estimateOfflineFare(passengerType: string): number {
+  const type = (passengerType || 'regular') as PassengerType;
+  return calculateFare(DEFAULT_FARE, type).finalFare;
+}
 
 const ScanPage: React.FC = () => {
   const [scanState, setScanState] = useState<ScanState>('idle');
@@ -162,10 +185,17 @@ const ScanPage: React.FC = () => {
   const [alightedCount, setAlightedCount] = useState(0);
   const [gpsValidating, setGpsValidating] = useState(false);
   const [gpsResult, setGpsResult] = useState<{ status: string; message: string; nearestStop: string } | null>(null);
-  const [currentStopName, setCurrentStopName] = useState<string | null>(null); // GPS-detected current location
-  const [currentCoordinates, setCurrentCoordinates] = useState<{ lat: number; lng: number } | null>(null); // GPS coordinates
+  const [currentStopName, setCurrentStopName] = useState<string | null>(null);
+  const [currentCoordinates, setCurrentCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'requesting' | 'ready' | 'unavailable'>('idle');
+  const [, setNetworkTick] = useState(0);
+  
+  // Boarding point selection for offline onboarding
+  const [showBoardingPointModal, setShowBoardingPointModal] = useState(false);
+  const [selectedBoardingPoint, setSelectedBoardingPoint] = useState<string>('');
+  const [customBoardingPoint, setCustomBoardingPoint] = useState<string>('');
 
-  const { currentTrip, currentBus, validatedCount, fareCollected, setValidatedCount, setFareCollected, isRestoringTrip, profile } = useApp();
+  const { currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, setValidatedCount, setCurrentPassengersCount, incrementCurrentPassengers, decrementCurrentPassengers, setFareCollected, isRestoringTrip, profile } = useApp();
   const { isOnline, pendingCount, isSyncing, triggerSync, bumpPending } = useNetwork();
   const history = useHistory();
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -202,40 +232,16 @@ const ScanPage: React.FC = () => {
     cleanupScanner();
   });
 
-  // Auto-detect current GPS location when destination picker opens
+  // Re-check connectivity so scan path switches immediately on network change
   useEffect(() => {
-    if (scanState !== 'pick_destination') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        console.log('[GPS] Attempting to get current location...');
-        const locationResult = await getLocationAndDecode();
-        if (cancelled) return;
-        console.log('[GPS] Location obtained:', locationResult);
-        
-        if (locationResult.success && locationResult.locationName) {
-          setCurrentStopName(locationResult.locationName);
-          if (locationResult.coordinates) {
-            setCurrentCoordinates({
-              lat: locationResult.coordinates.lat,
-              lng: locationResult.coordinates.lng,
-            });
-          }
-          console.log('[GPS] Current location set to:', locationResult.locationName);
-        } else {
-          console.log('[GPS] Location detection failed:', locationResult.error);
-          setCurrentStopName(null);
-          setCurrentCoordinates(null);
-        }
-      } catch (err) {
-        console.error('[GPS] Error getting location:', err);
-        // GPS unavailable — no current location shown
-        setCurrentStopName(null);
-        setCurrentCoordinates(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [scanState]);
+    const bump = () => setNetworkTick((n) => n + 1);
+    window.addEventListener('online', bump);
+    window.addEventListener('offline', bump);
+    return () => {
+      window.removeEventListener('online', bump);
+      window.removeEventListener('offline', bump);
+    };
+  }, []);
 
   // Auto-restart scanner after failed state (only for onboarding duplicate scans)
   useEffect(() => {
@@ -419,6 +425,7 @@ const ScanPage: React.FC = () => {
       
       if (result.status === 'qr_pass') {
         setValidatedCount(validatedCount + 1);
+        incrementCurrentPassengers();
         setBoardedCount(c => c + 1);
         setPendingPayment(null);
         setPendingScan(null);
@@ -480,6 +487,122 @@ const ScanPage: React.FC = () => {
     }
   }
 
+  /** Offline / cache-based card lookup for onboarding (also used when network fails) */
+  function applyOfflineOnboardingLookup(
+    scannedCode: string,
+    normalizedCode: string,
+    detectedType: ReturnType<typeof detectCardTypeFromPrefix>,
+  ): boolean {
+    if (!currentTrip) return false;
+
+    const passengerType = detectedType.passengerType;
+    const estimatedFare = estimateOfflineFare(passengerType);
+
+    const cardUidNorm = detectedType.isTicket ? undefined : normalizedCode.toUpperCase();
+    const ticketUidNorm = detectedType.isTicket ? normalizedCode.toUpperCase() : undefined;
+
+    if (offlineQueueService.hasPendingBoarding(currentTrip.id, cardUidNorm, ticketUidNorm)) {
+      setFailedMsg('Already boarded — pending offline sync');
+      setScanState('failed');
+      return true;
+    }
+
+    if (detectedType.isTicket) {
+      const cachedTicket = StorageService.getCachedTicket(normalizedCode);
+      if (cachedTicket) {
+        if (cachedTicket.status === 'validated' || cachedTicket.status === 'expired') {
+          setFailedMsg(cachedTicket.status === 'expired' ? 'Ticket expired' : 'Ticket already used');
+          setScanState('failed');
+          return true;
+        }
+        setPendingScan({
+          code: scannedCode,
+          balance: cachedTicket.fare_amount,
+          cardDestination: cachedTicket.destination,
+          fare: cachedTicket.fare_amount,
+          passengerType: cachedTicket.passenger_type || passengerType,
+          cardUid: cachedTicket.ticket_uid.toUpperCase(),
+          isTicket: true,
+          tempTicketId: cachedTicket.id,
+        });
+      } else {
+        setPendingScan({
+          code: scannedCode,
+          balance: estimatedFare,
+          fare: estimatedFare,
+          passengerType,
+          cardUid: normalizedCode.toUpperCase(),
+          isTicket: true,
+        });
+      }
+    } else {
+      const cachedCard = StorageService.getCachedCard(normalizedCode);
+      if (cachedCard) {
+        if (cachedCard.status !== 'active') {
+          setFailedMsg('Card is inactive');
+          setScanState('failed');
+          return true;
+        }
+        setPendingScan({
+          code: scannedCode,
+          balance: cachedCard.balance,
+          cardDestination: cachedCard.destination,
+          fare: estimatedFare,
+          passengerType: cachedCard.passenger_type || passengerType,
+          cardUid: cachedCard.card_uid.toUpperCase(),
+          isTicket: false,
+          cardId: cachedCard.id,
+        });
+      } else {
+        setPendingScan({
+          code: scannedCode,
+          balance: 999,
+          fare: estimatedFare,
+          passengerType,
+          cardUid: normalizedCode.toUpperCase(),
+          isTicket: false,
+        });
+      }
+    }
+
+    setSelectedDestination('');
+    // Show boarding point selection modal for offline onboarding
+    setShowBoardingPointModal(true);
+    return true;
+  }
+
+  const refreshBoardingLocation = useCallback(async () => {
+    setLocationStatus('requesting');
+    setCurrentStopName(null);
+    setCurrentCoordinates(null);
+    try {
+      const locationResult = await getLocationAndDecode();
+      if (locationResult.success && locationResult.locationName) {
+        setLocationStatus('ready');
+        setCurrentStopName(locationResult.locationName);
+        if (locationResult.coordinates) {
+          setCurrentCoordinates({
+            lat: locationResult.coordinates.lat,
+            lng: locationResult.coordinates.lng,
+          });
+        }
+      } else {
+        setLocationStatus('unavailable');
+      }
+    } catch {
+      setLocationStatus('unavailable');
+    }
+  }, []);
+
+  // Request GPS and decode stop name when destination picker opens
+  useEffect(() => {
+    if (scanState !== 'pick_destination') {
+      setLocationStatus('idle');
+      return;
+    }
+    refreshBoardingLocation();
+  }, [scanState, refreshBoardingLocation]);
+
   /** For onboarding: auto-confirm boarding with card destination or default */
   async function handleOnboardingPreScan(scannedCode: string) {
     try {
@@ -496,77 +619,8 @@ const ScanPage: React.FC = () => {
       }
 
       // ── OFFLINE PATH — use persistent cache or prefix-derived defaults ──
-      if (!isOnline) {
-        const cardUidNorm = detectedType.isTicket ? undefined : normalizedCode.toUpperCase();
-        const ticketUidNorm = detectedType.isTicket ? normalizedCode.toUpperCase() : undefined;
-
-        if (offlineQueueService.hasPendingBoarding(currentTrip.id, cardUidNorm, ticketUidNorm)) {
-          setFailedMsg('Already boarded — pending offline sync');
-          setScanState('failed');
-          return;
-        }
-
-        if (detectedType.isTicket) {
-          const cachedTicket = StorageService.getCachedTicket(normalizedCode);
-          if (cachedTicket) {
-            if (cachedTicket.status === 'validated' || cachedTicket.status === 'expired') {
-              setFailedMsg(cachedTicket.status === 'expired' ? 'Ticket expired' : 'Ticket already used');
-              setScanState('failed');
-              return;
-            }
-            setPendingScan({
-              code: scannedCode,
-              balance: cachedTicket.fare_amount,
-              cardDestination: cachedTicket.destination,
-              fare: cachedTicket.fare_amount,
-              passengerType: cachedTicket.passenger_type || detectedType.passengerType,
-              cardUid: cachedTicket.ticket_uid.toUpperCase(),
-              isTicket: true,
-              tempTicketId: cachedTicket.id,
-            });
-          } else {
-            // No cache — derive from prefix, use default fare
-            setPendingScan({
-              code: scannedCode,
-              balance: DEFAULT_FARE,
-              fare: DEFAULT_FARE,
-              passengerType: detectedType.passengerType,
-              cardUid: normalizedCode.toUpperCase(),
-              isTicket: true,
-            });
-          }
-        } else {
-          const cachedCard = StorageService.getCachedCard(normalizedCode);
-          if (cachedCard) {
-            if (cachedCard.status !== 'active') {
-              setFailedMsg('Card is inactive');
-              setScanState('failed');
-              return;
-            }
-            setPendingScan({
-              code: scannedCode,
-              balance: cachedCard.balance,
-              cardDestination: cachedCard.destination,
-              fare: DEFAULT_FARE,
-              passengerType: cachedCard.passenger_type || detectedType.passengerType,
-              cardUid: cachedCard.card_uid.toUpperCase(),
-              isTicket: false,
-              cardId: cachedCard.id,
-            });
-          } else {
-            // No cache — derive from prefix only, balance unknown
-            setPendingScan({
-              code: scannedCode,
-              balance: 999, // unknown — skip balance check, commit will queue offline
-              fare: DEFAULT_FARE,
-              passengerType: detectedType.passengerType,
-              cardUid: normalizedCode.toUpperCase(),
-              isTicket: false,
-            });
-          }
-        }
-        setSelectedDestination('');
-        setScanState('pick_destination');
+      if (shouldUseOfflineScanPath(isOnline)) {
+        applyOfflineOnboardingLookup(scannedCode, normalizedCode, detectedType);
         return;
       }
 
@@ -578,6 +632,12 @@ const ScanPage: React.FC = () => {
           .select('id, ticket_uid, fare_amount, status, destination, passenger_type')
           .eq('ticket_uid', normalizedCode)
           .maybeSingle();
+
+        if (ticketError && isLikelyNetworkError(ticketError)) {
+          console.warn('[Scan] Ticket lookup failed (network), using offline cache');
+          applyOfflineOnboardingLookup(scannedCode, normalizedCode, detectedType);
+          return;
+        }
 
         if (ticket) {
           // Save to persistent cache for offline use
@@ -637,7 +697,12 @@ const ScanPage: React.FC = () => {
 
       if (cardError) {
         console.error('Database query error:', cardError);
-        setFailedMsg(`Database error: ${cardError.message}`);
+        if (isLikelyNetworkError(cardError)) {
+          console.warn('[Scan] Card lookup failed (network), using offline cache');
+          applyOfflineOnboardingLookup(scannedCode, normalizedCode, detectedType);
+          return;
+        }
+        setFailedMsg('Unable to reach server. Check your connection or try again.');
         setScanState('failed');
         return;
       }
@@ -699,6 +764,12 @@ const ScanPage: React.FC = () => {
       setScanState('failed');
     } catch (err) {
       console.error('Scan processing error:', err);
+      if (isLikelyNetworkError(err)) {
+        const detectedType = detectCardTypeFromPrefix(scannedCode);
+        const normalizedCode = normalizeQrCode(scannedCode);
+        applyOfflineOnboardingLookup(scannedCode, normalizedCode, detectedType);
+        return;
+      }
       setFailedMsg(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
@@ -751,7 +822,7 @@ const ScanPage: React.FC = () => {
       console.log('Is online:', isOnline);
 
       // Check if user is authenticated (only when committing to server)
-      if (isOnline) {
+      if (!shouldUseOfflineScanPath(isOnline)) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           setFailedMsg('Not authenticated. Please login again.');
@@ -760,8 +831,7 @@ const ScanPage: React.FC = () => {
         }
       }
 
-      // If offline, queue the scan with full details instead of processing immediately
-      if (!isOnline) {
+      if (shouldUseOfflineScanPath(isOnline)) {
         console.log('[Offline] Queuing boarding scan with destination:', destination);
         const { isTicket } = detectCardTypeFromPrefix(code);
         const normalized = normalizeQrCode(code);
@@ -774,22 +844,9 @@ const ScanPage: React.FC = () => {
           return;
         }
 
-        // Resolve IDs from pending scan or persistent cache
-        let cardId = pendingScan?.cardId;
-        let tempTicketId = pendingScan?.tempTicketId;
-        if (!cardId && !tempTicketId) {
-          if (isTicket) {
-            tempTicketId = StorageService.getCachedTicket(normalized)?.id;
-          } else {
-            cardId = StorageService.getCachedCard(normalized)?.id;
-          }
-        }
-
-        if (!cardId && !tempTicketId) {
-          setFailedMsg('Card not cached — scan once while online before going offline');
-          setScanState('failed');
-          return;
-        }
+        // Resolve IDs from pending scan or cache when available (optional — UIDs are enough for sync)
+        const cardId = pendingScan?.cardId ?? StorageService.getCachedCard(normalized)?.id;
+        const tempTicketId = pendingScan?.tempTicketId ?? StorageService.getCachedTicket(normalized)?.id;
 
         offlineQueueService.addScan({
           type: 'boarding',
@@ -801,12 +858,14 @@ const ScanPage: React.FC = () => {
           baggageFee: baggageSelection?.fee,
           paymentMethod,
           destination,
+          boardingPoint: pendingScan?.boardingPoint,
           tripId: currentTrip.id,
         });
 
         bumpPending(offlineQueueService.getPendingCount());
 
         setValidatedCount(validatedCount + 1);
+        incrementCurrentPassengers();
         setBoardedCount(c => c + 1);
         setPendingScan(null);
         setBaggageSelection(null);
@@ -840,7 +899,7 @@ const ScanPage: React.FC = () => {
         baggageSelection?.category,
         baggageSelection?.weight,
         paymentMethod,
-        currentStopName || undefined,
+        pendingScan?.boardingPoint || currentStopName || undefined,
       );
       console.log('Process scan result:', result);
       console.log('Result status:', result.status);
@@ -849,6 +908,7 @@ const ScanPage: React.FC = () => {
       switch (result.status) {
         case 'qr_pass':
           setValidatedCount(validatedCount + 1);
+          incrementCurrentPassengers();
           setBoardedCount(c => c + 1);
           setPendingScan(null);
           setBaggageSelection(null);
@@ -871,6 +931,7 @@ const ScanPage: React.FC = () => {
           break;
         case 'ticket_validated':
           setValidatedCount(validatedCount + 1);
+          incrementCurrentPassengers();
           setBoardedCount(c => c + 1);
           setPendingScan(null);
           setBaggageSelection(null);
@@ -974,11 +1035,107 @@ const ScanPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Boarding error:', err);
+
+      // Online→offline mid-scan fallback:
+      // If the network dropped while processScan() was running, queue the scan
+      // offline so it syncs when connectivity returns. Only show a hard failure
+      // when the error is genuinely non-network (e.g. business logic rejection).
+      if (isLikelyNetworkError(err) && currentTrip && pendingScan) {
+        console.log('[ScanPage] Network error during online boarding — falling back to offline queue');
+        const { isTicket } = detectCardTypeFromPrefix(pendingScan.code || code);
+        const normalized = normalizeQrCode(pendingScan.code || code);
+        const cardUid = isTicket ? undefined : normalized.toUpperCase();
+        const ticketUid = isTicket ? normalized.toUpperCase() : undefined;
+
+        offlineQueueService.addScan({
+          type: 'boarding',
+          cardUid,
+          ticketUid,
+          cardId: pendingScan.cardId,
+          tempTicketId: pendingScan.tempTicketId,
+          fare: pendingScan.fare,
+          baggageFee: baggageSelection?.fee,
+          paymentMethod,
+          destination,
+          tripId: currentTrip.id,
+        });
+
+        bumpPending(offlineQueueService.getPendingCount());
+        setValidatedCount(validatedCount + 1);
+        incrementCurrentPassengers();
+        setBoardedCount(c => c + 1);
+        setPendingScan(null);
+        setBaggageSelection(null);
+        setSelectedDestination('');
+        setScanState('success');
+        setSuccessMsg('Boarded — saved offline (network lost), will sync when online');
+        setSuccessAmount((pendingScan.fare || 0) + (baggageSelection?.fee || 0));
+        setSuccessBalance(null);
+        setTimeout(async () => {
+          setSuccessMsg('');
+          setSuccessAmount(0);
+          processingRef.current = false;
+          lastScanTimeRef.current = 0;
+          lastScanCodeRef.current = '';
+          await cleanupScanner();
+          setScanState('idle');
+        }, 1500);
+        return;
+      }
+
       setFailedMsg(`Boarding error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
       setBaggageSelection(null);
       setSelectedDestination('');
     }
+  }
+
+  /** Offline / cache-based lookup for alighting (also used when network fails) */
+  function applyOfflineAlightingLookup(
+    scannedCode: string,
+    normalizedCode: string,
+    detectedType: ReturnType<typeof detectCardTypeFromPrefix>,
+  ): void {
+    if (detectedType.isTicket) {
+      const cachedTicket = StorageService.getCachedTicket(normalizedCode);
+      if (cachedTicket) {
+        setPendingAlighting({
+          code: scannedCode,
+          destination: cachedTicket.destination,
+          fare: cachedTicket.fare_amount,
+          passengerType: cachedTicket.passenger_type || detectedType.passengerType,
+          tempTicketId: cachedTicket.id,
+        });
+        setScanState('confirm_alighting');
+        return;
+      }
+    } else {
+      const cachedCard = StorageService.getCachedCard(normalizedCode);
+      if (cachedCard) {
+        if (cachedCard.status !== 'active') {
+          setFailedMsg('Card is inactive');
+          setScanState('failed');
+          return;
+        }
+        setPendingAlighting({
+          code: scannedCode,
+          destination: cachedCard.destination,
+          fare: DEFAULT_FARE,
+          passengerType: cachedCard.passenger_type || detectedType.passengerType,
+          cardId: cachedCard.id,
+        });
+        setScanState('confirm_alighting');
+        return;
+      }
+    }
+
+    setPendingAlighting({
+      code: scannedCode,
+      destination: undefined,
+      fare: DEFAULT_FARE,
+      passengerType: detectedType.passengerType,
+    });
+    setScanState('confirm_alighting');
   }
 
   /** Full alighting process with GPS validation */
@@ -1001,52 +1158,8 @@ const ScanPage: React.FC = () => {
       }
 
       // ── OFFLINE PATH — use persistent cache or prefix-derived defaults ──
-      if (!isOnline) {
-        console.log('[Alighting] Offline mode - using cache for alighting');
-        
-        if (detectedType.isTicket) {
-          const cachedTicket = StorageService.getCachedTicket(normalizedCode);
-          if (cachedTicket) {
-            // For offline, we can't verify if ticket was boarded, so we queue it for sync
-            setPendingAlighting({
-              code: scannedCode,
-              destination: cachedTicket.destination,
-              fare: cachedTicket.fare_amount,
-              passengerType: cachedTicket.passenger_type || detectedType.passengerType,
-              tempTicketId: cachedTicket.id,
-            });
-            setScanState('confirm_alighting');
-            return;
-          }
-        } else {
-          const cachedCard = StorageService.getCachedCard(normalizedCode);
-          if (cachedCard) {
-            if (cachedCard.status !== 'active') {
-              setFailedMsg('Card is inactive');
-              setScanState('failed');
-              return;
-            }
-            // For offline, we can't verify if card was boarded, so we queue it for sync
-            setPendingAlighting({
-              code: scannedCode,
-              destination: cachedCard.destination,
-              fare: DEFAULT_FARE,
-              passengerType: cachedCard.passenger_type || detectedType.passengerType,
-              cardId: cachedCard.id,
-            });
-            setScanState('confirm_alighting');
-            return;
-          }
-        }
-        
-        // No cache - still allow alighting with minimal info
-        setPendingAlighting({
-          code: scannedCode,
-          destination: undefined,
-          fare: DEFAULT_FARE,
-          passengerType: detectedType.passengerType,
-        });
-        setScanState('confirm_alighting');
+      if (shouldUseOfflineScanPath(isOnline)) {
+        applyOfflineAlightingLookup(scannedCode, normalizedCode, detectedType);
         return;
       }
 
@@ -1062,6 +1175,11 @@ const ScanPage: React.FC = () => {
 
         console.log('Ticket lookup result:', ticket);
         console.log('Ticket lookup error:', ticketError);
+
+        if (ticketError && isLikelyNetworkError(ticketError)) {
+          applyOfflineAlightingLookup(scannedCode, normalizedCode, detectedType);
+          return;
+        }
 
         if (ticket) {
           if (ticket.status === 'validated' || ticket.status === 'expired') {
@@ -1104,11 +1222,16 @@ const ScanPage: React.FC = () => {
       }
 
       // Step 2 — Try QR card (like onboarding)
-      const { data: card } = await supabase
+      const { data: card, error: cardLookupError } = await supabase
         .from('qr_cards')
         .select('id, destination, status, balance, passenger_type, card_uid, owner_name')
         .eq('card_uid', normalizedCode)
         .maybeSingle();
+
+      if (cardLookupError && isLikelyNetworkError(cardLookupError)) {
+        applyOfflineAlightingLookup(scannedCode, normalizedCode, detectedType);
+        return;
+      }
 
       console.log('Card lookup result:', card);
 
@@ -1229,6 +1352,12 @@ const ScanPage: React.FC = () => {
     } catch (err) {
       console.error('Alighting error:', err);
       setGpsValidating(false);
+      if (isLikelyNetworkError(err)) {
+        const detectedType = detectCardTypeFromPrefix(scannedCode);
+        const normalizedCode = normalizeQrCode(scannedCode);
+        applyOfflineAlightingLookup(scannedCode, normalizedCode, detectedType);
+        return;
+      }
       setFailedMsg(`Alighting error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
@@ -1239,7 +1368,8 @@ const ScanPage: React.FC = () => {
     
     if (result.status === 'qr_pass') {
       console.log('[handleAlightingResult] Processing qr_pass success');
-      setValidatedCount(validatedCount - 1);
+      // Don't decrement validatedCount - it represents total validated passengers
+      decrementCurrentPassengers();
       setAlightedCount(c => c + 1);
       const totalFare = result.totalFare || result.fare;
       if (totalFare > 0) setFareCollected(fareCollected + totalFare);
@@ -1266,7 +1396,8 @@ const ScanPage: React.FC = () => {
       }, 1500);
     } else if (result.status === 'ticket_validated') {
       console.log('[handleAlightingResult] Processing ticket_validated success');
-      setValidatedCount(validatedCount - 1);
+      // Don't decrement validatedCount - it represents total validated passengers
+      decrementCurrentPassengers();
       setAlightedCount(c => c + 1);
       const totalFare = result.totalFare || result.fareAmount;
       if (totalFare > 0) setFareCollected(fareCollected + totalFare);
@@ -1333,7 +1464,7 @@ const ScanPage: React.FC = () => {
       console.log('Is online:', isOnline);
 
       // Check if user is authenticated (only when committing to server)
-      if (isOnline) {
+      if (!shouldUseOfflineScanPath(isOnline)) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           setFailedMsg('Not authenticated. Please login again.');
@@ -1342,8 +1473,7 @@ const ScanPage: React.FC = () => {
         }
       }
 
-      // If offline, queue the alighting scan instead of processing immediately
-      if (!isOnline) {
+      if (shouldUseOfflineScanPath(isOnline)) {
         console.log('[Offline] Queuing alighting scan');
         const { isTicket } = detectCardTypeFromPrefix(pendingAlighting.code);
         const normalized = normalizeQrCode(pendingAlighting.code);
@@ -1361,7 +1491,8 @@ const ScanPage: React.FC = () => {
 
         bumpPending(offlineQueueService.getPendingCount());
 
-        setValidatedCount(validatedCount - 1);
+        // Don't decrement validatedCount - it represents total validated passengers
+        decrementCurrentPassengers();
         setAlightedCount(c => c + 1);
         setGpsResult(null);
         setPendingAlighting(null);
@@ -1396,6 +1527,47 @@ const ScanPage: React.FC = () => {
     } catch (err) {
       console.error('Alighting error:', err);
       setGpsValidating(false);
+
+      // Online→offline mid-alighting fallback: if the network dropped while
+      // processScan() was running, queue the alighting offline so it syncs later.
+      if (isLikelyNetworkError(err) && currentTrip && pendingAlighting) {
+        console.log('[ScanPage] Network error during online alighting — falling back to offline queue');
+        const { isTicket } = detectCardTypeFromPrefix(pendingAlighting.code);
+        const normalized = normalizeQrCode(pendingAlighting.code);
+        const cardUid = isTicket ? undefined : normalized.toUpperCase();
+        const ticketUid = isTicket ? normalized.toUpperCase() : undefined;
+
+        offlineQueueService.addScan({
+          type: 'alighting',
+          cardUid,
+          ticketUid,
+          cardId: pendingAlighting.cardId,
+          tempTicketId: pendingAlighting.tempTicketId,
+          tripId: currentTrip.id,
+        });
+
+        bumpPending(offlineQueueService.getPendingCount());
+        // Don't decrement validatedCount - it represents total validated passengers
+        decrementCurrentPassengers();
+        setAlightedCount(c => c + 1);
+        setGpsResult(null);
+        setPendingAlighting(null);
+        setScanState('success');
+        setSuccessMsg('Alighted — saved offline (network lost), will sync when online');
+        setSuccessAmount(0);
+        setSuccessBalance(null);
+        setTimeout(async () => {
+          setSuccessMsg('');
+          setSuccessAmount(0);
+          processingRef.current = false;
+          lastScanTimeRef.current = 0;
+          lastScanCodeRef.current = '';
+          await cleanupScanner();
+          setScanState('idle');
+        }, 1500);
+        return;
+      }
+
       setFailedMsg(`Alighting error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setScanState('failed');
     }
@@ -1928,15 +2100,26 @@ const ScanPage: React.FC = () => {
                     {/* Destination picker + GPS + Baggage + Fare — all in one card */}
                     <SoftCard variant="glass" style={{ marginBottom: 14 }}>
                       {/* From (current GPS stop) */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: locationStatus === 'unavailable' ? 'pointer' : 'default' }}
+                        onClick={locationStatus === 'unavailable' ? refreshBoardingLocation : undefined}
+                        role={locationStatus === 'unavailable' ? 'button' : undefined}
+                      >
                         <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <MapPin size={16} color="var(--color-success)" />
                         </div>
                         <div style={{ flex: 1 }}>
                           <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
                           <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                            {currentStopName ?? (
-                              <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Detecting location…</span>
+                            {locationStatus === 'requesting' && (
+                              <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Requesting location…</span>
+                            )}
+                            {locationStatus === 'ready' && currentStopName}
+                            {locationStatus === 'unavailable' && (
+                              <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Tap to request location</span>
+                            )}
+                            {locationStatus === 'idle' && (
+                              <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Preparing GPS…</span>
                             )}
                           </p>
                           {currentCoordinates && (
@@ -2424,6 +2607,180 @@ const ScanPage: React.FC = () => {
         }}
         onClose={() => setShowAlightingBaggageSelector(false)}
       />
+
+      {/* Boarding Point Selection Modal for Offline Onboarding */}
+      {showBoardingPointModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            background: 'var(--color-card-bg)',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 400,
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
+          }}>
+            <h3 style={{
+              margin: '0 0 16px',
+              fontSize: '1.25rem',
+              fontWeight: 700,
+              color: 'var(--color-text-primary)'
+            }}>
+              Select Boarding Point
+            </h3>
+            <p style={{
+              margin: '0 0 20px',
+              fontSize: '0.9rem',
+              color: 'var(--color-text-secondary)'
+            }}>
+              Since you're offline, please select the boarding point for this passenger:
+            </p>
+            
+            <div style={{ marginBottom: 20 }}>
+              <label style={{
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--color-text-primary)'
+              }}>
+                Boarding Point
+              </label>
+              <select
+                value={selectedBoardingPoint}
+                onChange={(e) => setSelectedBoardingPoint(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-input-bg)',
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">-- Select a location --</option>
+                {COMMON_BOARDING_POINTS.map((point) => (
+                  <option key={point} value={point}>
+                    {point}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedBoardingPoint === 'Other' && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: 8,
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text-primary)'
+                }}>
+                  Specify Location
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter boarding point..."
+                  value={customBoardingPoint}
+                  onChange={(e) => setCustomBoardingPoint(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-input-bg)',
+                    color: 'var(--color-text-primary)',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              marginTop: 24
+            }}>
+              <button
+                onClick={() => {
+                  setShowBoardingPointModal(false);
+                  setSelectedBoardingPoint('');
+                  setCustomBoardingPoint('');
+                  setPendingScan(null);
+                  setScanState('scanning');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: '1px solid var(--color-border)',
+                  background: 'transparent',
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const finalBoardingPoint = selectedBoardingPoint === 'Other' 
+                    ? customBoardingPoint.trim() 
+                    : selectedBoardingPoint.trim();
+                  
+                  if (!finalBoardingPoint) {
+                    showNotification('Please select or enter a boarding point', 'warning');
+                    return;
+                  }
+                  
+                  // Update pending scan with boarding point
+                  if (pendingScan) {
+                    setPendingScan({
+                      ...pendingScan,
+                      boardingPoint: finalBoardingPoint
+                    });
+                  }
+                  
+                  setShowBoardingPointModal(false);
+                  setSelectedBoardingPoint('');
+                  setCustomBoardingPoint('');
+                  // Proceed to destination selection
+                  setScanState('pick_destination');
+                }}
+                disabled={!selectedBoardingPoint.trim() || (selectedBoardingPoint === 'Other' && !customBoardingPoint.trim())}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: 'var(--color-primary)',
+                  color: 'white',
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  cursor: (!selectedBoardingPoint.trim() || (selectedBoardingPoint === 'Other' && !customBoardingPoint.trim())) ? 'not-allowed' : 'pointer',
+                  opacity: (!selectedBoardingPoint.trim() || (selectedBoardingPoint === 'Other' && !customBoardingPoint.trim())) ? 0.6 : 1
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </IonPage>
   );
 };

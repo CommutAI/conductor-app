@@ -67,6 +67,12 @@ const TripSummaryPage: React.FC = () => {
   async function loadSummaryData() {
     if (!currentTrip) return;
     try {
+      // Skip DB call if offline — irregularity data won't be available but
+      // all other summary stats (validated count, fare) come from local AppContext state
+      if (!navigator.onLine) {
+        setLoading(false);
+        return;
+      }
       const { data: irregData } = await supabase
         .from('fare_irregularities')
         .select('*')

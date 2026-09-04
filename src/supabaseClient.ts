@@ -17,6 +17,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       eventsPerSecond: 10,
     },
   },
+  global: {
+    headers: {
+      'X-Client-Info': 'conductor-app',
+    },
+  },
+  db: {
+    schema: 'public',
+  },
 });
 
 export type Database = {
