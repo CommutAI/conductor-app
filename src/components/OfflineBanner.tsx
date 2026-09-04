@@ -1,6 +1,7 @@
 import React from 'react';
 import { CloudOff, RefreshCw, Loader2 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
+import { backgroundSyncService } from '../services/backgroundSyncService';
 
 interface OfflineBannerProps {
   style?: React.CSSProperties;
@@ -24,7 +25,14 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
     return (
       <div
         style={{ ...bannerBase, background: 'linear-gradient(135deg, #FACC15, #FDE047)', cursor: 'pointer', ...style }}
-        onClick={() => triggerSync()}
+        onClick={async () => {
+          try {
+            await backgroundSyncService.manualSync();
+            triggerSync();
+          } catch (error) {
+            console.error('[OfflineBanner] Manual sync failed:', error);
+          }
+        }}
         role="button"
         aria-label="Sync pending scans"
       >

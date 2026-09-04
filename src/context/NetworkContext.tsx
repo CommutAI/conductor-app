@@ -3,6 +3,7 @@ import { StorageService } from '../services/storageService';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { cache } from '../services/cacheService';
 import { realtimeService } from '../services/realtimeService';
+import { backgroundSyncService } from '../services/backgroundSyncService';
 
 interface NetworkContextType {
   isOnline: boolean;
@@ -24,6 +25,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const syncingRef = useRef(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const backgroundSyncInitialized = useRef(false);
 
   const refreshPendingCount = useCallback(() => {
     setPendingCount(offlineQueueService.getPendingCount());
@@ -50,6 +52,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     setSyncInProgress(true);
 
     try {
+      // Trigger background sync if available
+      await backgroundSyncService.triggerBackgroundSync();
+
       // Phase 1: Ensure offline-started trip exists in DB before scan inserts
       await StorageService.syncTripStateToDatabase();
 
@@ -80,6 +85,14 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     StorageService.purgeLegacyOfflineScansIfNeeded();
 
+    // Initialize background sync service
+    if (!backgroundSyncInitialized.current) {
+      backgroundSyncService.initialize().catch(err => {
+        console.error('[NetworkContext] Failed to initialize background sync:', err);
+      });
+      backgroundSyncInitialized.current = true;
+    }
+
     function handleOnline() {
       setIsOnline(true);
       cache.invalidateOfflineEntries();
@@ -87,6 +100,11 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       // Reconnect realtime subscriptions when network is restored
       console.log('[NetworkContext] Network restored, reconnecting realtime subscriptions');
       realtimeService.reconnectAll();
+
+      // Trigger background sync
+      backgroundSyncService.triggerBackgroundSync().catch(err => {
+        console.error('[NetworkContext] Background sync failed:', err);
+      });
 
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);

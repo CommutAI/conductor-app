@@ -148,7 +148,7 @@ export async function processScan(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'cash' = 'card',
+  paymentMethod: 'card' | 'qr_card' | 'cash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
   const normalizedUid = normalizeQrCode(scannedUid);
@@ -212,7 +212,7 @@ async function processQRCard(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'cash' = 'card',
+  paymentMethod: 'card' | 'qr_card' | 'cash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
   // Check for fake QR
@@ -305,7 +305,8 @@ async function processQRCard(
 
   if (scanType === 'onboarding') {
     // For card payments, check balance. For cash payments, skip balance check.
-    if (paymentMethod === 'card' && card.balance < totalFare) {
+    const isCardPayment = paymentMethod === 'card' || paymentMethod === 'qr_card';
+    if (isCardPayment && card.balance < totalFare) {
       return { status: 'qr_fail_balance', balance: card.balance, fare: totalFare, baggageFee, totalFare };
     }
 
@@ -313,7 +314,7 @@ async function processQRCard(
     if (currentDestination) updatePayload.destination = currentDestination;
 
     // Only deduct balance for card payments
-    if (paymentMethod === 'card') {
+    if (isCardPayment) {
       updatePayload.balance = card.balance - totalFare;
     }
 
@@ -355,7 +356,7 @@ async function processQRCard(
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
     }
 
-    const newBalance = paymentMethod === 'card' ? card.balance - totalFare : card.balance;
+    const newBalance = isCardPayment ? card.balance - totalFare : card.balance;
     return {
       status: 'qr_pass',
       newBalance,

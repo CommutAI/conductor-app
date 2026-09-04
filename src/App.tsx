@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Route, Redirect } from 'react-router-dom';
@@ -25,6 +25,7 @@ import { AppProvider } from './context/AppContext';
 import { NetworkProvider } from './context/NetworkContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import InteractiveBackground from './components/layout/InteractiveBackground';
+import { backgroundSyncService } from './services/backgroundSyncService';
 
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
@@ -45,6 +46,18 @@ addIcons({
 });
 
 const App: React.FC = () => {
+  useEffect(() => {
+    // Initialize background sync service when app starts
+    backgroundSyncService.initialize().catch(err => {
+      console.error('[App] Failed to initialize background sync:', err);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      backgroundSyncService.stop();
+    };
+  }, []);
+
   return (
     <IonApp>
       <InteractiveBackground />
