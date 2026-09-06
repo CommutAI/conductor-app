@@ -22,6 +22,8 @@ interface Bus {
   route: string;
   seat_capacity: number;
   status: string;
+  assigned_driver_id?: string;
+  assigned_conductor_id?: string;
   cachedAt?: number; // Timestamp for cache invalidation
 }
 
@@ -29,6 +31,7 @@ interface Trip {
   id: string;
   bus_id: string;
   conductor_id: string;
+  driver_id?: string;
   started_at: string;
   ended_at: string | null;
   status: 'in_progress' | 'completed' | 'cancelled';

@@ -15,6 +15,7 @@ import { processScan, ScanResult, calculateFare, PassengerType } from '../servic
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { smsService } from '../services/smsService';
 import { supabase } from '../supabaseClient';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
@@ -1574,6 +1575,28 @@ const ScanPage: React.FC = () => {
       setAlightedCount(c => c + 1);
       const totalFare = result.totalFare || result.fare;
       if (totalFare > 0) setFareCollected(fareCollected + totalFare);
+      
+      // Queue SMS if passenger has contact number
+      if (result.contactNumber && currentTrip) {
+        const tripSummary = {
+          route: currentBus?.route || 'Unknown',
+          boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
+          destination: result.destination || pendingAlighting?.destination || 'Unknown',
+          fare: totalFare
+        };
+        
+        smsService.queueAlightingSMS(
+          result.contactNumber,
+          {
+            passengerName: result.passengerName || 'Passenger',
+            tripSummary,
+            tripId: currentTrip.id
+          }
+        ).catch(smsError => {
+          console.error('[SMS] Failed to queue alighting SMS:', smsError);
+        });
+      }
+      
       setSuccessMsg(
         result.destination
           ? `Alighted @ ${result.destination}`
@@ -1602,6 +1625,28 @@ const ScanPage: React.FC = () => {
       setAlightedCount(c => c + 1);
       const totalFare = result.totalFare || result.fareAmount;
       if (totalFare > 0) setFareCollected(fareCollected + totalFare);
+      
+      // Queue SMS if passenger has contact number
+      if (result.contactNumber && currentTrip) {
+        const tripSummary = {
+          route: currentBus?.route || 'Unknown',
+          boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
+          destination: result.destination || pendingAlighting?.destination || 'Unknown',
+          fare: totalFare
+        };
+        
+        smsService.queueAlightingSMS(
+          result.contactNumber,
+          {
+            passengerName: result.passengerName || 'Passenger',
+            tripSummary,
+            tripId: currentTrip.id
+          }
+        ).catch(smsError => {
+          console.error('[SMS] Failed to queue alighting SMS:', smsError);
+        });
+      }
+      
       setSuccessMsg(result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully');
       setSuccessAmount(result.fareAmount);
       setSuccessBalance(null);

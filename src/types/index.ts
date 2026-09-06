@@ -250,3 +250,47 @@ export interface ToastProps {
   color: ToastColor;
   onDismiss: () => void;
 }
+
+// ── SMS Types ─────────────────────────────────────────────────────────────────────
+
+export type SMSType = 'emergency' | 'alighting' | 'other';
+export type SMSStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
+
+export interface SMSQueue {
+  id: string;
+  phone_number: string;
+  message: string;
+  type: SMSType;
+  priority: number;
+  related_id?: string;
+  trip_id?: string;
+  status: SMSStatus;
+  created_at: string;
+  sent_at?: string;
+  failed_at?: string;
+  error_message?: string;
+  retry_count: number;
+  max_retries: number;
+}
+
+export interface EmergencySMSData {
+  emergencyType: string;
+  location?: { lat: number; lng: number };
+  tripId?: string;
+  busInfo?: {
+    plateNumber: string;
+    route: string;
+  };
+}
+
+export interface AlightingSMSData {
+  passengerName: string;
+  tripSummary: {
+    route: string;
+    boardingPoint: string;
+    destination: string;
+    fare: number;
+    duration?: string;
+  };
+  tripId: string;
+}

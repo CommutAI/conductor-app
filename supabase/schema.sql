@@ -529,6 +529,13 @@ BEGIN
   ) THEN
     ALTER TABLE emergency_alerts ADD COLUMN location_accuracy DECIMAL(10, 2);
   END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'emergency_alerts' AND column_name = 'location_name'
+  ) THEN
+    ALTER TABLE emergency_alerts ADD COLUMN location_name TEXT;
+  END IF;
 END $$;
 
 -- ── 12. Baggage Fee Matrix ──────────────────────────────────────────────────────
@@ -541,7 +548,26 @@ CREATE TABLE IF NOT EXISTS baggage_fee_matrix (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── 13. Helper Functions ──────────────────────────────────────────────────────
+-- ── 13. SMS Queue ──────────────────────────────────────────────────────────────
+-- SMS Queue for Raspberry Pi to process
+CREATE TABLE IF NOT EXISTS sms_queue (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number    TEXT        NOT NULL,
+  message         TEXT        NOT NULL,
+  type            TEXT        NOT NULL CHECK (type IN ('emergency', 'alighting', 'other')),
+  priority        INTEGER     DEFAULT 5 CHECK (priority BETWEEN 1 AND 10),
+  related_id      UUID,       -- emergency_alerts.id or boarded_passengers.id
+  trip_id         UUID        REFERENCES trips (id),
+  status          TEXT        DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'cancelled')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at         TIMESTAMPTZ,
+  failed_at       TIMESTAMPTZ,
+  error_message   TEXT,
+  retry_count     INTEGER     DEFAULT 0,
+  max_retries     INTEGER     DEFAULT 3
+);
+
+-- ── 14. Helper Functions ──────────────────────────────────────────────────────
 -- Returns the active trip ID for the currently authenticated conductor
 CREATE OR REPLACE FUNCTION conductor_active_trip_id()
 RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
@@ -576,7 +602,7 @@ RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT assigned_conductor_id FROM buses WHERE id = bus_uuid;
 $$;
 
--- ── 14. Row-Level Security ────────────────────────────────────────────────────
+-- ── 15. Row-Level Security ────────────────────────────────────────────────────
 ALTER TABLE staff_users           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE buses                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trips                 ENABLE ROW LEVEL SECURITY;
@@ -589,6 +615,7 @@ ALTER TABLE gps_logs              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fare_irregularities   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE emergency_alerts      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE baggage_fee_matrix    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_queue             ENABLE ROW LEVEL SECURITY;
 
 -- Staff can view their own profile (admins see all)
 DO $$ BEGIN
@@ -786,6 +813,19 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- SMS queue
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'sms_queue' AND policyname = 'sms_queue_rw_authenticated'
+  ) THEN
+    CREATE POLICY "sms_queue_rw_authenticated"
+      ON sms_queue FOR ALL
+      USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
 -- Bus assignment policies - admins can assign drivers/conductors to buses
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -812,7 +852,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── 15. Indexes for Performance ───────────────────────────────────────────────
+-- ── 16. Indexes for Performance ───────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_trips_conductor_status
   ON trips(conductor_id, status) WHERE status = 'in_progress';
 
@@ -874,7 +914,17 @@ CREATE INDEX IF NOT EXISTS idx_staff_users_bus
 CREATE INDEX IF NOT EXISTS idx_staff_users_role
   ON staff_users(role);
 
--- ── 16. Realtime Publications ─────────────────────────────────────────────────
+-- SMS queue indexes for efficient polling
+CREATE INDEX IF NOT EXISTS idx_sms_queue_status
+  ON sms_queue(status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_sms_queue_trip
+  ON sms_queue(trip_id);
+
+CREATE INDEX IF NOT EXISTS idx_sms_queue_priority
+  ON sms_queue(priority, created_at);
+
+-- ── 17. Realtime Publications ─────────────────────────────────────────────────
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
@@ -924,7 +974,7 @@ END $$;
 -- Schema complete.
 -- ============================================================
 
--- ── 17. Seed: Test Bus Data ───────────────────────────────────────────────────
+-- ── 18. Seed: Test Bus Data ───────────────────────────────────────────────────
 INSERT INTO buses (plate_number, bus_number, route, seat_capacity, status) VALUES
   ('BUS-001', 1001, 'Manolo Fortich Terminal ↔ Agora Terminal', 35, 'active'),
   ('BUS-002', 1002, 'Manolo Fortich Terminal ↔ Agora Terminal', 35, 'active'),
@@ -942,7 +992,7 @@ ON CONFLICT (plate_number) DO UPDATE SET
   seat_capacity = EXCLUDED.seat_capacity,
   status = EXCLUDED.status;
 
--- ── 18. Seed: Baggage Fee Matrix Data ─────────────────────────────────────────
+-- ── 19. Seed: Baggage Fee Matrix Data ─────────────────────────────────────────
 INSERT INTO baggage_fee_matrix (category, max_weight_kg, fee, remarks) VALUES
   ('Free Carry-on', 7, 0, 'Included in passenger fare'),
   ('Small', 10, 20, 'Fits under seat or overhead area'),
@@ -951,7 +1001,7 @@ INSERT INTO baggage_fee_matrix (category, max_weight_kg, fee, remarks) VALUES
   ('Oversized', 31, 100, 'Subject to conductor approval')
 ON CONFLICT DO NOTHING;
 
--- ── 18.5 Seed: Sample Driver and Conductor Assignments ───────────────────────
+-- ── 19.5 Seed: Sample Driver and Conductor Assignments ───────────────────────
 -- Note: These assignments assume you have created test users as described in section 19
 -- Replace the UUIDs with actual user UUIDs from your authentication system
 
@@ -966,7 +1016,7 @@ ON CONFLICT DO NOTHING;
 -- SET bus_id = (SELECT id FROM buses WHERE plate_number = 'BUS-001')
 -- WHERE email = 'driver@commutai.test' OR email = 'conductor@commutai.test';
 
--- ── 20. Create Admin Test User Instructions ─────────────────────────────────────
+-- ── 21. Create Admin Test User Instructions ─────────────────────────────────────
 -- To create test users, follow these steps in the Supabase Dashboard:
 --
 -- 1. Go to Supabase Dashboard → Authentication → Users → Add user
@@ -994,7 +1044,7 @@ ON CONFLICT DO NOTHING;
 --    Email: csdesk@commutai.test  Password: CSDesk123!
 --    Role: cs_desk
 --
--- ── 21. Assign Drivers and Conductors to Buses ───────────────────────────────────
+-- ── 22. Assign Drivers and Conductors to Buses ───────────────────────────────────
 -- After creating staff users, you can assign them to buses:
 --
 -- UPDATE buses 
@@ -1012,7 +1062,7 @@ ON CONFLICT DO NOTHING;
 -- SET bus_id = (SELECT id FROM buses WHERE plate_number = 'BUS-001')
 -- WHERE id = '<driver-uuid>';
 
--- ── 22. Driver Information Summary ──────────────────────────────────────────────
+-- ── 23. Driver Information Summary ──────────────────────────────────────────────
 -- The schema now includes comprehensive driver information and bus assignment:
 --
 -- DRIVER PROFILE FIELDS (in staff_users table):

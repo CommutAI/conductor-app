@@ -60,12 +60,12 @@ export interface FareCalculationResult {
 }
 
 export type ScanResult =
-  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string }
+  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string }
   | { status: 'qr_fail_balance'; balance: number; fare: number; baggageFee?: number; totalFare?: number }
   | { status: 'qr_inactive' }
   | { status: 'qr_wrong_trip'; expectedRoute: string }
   | { status: 'qr_fake'; reason: string }
-  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string }
+  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string }
   | { status: 'ticket_already_used' }
   | { status: 'ticket_expired' }
   | { status: 'ticket_wrong_trip'; expectedRoute: string }
@@ -386,6 +386,9 @@ async function processQRCard(
       baggageFee: 0,
       totalFare: 0,
       destination: currentDestination,
+      contactNumber: card.contact_number,
+      passengerName: card.owner_name,
+      boardingPoint: boardedData.boarding_stop,
     };
   }
 }
@@ -434,6 +437,8 @@ async function processTemporaryTicket(
   return {
     status: 'ticket_validated',
     fareAmount: ticket.fare_amount,
+    destination: ticket.destination,
+    passengerName: ticket.passenger_type || 'Passenger',
   };
 }
 

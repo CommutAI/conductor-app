@@ -19,18 +19,38 @@ export interface QueuedScan {
   retryCount: number;
 }
 
+export interface QueuedSMS {
+  id: string;
+  type: 'emergency' | 'alighting' | 'other';
+  phoneNumber: string;
+  message: string;
+  priority: number;
+  relatedId?: string;
+  tripId?: string;
+  timestamp: string;
+  status: 'pending' | 'syncing' | 'failed';
+  error?: string;
+  retryCount: number;
+}
+
 const QUEUE_STORAGE_KEY = 'offline_scan_queue';
+const SMS_QUEUE_STORAGE_KEY = 'offline_sms_queue';
 const MAX_RETRY_COUNT = 3;
 
 class OfflineQueueService {
   private queue: QueuedScan[] = [];
+  private smsQueue: QueuedSMS[] = [];
   private isSyncing = false;
+  private isSyncingSMS = false;
   private listeners: Set<(queue: QueuedScan[]) => void> = new Set();
+  private smsListeners: Set<(queue: QueuedSMS[]) => void> = new Set();
   private saveTimeout: NodeJS.Timeout | null = null;
+  private smsSaveTimeout: NodeJS.Timeout | null = null;
   private pendingSave = false;
 
   constructor() {
     this.loadQueue();
+    this.loadSMSQueue();
   }
 
   /**
@@ -57,6 +77,29 @@ class OfflineQueueService {
   }
 
   /**
+   * Load SMS queue from localStorage with validation
+   */
+  private loadSMSQueue() {
+    try {
+      const stored = localStorage.getItem(SMS_QUEUE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Validate that it's an array
+        if (Array.isArray(parsed)) {
+          this.smsQueue = parsed;
+          console.log('[OfflineQueue] Loaded SMS queue:', this.smsQueue.length, 'items');
+        } else {
+          console.error('[OfflineQueue] Invalid SMS queue data format, resetting');
+          this.smsQueue = [];
+        }
+      }
+    } catch (error) {
+      console.error('[OfflineQueue] Error loading SMS queue:', error);
+      this.smsQueue = []; // Reset on error
+    }
+  }
+
+  /**
    * Save queue to localStorage with debouncing and atomic write
    */
   private saveQueue() {
@@ -67,6 +110,20 @@ class OfflineQueueService {
 
     this.saveTimeout = setTimeout(() => {
       this._persistQueue();
+    }, 100); // 100ms debounce for normal saves
+  }
+
+  /**
+   * Save SMS queue to localStorage with debouncing
+   */
+  private saveSMSQueue() {
+    // Debounce saves to prevent localStorage thrashing
+    if (this.smsSaveTimeout) {
+      clearTimeout(this.smsSaveTimeout);
+    }
+
+    this.smsSaveTimeout = setTimeout(() => {
+      this._persistSMSQueue();
     }, 100); // 100ms debounce for normal saves
   }
 
@@ -83,6 +140,18 @@ class OfflineQueueService {
       this.saveTimeout = null;
     }
     this._persistQueue();
+  }
+
+  /**
+   * Write the SMS queue synchronously without any debounce delay.
+   * Used during active SMS sync to ensure status changes are persisted immediately.
+   */
+  private saveSMSImmediate() {
+    if (this.smsSaveTimeout) {
+      clearTimeout(this.smsSaveTimeout);
+      this.smsSaveTimeout = null;
+    }
+    this._persistSMSQueue();
   }
 
   private _persistQueue() {
@@ -103,6 +172,28 @@ class OfflineQueueService {
         }
       } else {
         console.error('[OfflineQueue] Error saving queue:', error);
+      }
+    }
+  }
+
+  private _persistSMSQueue() {
+    try {
+      const queueJson = JSON.stringify(this.smsQueue);
+      localStorage.setItem(SMS_QUEUE_STORAGE_KEY, queueJson);
+      this.notifySMSListeners();
+      console.log('[OfflineQueue] SMS queue saved:', this.smsQueue.length, 'items');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        console.error('[OfflineQueue] Storage quota exceeded, attempting SMS cleanup');
+        this.cleanupOldSMS();
+        try {
+          localStorage.setItem(SMS_QUEUE_STORAGE_KEY, JSON.stringify(this.smsQueue));
+          this.notifySMSListeners();
+        } catch (retryError) {
+          console.error('[OfflineQueue] Failed to save SMS queue even after cleanup:', retryError);
+        }
+      } else {
+        console.error('[OfflineQueue] Error saving SMS queue:', error);
       }
     }
   }
@@ -128,10 +219,37 @@ class OfflineQueueService {
   }
 
   /**
+   * Cleanup old failed SMS to free space
+   */
+  private cleanupOldSMS() {
+    const maxQueueSize = 500;
+    if (this.smsQueue.length > maxQueueSize) {
+      // Keep most recent items, remove oldest failed ones first
+      const failedSMS = this.smsQueue.filter(s => s.status === 'failed').sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      
+      const toRemove = this.smsQueue.length - maxQueueSize;
+      if (toRemove > 0 && failedSMS.length > 0) {
+        const idsToRemove = failedSMS.slice(0, toRemove).map(s => s.id);
+        this.smsQueue = this.smsQueue.filter(s => !idsToRemove.includes(s.id));
+        console.log('[OfflineQueue] Cleaned up', toRemove, 'old failed SMS');
+      }
+    }
+  }
+
+  /**
    * Notify all listeners of queue changes
    */
   private notifyListeners() {
     this.listeners.forEach(listener => listener([...this.queue]));
+  }
+
+  /**
+   * Notify all SMS queue listeners of changes
+   */
+  private notifySMSListeners() {
+    this.smsListeners.forEach(listener => listener([...this.smsQueue]));
   }
 
   /**
@@ -155,6 +273,26 @@ class OfflineQueueService {
   }
 
   /**
+   * Add an SMS to the offline queue with atomic operation
+   */
+  addSMS(sms: Omit<QueuedSMS, 'id' | 'timestamp' | 'status' | 'retryCount'>): string {
+    const queuedSMS: QueuedSMS = {
+      ...sms,
+      id: `sms_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      retryCount: 0,
+    };
+
+    // Atomic add operation
+    const newQueue = [...this.smsQueue, queuedSMS];
+    this.smsQueue = newQueue;
+    this.saveSMSQueue();
+    console.log('[OfflineQueue] Added SMS to queue:', queuedSMS.id);
+    return queuedSMS.id;
+  }
+
+  /**
    * Remove a scan from the queue with atomic operation
    */
   removeScan(id: string) {
@@ -166,6 +304,20 @@ class OfflineQueueService {
       this.saveQueue();
     }
     console.log('[OfflineQueue] Removed scan from queue:', id);
+  }
+
+  /**
+   * Remove an SMS from the queue with atomic operation
+   */
+  removeSMS(id: string) {
+    const newQueue = this.smsQueue.filter(sms => sms.id !== id);
+    this.smsQueue = newQueue;
+    if (this.isSyncingSMS) {
+      this.saveSMSImmediate();
+    } else {
+      this.saveSMSQueue();
+    }
+    console.log('[OfflineQueue] Removed SMS from queue:', id);
   }
 
   /**
@@ -198,6 +350,13 @@ class OfflineQueueService {
    */
   getPendingCount(): number {
     return this.queue.filter(scan => scan.status === 'pending').length;
+  }
+
+  /**
+   * Get pending SMS count
+   */
+  getPendingSMSCount(): number {
+    return this.smsQueue.filter(sms => sms.status === 'pending').length;
   }
 
   /**
@@ -268,6 +427,73 @@ class OfflineQueueService {
 
     this.isSyncing = false;
     console.log('[OfflineQueue] Sync complete:', { success: successCount, failed: failedCount });
+    return { success: successCount, failed: failedCount };
+  }
+
+  /**
+   * Sync all pending SMS to the server
+   */
+  async syncSMSQueue(): Promise<{ success: number; failed: number }> {
+    if (this.isSyncingSMS) {
+      console.log('[OfflineQueue] Already syncing SMS, skipping');
+      return { success: 0, failed: 0 };
+    }
+
+    const pendingSMS = this.smsQueue.filter(sms => sms.status === 'pending')
+      .sort((a, b) => {
+        // Sort by priority first (lower number = higher priority), then by timestamp
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return a.timestamp.localeCompare(b.timestamp);
+      });
+
+    if (pendingSMS.length === 0) {
+      console.log('[OfflineQueue] No pending SMS to sync');
+      return { success: 0, failed: 0 };
+    }
+
+    this.isSyncingSMS = true;
+    console.log('[OfflineQueue] Starting SMS sync for', pendingSMS.length, 'SMS');
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const sms of pendingSMS) {
+      if (!navigator.onLine) {
+        console.log('[OfflineQueue] Network lost mid-SMS sync, stopping');
+        break;
+      }
+
+      try {
+        sms.status = 'syncing';
+        this.saveSMSImmediate();
+
+        await this.syncSingleSMS(sms);
+
+        // Remove successfully synced SMS
+        this.removeSMS(sms.id);
+        successCount++;
+        console.log('[OfflineQueue] Successfully synced SMS:', sms.id);
+      } catch (error) {
+        sms.status = 'failed';
+        sms.error = error instanceof Error ? error.message : 'Unknown error';
+        sms.retryCount++;
+
+        if (sms.retryCount >= MAX_RETRY_COUNT) {
+          console.error('[OfflineQueue] SMS failed after max retries:', sms.id, sms.error);
+        } else {
+          sms.status = 'pending';
+          console.warn('[OfflineQueue] SMS failed, will retry later:', sms.id, sms.error);
+        }
+
+        this.saveSMSImmediate();
+        failedCount++;
+      }
+    }
+
+    this.isSyncingSMS = false;
+    console.log('[OfflineQueue] SMS sync complete:', { success: successCount, failed: failedCount });
     return { success: successCount, failed: failedCount };
   }
 
@@ -423,6 +649,28 @@ class OfflineQueueService {
         }
       }
       throw error;
+    }
+  }
+
+  /**
+   * Sync a single SMS to the database
+   */
+  private async syncSingleSMS(sms: QueuedSMS): Promise<void> {
+    const { error } = await supabase
+      .from('sms_queue')
+      .insert({
+        phone_number: sms.phoneNumber,
+        message: sms.message,
+        type: sms.type,
+        priority: sms.priority,
+        related_id: sms.relatedId,
+        trip_id: sms.tripId,
+        status: 'pending',
+        created_at: sms.timestamp,
+      });
+
+    if (error) {
+      throw new Error(`Failed to sync SMS: ${error.message}`);
     }
   }
 
