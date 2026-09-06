@@ -3,7 +3,7 @@ import { IonContent, IonPage } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import Logo from '../components/Logo';
 import { ModernInput, PrimaryButton, AppToast } from '../components/ui';
 
@@ -11,12 +11,18 @@ const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('danger');
-  const { signIn } = useAuth();
+  const { signIn, profile } = useApp();
   const history = useHistory();
+
+  // Navigate as soon as profile is set — works for both online and offline login
+  React.useEffect(() => {
+    if (profile) {
+      history.replace('/');
+    }
+  }, [profile, history]);
 
   function showNotification(message: string, color: 'success' | 'danger' | 'warning' = 'danger') {
     setToastMessage(message);
@@ -26,122 +32,140 @@ const LoginPage: React.FC = () => {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
 
     if (!email.trim() || !password.trim()) {
-      const msg = 'Please enter your email and password.';
-      setError(msg);
-      showNotification(msg, 'warning');
+      showNotification('Please enter your email and password.', 'warning');
       return;
     }
 
     setLoading(true);
-    showNotification('Authenticating...', 'warning');
 
     try {
       const result = await signIn(email.trim(), password);
       setLoading(false);
 
       if (result.error) {
-        const errorMsg = typeof result.error === 'string'
-          ? result.error
-          : 'Login failed. Please check your credentials.';
-        setError(errorMsg);
-        showNotification(errorMsg, 'danger');
-      } else {
-        showNotification('Welcome back!', 'success');
-        setTimeout(() => history.replace('/trip-setup'), 400);
+        showNotification(
+          typeof result.error === 'string' ? result.error : 'Login failed. Please check your credentials.',
+          'danger',
+        );
       }
+      // On success, the useEffect above handles navigation
     } catch (err) {
       setLoading(false);
-      const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMsg);
-      showNotification(errorMsg, 'danger');
+      showNotification(err instanceof Error ? err.message : 'An unexpected error occurred', 'danger');
     }
   }
 
   return (
     <IonPage>
       <IonContent fullscreen className="app-page-bg">
-        <div className="login-hero">
-          <div className="login-hero__content">
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              style={{ textAlign: 'center', marginBottom: 24, paddingTop: 20 }}
-            >
-              <Logo size="xl" />
-              <h1 style={{
-                fontSize: '2.25rem', fontWeight: 800, margin: '16px 0 6px',
-                color: '#1F2937', letterSpacing: '-0.03em',
-              }}>
-                CommutAI
-              </h1>
-              <p style={{ color: '#6B7280', margin: 0, fontSize: '1rem', fontWeight: 500 }}>
-                Conductor Portal
-              </p>
-            </motion.div>
 
-            <motion.div
-              className="login-form-card"
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.15 }}
-            >
-              <h2 className="heading-medium" style={{ marginBottom: 6 }}>Welcome Back</h2>
-              <p className="text-secondary" style={{ margin: '0 0 28px' }}>Sign in to start your shift</p>
+        {/* ── Full-screen centered layout ── */}
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 20px',
+        }}>
 
-              <form onSubmit={handleLogin}>
-                <ModernInput
-                  label="Email Address"
-                  type="email"
-                  icon={Mail}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  error={error && !email ? 'Required' : undefined}
-                />
-                <ModernInput
-                  label="Password"
-                  type="password"
-                  icon={Lock}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
+          {/* ── Brand mark ── */}
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+            style={{ textAlign: 'center', marginBottom: 32 }}
+          >
+            <Logo size="xl" />
+            <h1 style={{
+              fontSize: '2rem',
+              fontWeight: 900,
+              margin: '14px 0 4px',
+              color: '#ffffff',
+              letterSpacing: '-0.04em',
+              lineHeight: 1,
+            }}>
+              CommutAI
+            </h1>
+            <p style={{
+              margin: 0,
+              fontSize: '0.9rem',
+              color: 'rgba(255,255,255,0.75)',
+              fontWeight: 500,
+            }}>
+              Conductor Portal
+            </p>
+          </motion.div>
 
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    style={{
-                      background: 'var(--color-danger-subtle)',
-                      border: '1.5px solid #FECACA',
-                      borderRadius: 14,
-                      padding: '12px 16px',
-                      marginBottom: 20,
-                    }}
-                  >
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#B91C1C', fontWeight: 600 }}>
-                      {error}
-                    </p>
-                  </motion.div>
-                )}
+          {/* ── Login card ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.1 }}
+            style={{
+              width: '100%',
+              maxWidth: 400,
+              background: 'var(--bg-elevated)',
+              borderRadius: 24,
+              padding: '28px 24px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            }}
+          >
+            <h2 style={{
+              margin: '0 0 4px',
+              fontSize: '1.3rem',
+              fontWeight: 800,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.02em',
+            }}>
+              Welcome back
+            </h2>
+            <p style={{
+              margin: '0 0 24px',
+              fontSize: '0.88rem',
+              color: 'var(--text-secondary)',
+              fontWeight: 500,
+            }}>
+              Log in to start your shift
+            </p>
 
-                <PrimaryButton type="submit" loading={loading} fullWidth>
-                  Sign In
-                </PrimaryButton>
-              </form>
+            <form onSubmit={handleLogin}>
+              <ModernInput
+                label="Email Address"
+                type="email"
+                icon={Mail}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+              <ModernInput
+                label="Password"
+                type="password"
+                icon={Lock}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
 
-              <p style={{
-                textAlign: 'center', marginTop: 28, fontSize: '0.75rem',
-                color: 'var(--text-tertiary)', fontWeight: 600, letterSpacing: '0.04em',
-              }}>
-                OMANFORTSCO · Authorized Personnel Only
-              </p>
-            </motion.div>
-          </div>
+              <PrimaryButton type="submit" loading={loading} fullWidth>
+                Log In
+              </PrimaryButton>
+            </form>
+
+            <p style={{
+              textAlign: 'center',
+              marginTop: 20,
+              fontSize: '0.72rem',
+              color: 'var(--text-tertiary)',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+            }}>
+              OMANFORTSCO · Authorized Personnel Only
+            </p>
+          </motion.div>
+
         </div>
 
         <AppToast

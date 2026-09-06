@@ -1,13 +1,14 @@
 import React from 'react';
 import { CloudOff, RefreshCw, Loader2 } from 'lucide-react';
-import { useOffline } from '../context/OfflineContext';
+import { useNetwork } from '../context/NetworkContext';
+import { backgroundSyncService } from '../services/backgroundSyncService';
 
 interface OfflineBannerProps {
   style?: React.CSSProperties;
 }
 
 const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
-  const { isOnline, pendingCount, isSyncing, triggerSync } = useOffline();
+  const { isOnline, pendingCount, isSyncing, triggerSync } = useNetwork();
 
   if (isOnline && pendingCount === 0 && !isSyncing) return null;
 
@@ -24,7 +25,14 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
     return (
       <div
         style={{ ...bannerBase, background: 'linear-gradient(135deg, #FACC15, #FDE047)', cursor: 'pointer', ...style }}
-        onClick={() => triggerSync()}
+        onClick={async () => {
+          try {
+            await backgroundSyncService.manualSync();
+            triggerSync();
+          } catch (error) {
+            console.error('[OfflineBanner] Manual sync failed:', error);
+          }
+        }}
         role="button"
         aria-label="Sync pending scans"
       >
@@ -51,7 +59,7 @@ const bannerBase: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   padding: '10px 16px',
-  transition: 'all 0.3s ease',
+  transition: 'all 0.5s ease', // Slower transition for smoother network changes
 };
 
 const textStyle: React.CSSProperties = {

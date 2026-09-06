@@ -2,6 +2,7 @@
   "name": "conductor-app",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "start": "vite",
     "build": "tsc && vite build",
@@ -10,6 +11,7 @@
   "dependencies": {
     "@capacitor/android": "8.4.1",
     "@capacitor/app": "8.1.0",
+    "@capacitor/background-runner": "^3.0.0",
     "@capacitor/camera": "^8.2.1",
     "@capacitor/core": "8.4.1",
     "@capacitor/geolocation": "^8.2.0",
@@ -35,6 +37,9 @@
     "@types/react-router": "^5.1.20",
     "@types/react-router-dom": "^5.3.3",
     "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.4.5",
     "vite": "^5.3.1"
   }

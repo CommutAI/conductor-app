@@ -17,6 +17,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       eventsPerSecond: 10,
     },
   },
+  global: {
+    headers: {
+      'X-Client-Info': 'conductor-app',
+    },
+  },
+  db: {
+    schema: 'public',
+  },
 });
 
 export type Database = {
@@ -87,7 +95,7 @@ export type Database = {
           card_id: string | null;
           temp_ticket_id: string | null;
           trip_id: string | null;
-          type: 'fare_validation' | 'balance_topup' | 'card_issuance';
+          type: 'fare_validation' | 'balance_topup' | 'card_issuance' | 'baggage_fee';
           amount: number;
           channel: string;
           staff_id: string | null;
@@ -97,7 +105,7 @@ export type Database = {
           card_id?: string | null;
           temp_ticket_id?: string | null;
           trip_id?: string | null;
-          type: 'fare_validation' | 'balance_topup' | 'card_issuance';
+          type: 'fare_validation' | 'balance_topup' | 'card_issuance' | 'baggage_fee';
           amount: number;
           channel: string;
           staff_id?: string | null;

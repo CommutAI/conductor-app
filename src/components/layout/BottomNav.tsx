@@ -1,7 +1,10 @@
 import React from 'react';
+import { IonFooter } from '@ionic/react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Home, ScanLine, Bus, User, History } from 'lucide-react';
+import { Home, ScanLine, User, History } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { AppToast } from '../ui';
 
 interface NavItem {
   path: string;
@@ -11,8 +14,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/trip-setup', label: 'Home', icon: <Home size={22} />, matchPaths: ['/trip-setup'] },
-  { path: '/live-trip', label: 'Trip', icon: <Bus size={22} />, matchPaths: ['/live-trip', '/scan', '/passengers'] },
+  { path: '/', label: 'Home', icon: <Home size={22} />, matchPaths: ['/'] },
   { path: '/scan', label: 'Scan', icon: <ScanLine size={22} />, matchPaths: ['/scan'] },
   { path: '/history', label: 'History', icon: <History size={22} />, matchPaths: ['/history', '/trip-summary'] },
   { path: '/profile', label: 'Profile', icon: <User size={22} />, matchPaths: ['/profile'] },
@@ -25,39 +27,85 @@ interface BottomNavProps {
 const BottomNav: React.FC<BottomNavProps> = ({ hidden = false }) => {
   const history = useHistory();
   const location = useLocation();
+  const { currentTrip, currentBus } = useApp();
+
+  const [showBlockToast, setShowBlockToast] = React.useState(false);
 
   if (hidden) return null;
 
   const isActive = (item: NavItem) =>
     item.matchPaths?.some((p) => location.pathname.startsWith(p)) ?? location.pathname === item.path;
 
+  const handleNavClick = (item: NavItem) => {
+    if (item.path === '/scan' && (!currentTrip || !currentBus)) {
+      setShowBlockToast(true);
+      return;
+    }
+    history.push(item.path);
+  };
+
   return (
-    <nav className="bottom-nav-modern" aria-label="Main navigation">
-      <div className="bottom-nav-modern__container">
-        {navItems.map((item) => {
-          const active = isActive(item);
-          return (
-            <button
-              key={item.path}
-              type="button"
-              className={`bottom-nav-modern__item ${active ? 'bottom-nav-modern__item--active' : ''}`}
-              onClick={() => history.push(item.path)}
-              aria-current={active ? 'page' : undefined}
-            >
-              {active && (
-                <motion.div
-                  className="bottom-nav-modern__indicator"
-                  layoutId="nav-indicator"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <span className="bottom-nav-modern__icon">{item.icon}</span>
-              <span className="bottom-nav-modern__label">{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+    <IonFooter
+      className="ion-no-border"
+      style={{
+        background: 'transparent',
+        boxShadow: 'none',
+      }}
+    >
+      <nav className="bottom-nav-modern" aria-label="Main navigation">
+        <div className="bottom-nav-modern__container">
+          {navItems.map((item) => {
+            const active = isActive(item);
+            const isLocked = item.path === '/scan' && (!currentTrip || !currentBus);
+            return (
+              <button
+                key={item.path}
+                type="button"
+                className={`bottom-nav-modern__item ${active ? 'bottom-nav-modern__item--active' : ''} ${isLocked ? 'bottom-nav-modern__item--locked' : ''}`}
+                onClick={(e) => {
+                  (e.currentTarget as HTMLElement).blur();
+                  handleNavClick(item);
+                }}
+                aria-current={active ? 'page' : undefined}
+                aria-disabled={isLocked}
+              >
+                {active && (
+                  <div
+                    className="bottom-nav-modern__indicator"
+                  />
+                )}
+                <span className="bottom-nav-modern__icon" style={{ position: 'relative' }}>
+                  {item.icon}
+                  {isLocked && (
+                    <span style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -6,
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      background: 'var(--color-warning)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '7px',
+                    }}>🔒</span>
+                  )}
+                </span>
+                <span className="bottom-nav-modern__label">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <AppToast
+        isOpen={showBlockToast}
+        message="Start a trip first before opening the scanner"
+        color="warning"
+        onDismiss={() => setShowBlockToast(false)}
+      />
+    </IonFooter>
   );
 };
 

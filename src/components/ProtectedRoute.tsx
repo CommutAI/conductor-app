@@ -1,9 +1,9 @@
 import React from 'react';
 import { Redirect } from 'react-router-dom';
+import { IonContent, IonPage } from '@ionic/react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useTrip } from '../context/TripContext';
+import { useApp } from '../context/AppContext';
 import Logo from './Logo';
 
 interface ProtectedRouteProps {
@@ -11,28 +11,55 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component }) => {
-  const { session, profile, loading } = useAuth();
-  const { isRestoringTrip } = useTrip();
+  const { profile, loading, isRestoringTrip, currentTrip } = useApp();
 
-  if (loading || isRestoringTrip) {
+  // Initial auth bootstrap only — not background trip revalidation
+  if (loading && !profile) {
     return (
-      <div className="login-hero" style={{ minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}
-        >
-          <Logo size="lg" />
-          <Loader2 size={36} color="white" style={{ animation: 'spin 0.8s linear infinite' }} />
-          <p style={{ color: 'rgba(255,255,255,0.85)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
-            {isRestoringTrip ? 'Resuming your active trip…' : 'Loading your workspace…'}
-          </p>
-        </motion.div>
-      </div>
+      <IonPage>
+        <IonContent fullscreen className="app-page-bg">
+          <div className="login-hero" style={{ minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}
+            >
+              <Logo size="lg" />
+              <Loader2 size={36} color="var(--color-primary)" style={{ animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
+                Loading your workspace…
+              </p>
+            </motion.div>
+          </div>
+        </IonContent>
+      </IonPage>
     );
   }
 
-  if (!session || !profile) {
+  // Block UI only on cold start when we have no local trip yet but are checking the DB
+  if (isRestoringTrip && !currentTrip) {
+    return (
+      <IonPage>
+        <IonContent fullscreen className="app-page-bg">
+          <div className="login-hero" style={{ minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}
+            >
+              <Logo size="lg" />
+              <Loader2 size={36} color="var(--color-primary)" style={{ animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.95rem', fontWeight: 500 }}>
+                Resuming your active trip…
+              </p>
+            </motion.div>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
+  if (!profile) {
     return <Redirect to="/login" />;
   }
 

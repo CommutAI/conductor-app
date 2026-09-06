@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LucideIcon } from 'lucide-react';
+import { LucideIcon, Eye, EyeOff } from 'lucide-react';
 
 interface ModernInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -16,8 +16,11 @@ const ModernInput: React.FC<ModernInputProps> = ({
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const inputId = id || `input-${label.replace(/\s+/g, '-').toLowerCase()}`;
   const hasValue = props.value !== undefined && props.value !== '';
+  const isPassword = props.type === 'password';
+  const resolvedType = isPassword && showPassword ? 'text' : props.type;
 
   return (
     <div className={`modern-input ${error ? 'modern-input--error' : ''} ${className}`}>
@@ -36,10 +39,37 @@ const ModernInput: React.FC<ModernInputProps> = ({
           aria-invalid={!!error}
           aria-describedby={error ? `${inputId}-error` : undefined}
           {...props}
+          type={resolvedType}
         />
         <label htmlFor={inputId} className="modern-input__label">
           {label}
         </label>
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShowPassword(v => !v)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            style={{
+              position: 'absolute',
+              right: 14,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              padding: 4,
+              cursor: 'pointer',
+              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2,
+            }}
+          >
+            {showPassword
+              ? <EyeOff size={18} strokeWidth={2} />
+              : <Eye size={18} strokeWidth={2} />}
+          </button>
+        )}
       </div>
       {error && (
         <p id={`${inputId}-error`} className="modern-input__error" role="alert">

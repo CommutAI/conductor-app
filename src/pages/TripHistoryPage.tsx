@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import {
   IonPage,
   IonContent,
@@ -8,52 +9,177 @@ import {
   IonSegmentButton,
   IonLabel,
   IonSearchbar,
+  IonModal,
+  IonHeader,
+  IonToolbar,
+  IonButtons,
+  IonButton,
+  IonTitle,
 } from '@ionic/react';
-import { Calendar, Users, Wallet, AlertTriangle, Bus } from 'lucide-react';
+import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Navigation, Clock, User, CreditCard, Banknote, WifiOff } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
+import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
+import { realtimeService } from '../services/realtimeService';
 import PageHeader from '../components/layout/PageHeader';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState,
 } from '../components/ui';
 
+// ── Local cache keys ──────────────────────────────────────────────────────────
+const TRIP_HISTORY_CACHE_KEY = 'commutai_trip_history_cache';
+const TRIP_DETAILS_CACHE_KEY = 'commutai_trip_details_cache';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 interface Trip {
   id: string;
   started_at: string;
   ended_at?: string;
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'completed' | 'cancelled';
   route: string;
   plate_number: string;
+  starting_point?: string;
+  end_point?: string;
   passenger_count: number;
   fare_collected: number;
   irregularities: number;
 }
 
+interface TripDetails {
+  id: string;
+  started_at: string;
+  ended_at?: string;
+  status: string;
+  route: string;
+  plate_number: string;
+  starting_point?: string;
+  end_point?: string;
+  passengers: Array<{
+    id: string;
+    card_id?: string;
+    temp_ticket_id?: string;
+    card_uid?: string;
+    ticket_uid?: string;
+    boarded_at: string;
+    alighted_at?: string;
+    fare?: number;
+    baggage_fee?: number;
+    payment_method?: string;
+    boarding_stop?: string;
+    destination_stop?: string;
+  }>;
+  transactions: Array<{
+    id: string;
+    amount: number;
+    channel: string;
+    created_at: string;
+    baggage_fee?: number;
+    card_id?: string;
+    temp_ticket_id?: string;
+    payment_method?: string;
+  }>;
+}
+
+// ── Cache helpers ─────────────────────────────────────────────────────────────
+
+function saveTripHistoryCache(segment: string, trips: Trip[]): void {
+  try {
+    const raw = localStorage.getItem(TRIP_HISTORY_CACHE_KEY);
+    const all: Record<string, { trips: Trip[]; savedAt: number }> = raw ? JSON.parse(raw) : {};
+    all[segment] = { trips, savedAt: Date.now() };
+    localStorage.setItem(TRIP_HISTORY_CACHE_KEY, JSON.stringify(all));
+  } catch { /* ignore storage errors */ }
+}
+
+function loadTripHistoryCache(segment: string): Trip[] | null {
+  try {
+    const raw = localStorage.getItem(TRIP_HISTORY_CACHE_KEY);
+    if (!raw) return null;
+    const all: Record<string, { trips: Trip[]; savedAt: number }> = JSON.parse(raw);
+    const entry = all[segment];
+    if (!entry) return null;
+    if (Date.now() - entry.savedAt > CACHE_TTL_MS) return null; // expired
+    return entry.trips;
+  } catch { return null; }
+}
+
+function saveTripDetailsCache(tripId: string, details: TripDetails): void {
+  try {
+    const raw = localStorage.getItem(TRIP_DETAILS_CACHE_KEY);
+    const all: Record<string, { details: TripDetails; savedAt: number }> = raw ? JSON.parse(raw) : {};
+    all[tripId] = { details, savedAt: Date.now() };
+    // Keep only the 20 most recent detail entries to avoid quota bloat
+    const keys = Object.keys(all).sort((a, b) => (all[b].savedAt - all[a].savedAt));
+    if (keys.length > 20) {
+      keys.slice(20).forEach(k => delete all[k]);
+    }
+    localStorage.setItem(TRIP_DETAILS_CACHE_KEY, JSON.stringify(all));
+  } catch { /* ignore storage errors */ }
+}
+
+function loadTripDetailsCache(tripId: string): TripDetails | null {
+  try {
+    const raw = localStorage.getItem(TRIP_DETAILS_CACHE_KEY);
+    if (!raw) return null;
+    const all: Record<string, { details: TripDetails; savedAt: number }> = JSON.parse(raw);
+    const entry = all[tripId];
+    if (!entry) return null;
+    if (Date.now() - entry.savedAt > CACHE_TTL_MS) return null;
+    return entry.details;
+  } catch { return null; }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 const TripHistoryPage: React.FC = () => {
-  const [segment, setSegment] = useState<'all' | 'completed' | 'active'>('all');
+  const [segment, setSegment] = useState<'all' | 'today'>('today');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFromCache, setIsFromCache] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [showTripDetails, setShowTripDetails] = useState(false);
+  const [selectedTripDetails, setSelectedTripDetails] = useState<TripDetails | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsFromCache, setDetailsFromCache] = useState(false);
 
-  const { profile } = useAuth();
+  const { profile } = useApp();
+  const { isOnline } = useNetwork();
   const history = useHistory();
 
-  useEffect(() => {
-    loadTrips();
-  }, [segment]);
-
-  async function loadTrips() {
+  const loadTrips = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
+
+    // ── Offline: serve from cache immediately ─────────────────────────────
+    if (!isOnline) {
+      const cached = loadTripHistoryCache(segment);
+      if (cached) {
+        setTrips(cached);
+        setIsFromCache(true);
+      } else {
+        setTrips([]);
+        setIsFromCache(true);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // ── Online: fetch from Supabase then cache ────────────────────────────
     try {
       let query = supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
         .eq('conductor_id', profile.id)
         .order('started_at', { ascending: false });
 
-      if (segment !== 'all') query = query.eq('status', segment);
+      if (segment === 'today') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        query = query.gte('started_at', today.toISOString()).lt('started_at', tomorrow.toISOString());
+      }
 
       const { data } = await query;
 
@@ -71,6 +197,8 @@ const TripHistoryPage: React.FC = () => {
             status: trip.status,
             route: (trip.buses as any).route,
             plate_number: (trip.buses as any).plate_number,
+            starting_point: trip.starting_point,
+            end_point: trip.end_point,
             passenger_count: passengerData?.length || 0,
             fare_collected: fareCollected,
             irregularities: irregData?.length || 0,
@@ -79,16 +207,177 @@ const TripHistoryPage: React.FC = () => {
       );
 
       setTrips(tripsWithStats);
+      setIsFromCache(false);
+      // Persist to cache so offline visits show this data
+      saveTripHistoryCache(segment, tripsWithStats);
     } catch (error) {
       console.error('Error loading trips:', error);
+      // On network error, fall back to cache gracefully
+      const cached = loadTripHistoryCache(segment);
+      if (cached) {
+        setTrips(cached);
+        setIsFromCache(true);
+      }
     } finally {
       setLoading(false);
     }
-  }
+  }, [profile, segment, isOnline]);
+
+  useEffect(() => {
+    loadTrips();
+  }, [loadTrips]);
+
+  // Set up real-time subscriptions for cross-device sync (online only)
+  useEffect(() => {
+    if (!profile?.id || !isOnline) return;
+
+    const cleanup = realtimeService.subscribeToTrips(profile.id, {
+      onInsert: () => { loadTrips(); },
+      onUpdate: (updatedTrip) => {
+        setTrips(prevTrips =>
+          prevTrips.map(trip =>
+            trip.id === updatedTrip.id ? { ...trip, ...updatedTrip } : trip
+          )
+        );
+      },
+      onDelete: (deletedTrip) => {
+        setTrips(prevTrips => prevTrips.filter(trip => trip.id !== deletedTrip.id));
+      },
+    });
+
+    return () => { cleanup(); };
+  }, [profile?.id, isOnline, loadTrips]);
 
   async function handleRefresh(event: CustomEvent) {
     await loadTrips();
     (event.target as HTMLIonRefresherElement).complete();
+  }
+
+  async function loadTripDetails(tripId: string) {
+    setLoadingDetails(true);
+    setDetailsFromCache(false);
+
+    // ── Offline: serve details from cache ──────────────────────────────────
+    if (!isOnline) {
+      const cached = loadTripDetailsCache(tripId);
+      if (cached) {
+        setSelectedTripDetails(cached);
+        setDetailsFromCache(true);
+        setShowTripDetails(true);
+      } else {
+        // No cache for this trip's details — show limited info from list
+        const listTrip = trips.find(t => t.id === tripId);
+        if (listTrip) {
+          setSelectedTripDetails({
+            id: listTrip.id,
+            started_at: listTrip.started_at,
+            ended_at: listTrip.ended_at,
+            status: listTrip.status,
+            route: listTrip.route,
+            plate_number: listTrip.plate_number,
+            starting_point: listTrip.starting_point,
+            end_point: listTrip.end_point,
+            passengers: [],
+            transactions: [],
+          });
+          setDetailsFromCache(true);
+          setShowTripDetails(true);
+        }
+      }
+      setLoadingDetails(false);
+      return;
+    }
+
+    // ── Online: fetch full details from Supabase then cache ────────────────
+    try {
+      const { data: tripData } = await supabase
+        .from('trips')
+        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
+        .eq('id', tripId)
+        .single();
+
+      if (!tripData) { setLoadingDetails(false); return; }
+
+      const { data: passengers } = await supabase
+        .from('boarded_passengers')
+        .select('id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop')
+        .eq('trip_id', tripId);
+
+      const { data: transactions } = await supabase
+        .from('transactions')
+        .select('id, amount, channel, created_at, baggage_fee, card_id, temp_ticket_id, payment_method')
+        .eq('trip_id', tripId)
+        .order('created_at', { ascending: false });
+
+      const cardIds = (passengers || []).map(p => p.card_id).filter(Boolean);
+      const ticketIds = (passengers || []).map(p => p.temp_ticket_id).filter(Boolean);
+
+      const [{ data: cardRows }, { data: ticketRows }] = await Promise.all([
+        cardIds.length > 0
+          ? supabase.from('qr_cards').select('id, card_uid').in('id', cardIds)
+          : Promise.resolve({ data: [] }),
+        ticketIds.length > 0
+          ? supabase.from('temporary_tickets').select('id, ticket_uid').in('id', ticketIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const cardUidMap: Record<string, string> = {};
+      (cardRows || []).forEach((c: any) => { cardUidMap[c.id] = c.card_uid; });
+      (ticketRows || []).forEach((t: any) => { cardUidMap[t.id] = t.ticket_uid; });
+
+      const passengersWithFare = (passengers || []).map((passenger: any) => {
+        const passengerTx = (transactions || []).find(tx =>
+          (passenger.card_id && tx.card_id === passenger.card_id) ||
+          (passenger.temp_ticket_id && tx.temp_ticket_id === passenger.temp_ticket_id)
+        );
+
+        const cardUid =
+          (passenger.card_id && cardUidMap[passenger.card_id]) ||
+          (passenger.temp_ticket_id && cardUidMap[passenger.temp_ticket_id]) ||
+          passenger.card_id ||
+          passenger.temp_ticket_id ||
+          null;
+
+        return {
+          ...passenger,
+          card_uid: cardUid,
+          fare: passengerTx?.amount || 0,
+          baggage_fee: passengerTx?.baggage_fee || 0,
+          payment_method: passenger.payment_method || passengerTx?.payment_method || passengerTx?.channel || 'qr_card',
+          boarding_stop: passenger.boarding_stop || null,
+          destination_stop: passenger.destination_stop || null,
+        };
+      });
+
+      const details: TripDetails = {
+        id: tripData.id,
+        started_at: tripData.started_at,
+        ended_at: tripData.ended_at,
+        status: tripData.status,
+        route: (tripData.buses as any).route,
+        plate_number: (tripData.buses as any).plate_number,
+        starting_point: tripData.starting_point,
+        end_point: tripData.end_point,
+        passengers: passengersWithFare,
+        transactions: transactions || [],
+      };
+
+      setSelectedTripDetails(details);
+      setShowTripDetails(true);
+      // Cache for offline access
+      saveTripDetailsCache(tripId, details);
+    } catch (error) {
+      console.error('Error loading trip details:', error);
+      // Try cache as fallback
+      const cached = loadTripDetailsCache(tripId);
+      if (cached) {
+        setSelectedTripDetails(cached);
+        setDetailsFromCache(true);
+        setShowTripDetails(true);
+      }
+    } finally {
+      setLoadingDetails(false);
+    }
   }
 
   const filteredTrips = trips.filter(trip =>
@@ -100,7 +389,7 @@ const TripHistoryPage: React.FC = () => {
   const totalPassengers = filteredTrips.reduce((sum, trip) => sum + trip.passenger_count, 0);
 
   const statusVariant = (status: string) =>
-    status === 'completed' ? 'success' : status === 'active' ? 'info' : 'danger';
+    status === 'completed' ? 'success' : 'danger';
 
   return (
     <IonPage>
@@ -108,25 +397,41 @@ const TripHistoryPage: React.FC = () => {
 
       <IonContent className="app-page-bg">
         <div className="page-content page-content--no-nav">
+
+          {/* Offline cache banner */}
+          {isFromCache && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 14px', marginBottom: 12, borderRadius: 10,
+              background: 'rgba(250, 204, 21, 0.15)',
+              border: '1px solid rgba(250, 204, 21, 0.4)',
+            }}>
+              <WifiOff size={14} color="#b45309" />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#b45309' }}>
+                Offline — showing cached trip history
+              </span>
+            </div>
+          )}
+
           <IonSegment
             value={segment}
-            onIonChange={(e) => setSegment(e.detail.value as 'all' | 'completed' | 'active')}
+            onIonChange={(e) => setSegment(e.detail.value as 'all' | 'today')}
             style={{ marginBottom: 16 }}
           >
+            <IonSegmentButton value="today"><IonLabel>Today</IonLabel></IonSegmentButton>
             <IonSegmentButton value="all"><IonLabel>All</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="completed"><IonLabel>Completed</IonLabel></IonSegmentButton>
-            <IonSegmentButton value="active"><IonLabel>Active</IonLabel></IonSegmentButton>
           </IonSegment>
 
           <IonSearchbar
             value={searchText}
             onIonInput={(e) => setSearchText(e.detail.value as string)}
             placeholder="Search trips..."
-            style={{ marginBottom: 16, padding: 0 }}
+            style={{ marginBottom: 16, padding: 0, '--background': 'rgba(255, 255, 255, 0.1)', '--color': 'white', '--placeholder-color': 'rgba(255, 255, 255, 0.7)' }}
+            className="searchbar-white"
           />
 
           {!loading && filteredTrips.length > 0 && (
-            <SoftCard variant="gradient" style={{ marginBottom: 20 }}>
+            <SoftCard variant="hero" style={{ marginBottom: 20 }}>
               <p style={{ margin: '0 0 4px', fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, textTransform: 'uppercase', color: 'white' }}>
                 Total Earnings
               </p>
@@ -156,20 +461,26 @@ const TripHistoryPage: React.FC = () => {
           ) : filteredTrips.length === 0 ? (
             <EmptyState
               title="No Trips Found"
-              description="Start your first trip to see history here"
-              icon={Bus}
-              actionLabel="Start Trip"
-              onAction={() => history.push('/trip-setup')}
+              description={
+                isFromCache
+                  ? 'No cached trips available. Connect to the internet to load your history.'
+                  : segment === 'today' ? 'No trips today' : 'No trips found'
+              }
+              icon={isFromCache ? WifiOff : Bus}
             />
           ) : (
             filteredTrips.map((trip, i) => (
-              <SoftCard
+              <motion.div
                 key={trip.id}
-                style={{ marginBottom: 12 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
               >
+                <SoftCard
+                  variant="glass"
+                  style={{ marginBottom: 12, cursor: 'pointer' }}
+                  onClick={() => loadTripDetails(trip.id)}
+                >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                   <div>
                     <StatusBadge variant={statusVariant(trip.status)} style={{ marginBottom: 8 }}>
@@ -189,6 +500,29 @@ const TripHistoryPage: React.FC = () => {
                   </div>
                 </div>
 
+                {(trip.starting_point || trip.end_point) && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px',
+                    background: 'rgba(0, 0, 0, 0.03)', borderRadius: 8, marginBottom: 8,
+                  }}>
+                    <MapPin size={14} color="var(--color-success)" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>FROM</p>
+                      <p style={{ margin: '1px 0 0', fontSize: '0.75rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {trip.starting_point || '—'}
+                      </p>
+                    </div>
+                    <div style={{ width: 20, height: 1, background: 'var(--border-medium)', flexShrink: 0 }} />
+                    <Navigation size={14} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>TO</p>
+                      <p style={{ margin: '1px 0 0', fontSize: '0.75rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {trip.end_point || '—'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{
                   display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
                   paddingTop: 12, borderTop: '1px solid var(--border-subtle)',
@@ -206,10 +540,236 @@ const TripHistoryPage: React.FC = () => {
                   ))}
                 </div>
               </SoftCard>
+              </motion.div>
             ))
           )}
         </div>
       </IonContent>
+
+      {/* Trip Details Modal */}
+      <IonModal
+        isOpen={showTripDetails}
+        onDidDismiss={() => setShowTripDetails(false)}
+        className="trip-details-modal"
+        style={{ '--background': '#ffffff' }}
+      >
+        <IonHeader>
+          <IonToolbar>
+            <IonButtons slot="start">
+              <IonButton onClick={() => setShowTripDetails(false)}>
+                <X size={20} />
+              </IonButton>
+            </IonButtons>
+            <IonTitle>Trip Details</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent style={{ '--background': '#ffffff' }} className="app-page-bg trip-details-modal">
+          <div className="page-content">
+            {loadingDetails ? (
+              <LoadingSkeleton variant="card" count={3} />
+            ) : selectedTripDetails ? (
+              <>
+                {/* Offline cache indicator for details */}
+                {detailsFromCache && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 14px', marginBottom: 12, borderRadius: 10,
+                    background: 'rgba(250, 204, 21, 0.15)',
+                    border: '1px solid rgba(250, 204, 21, 0.4)',
+                  }}>
+                    <WifiOff size={14} color="#b45309" />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#b45309' }}>
+                      {selectedTripDetails.passengers.length === 0
+                        ? 'Offline — detailed passenger list unavailable'
+                        : 'Offline — showing cached details'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Trip Overview */}
+                <SoftCard variant="glass" className="trip-details-card" style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                    <div>
+                      <StatusBadge variant={statusVariant(selectedTripDetails.status)} style={{ marginBottom: 8 }}>
+                        {selectedTripDetails.status}
+                      </StatusBadge>
+                      <h3 className="heading-small" style={{ marginBottom: 4 }}>{selectedTripDetails.route}</h3>
+                      <p className="text-secondary" style={{ margin: 0 }}>{selectedTripDetails.plate_number}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <Calendar size={16} color="var(--color-primary)" style={{ marginBottom: 4 }} />
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {new Date(selectedTripDetails.started_at).toLocaleDateString()}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                        {new Date(selectedTripDetails.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(selectedTripDetails.starting_point || selectedTripDetails.end_point) && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '12px',
+                      background: 'rgba(0, 0, 0, 0.03)', borderRadius: 10, marginBottom: 12,
+                    }}>
+                      <MapPin size={16} color="var(--color-success)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>FROM</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedTripDetails.starting_point || '—'}
+                        </p>
+                      </div>
+                      <div style={{ width: 24, height: 1, background: 'var(--border-medium)', flexShrink: 0 }} />
+                      <Navigation size={16} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>TO</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedTripDetails.end_point || '—'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+                    paddingTop: 12, borderTop: '1px solid var(--border-subtle)',
+                  }}>
+                    {[
+                      { icon: Users, value: selectedTripDetails.passengers.length, label: 'Passengers' },
+                      { icon: Wallet, value: `₱${selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(0)}`, label: 'Fare' },
+                      { icon: Clock, value: selectedTripDetails.ended_at ?
+                        `${Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000)}m` :
+                        'Active', label: 'Duration' },
+                    ].map(({ icon: Icon, value, label }) => (
+                      <div key={label} style={{ textAlign: 'center' }}>
+                        <Icon size={18} color="var(--color-primary)" />
+                        <p style={{ margin: '4px 0 0', fontWeight: 700 }}>{value}</p>
+                        <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </SoftCard>
+
+                {/* Passengers List */}
+                <h4 className="heading-small" style={{ marginBottom: 12 }}>Passengers</h4>
+                {selectedTripDetails.passengers.length === 0 ? (
+                  <EmptyState
+                    title={detailsFromCache ? 'Offline — No cached passengers' : 'No Passengers'}
+                    description={detailsFromCache
+                      ? 'Connect to internet to view the passenger list'
+                      : 'No passengers boarded on this trip'}
+                    icon={detailsFromCache ? WifiOff : Users}
+                  />
+                ) : (
+                  selectedTripDetails.passengers.map((passenger) => (
+                    <SoftCard
+                      key={passenger.id}
+                      variant="glass"
+                      className="trip-details-card"
+                      style={{ marginBottom: 8 }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{
+                            width: 40, height: 40, borderRadius: '50%',
+                            background: passenger.alighted_at ? 'var(--color-success-subtle)' : 'var(--color-primary-subtle)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            <User size={18} color={passenger.alighted_at ? 'var(--color-success)' : 'var(--color-primary)'} />
+                          </div>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>
+                              {passenger.card_uid
+                                ? passenger.card_uid.toUpperCase()
+                                : passenger.ticket_uid
+                                ? passenger.ticket_uid.toUpperCase()
+                                : 'Unknown'}
+                            </p>
+                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {new Date(passenger.boarded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {passenger.alighted_at && ` - ${new Date(passenger.alighted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                            </p>
+                            {(passenger.boarding_stop || passenger.destination_stop) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                {passenger.boarding_stop && (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.7rem', color: 'var(--color-success)', fontWeight: 600 }}>
+                                    <MapPin size={10} />
+                                    {passenger.boarding_stop}
+                                  </span>
+                                )}
+                                {passenger.boarding_stop && passenger.destination_stop && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>→</span>
+                                )}
+                                {passenger.destination_stop && (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                    <Navigation size={10} />
+                                    {passenger.destination_stop}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ margin: 0, fontWeight: 700, color: 'var(--color-primary)' }}>
+                            ₱{(passenger.fare || 0).toFixed(2)}
+                          </p>
+                          {passenger.baggage_fee && passenger.baggage_fee > 0 && (
+                            <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                              +₱{passenger.baggage_fee.toFixed(2)} baggage
+                            </p>
+                          )}
+                          <p style={{ margin: '4px 0 0', fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                            {(passenger.payment_method === 'card' || passenger.payment_method === 'qr_card')
+                              ? <><CreditCard size={11} /> QR Card</>
+                              : <><Banknote size={11} /> Cash</>}
+                          </p>
+                        </div>
+                      </div>
+                    </SoftCard>
+                  ))
+                )}
+
+                {/* Transactions Summary */}
+                {selectedTripDetails.transactions.length > 0 && (
+                  <>
+                    <h4 className="heading-small" style={{ marginBottom: 12, marginTop: 20 }}>Transactions</h4>
+                    <SoftCard variant="glass" className="trip-details-card">
+                      {selectedTripDetails.transactions.map((tx, i) => (
+                        <div key={tx.id} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '12px 0', borderBottom: i < selectedTripDetails.transactions.length - 1 ? '1px solid var(--border-subtle)' : 'none'
+                        }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {(tx.payment_method === 'card' || tx.payment_method === 'qr_card' || tx.channel === 'qr_card')
+                                ? <><CreditCard size={14} /> QR Card</>
+                                : <><Banknote size={14} /> Cash</>}
+                            </p>
+                            <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                              {new Date(tx.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <p style={{ margin: 0, fontWeight: 700, color: 'var(--color-primary)' }}>
+                              ₱{tx.amount.toFixed(2)}
+                            </p>
+                            {tx.baggage_fee && tx.baggage_fee > 0 && (
+                              <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                                (incl. ₱{tx.baggage_fee.toFixed(2)} baggage)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </SoftCard>
+                  </>
+                )}
+              </>
+            ) : null}
+          </div>
+        </IonContent>
+      </IonModal>
     </IonPage>
   );
 };
