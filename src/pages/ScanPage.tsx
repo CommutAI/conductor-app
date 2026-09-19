@@ -9,6 +9,7 @@ import {
   XCircle, Navigation, ChevronRight, Package, Loader,
   LogIn, LogOut as AlightIcon,
 } from 'lucide-react';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { processScan, ScanResult, calculateFare, PassengerType } from '../services/fareService';
@@ -79,9 +80,36 @@ function getRouteStops(route: string): string[] {
   return [];
 }
 
+/** Returns the card illustration asset path for a given passenger type */
+function getCardImage(passengerType: string, isTicket: boolean): string {
+  if (isTicket) {
+    switch (passengerType) {
+      case 'student': return '/assets/TEMP-STUD.png';
+      case 'senior_citizen': return '/assets/temp-senior.png';
+      case 'pwd': return '/assets/temp-pwd.png';
+      default: return '/assets/TEMP-REG.png';
+    }
+  }
+  switch (passengerType) {
+    case 'student': return '/assets/student.png';
+    case 'senior_citizen': return '/assets/SENIOR-CITIZIEN.png';
+    case 'pwd': return '/assets/pwd.png';
+    default: return '/assets/regular.png';
+  }
+}
+
+/** Returns a human-readable label for a passenger type */
+function passengerTypeLabel(passengerType: string): string {
+  switch (passengerType) {
+    case 'student': return 'Student';
+    case 'senior_citizen': return 'Senior Citizen';
+    case 'pwd': return 'PWD';
+    default: return 'Regular';
+  }
+}
+
 // Helper to determine if camera should be visible
-function shouldShowCamera(scanState: ScanState): boolean {
-  return scanState === 'idle'
+function shouldShowCamera(scanState: ScanState): boolean {  return scanState === 'idle'
     || scanState === 'scanning'
     || scanState === 'payment_options'
     || scanState === 'detected'
@@ -180,6 +208,8 @@ const ScanPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [successAmount, setSuccessAmount] = useState(0);
   const [successBalance, setSuccessBalance] = useState<number | null>(null);
+  const [successPassengerType, setSuccessPassengerType] = useState<string>('regular');
+  const [successIsTicket, setSuccessIsTicket] = useState(false);
   const [failedMsg, setFailedMsg] = useState('');
   const [debugScannedCode, setDebugScannedCode] = useState('');
 
@@ -192,6 +222,10 @@ const ScanPage: React.FC = () => {
   const [locationStatus, setLocationStatus] = useState<'idle' | 'requesting' | 'ready' | 'unavailable'>('idle');
   const [, setNetworkTick] = useState(0);
   
+  // Destination search filter
+  const [destSearch, setDestSearch] = useState<string>('');
+  const [boardingSearch, setBoardingSearch] = useState<string>('');
+
   // Boarding point selection for offline onboarding
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState<string>('');
 
@@ -242,6 +276,17 @@ const ScanPage: React.FC = () => {
       window.removeEventListener('offline', bump);
     };
   }, []);
+
+  // Haptic feedback on scan outcome (gracefully no-ops on web/desktop)
+  useEffect(() => {
+    if (scanState === 'success') {
+      Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+    } else if (scanState === 'failed') {
+      Haptics.notification({ type: NotificationType.Error }).catch(() => {});
+    } else if (scanState === 'detected') {
+      Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+    }
+  }, [scanState]);
 
   // Auto-restart scanner after failed state (only for onboarding duplicate scans)
   useEffect(() => {
@@ -380,6 +425,8 @@ const ScanPage: React.FC = () => {
     setScanState('idle');
     setPendingScan(null);
     setSelectedDestination('');
+    setDestSearch('');
+    setBoardingSearch('');
     setSelectedBoardingPoint('');
     setCurrentStopName(null);
     setCurrentCoordinates(null);
@@ -392,6 +439,8 @@ const ScanPage: React.FC = () => {
   async function retryCamera() {
     setPendingScan(null);
     setSelectedDestination('');
+    setDestSearch('');
+    setBoardingSearch('');
     setSelectedBoardingPoint('');
     setFailedMsg('');
     setCurrentStopName(null);
@@ -992,6 +1041,8 @@ const ScanPage: React.FC = () => {
         setSelectedBoardingPoint('');
         setScanState('success');
         setSuccessMsg('Boarded — saved offline, will sync when online');
+        setSuccessPassengerType(pendingScan?.passengerType || 'regular');
+        setSuccessIsTicket(pendingScan?.isTicket || false);
         const totalFare = (pendingScan?.fare || 0) + (baggageSelection?.fee || 0);
         setSuccessAmount(totalFare);
         setSuccessBalance(null);
@@ -1034,6 +1085,8 @@ const ScanPage: React.FC = () => {
           setBaggageSelection(null);
           setSelectedDestination('');
           setScanState('success');
+          setSuccessPassengerType(pendingScan?.passengerType || 'regular');
+          setSuccessIsTicket(pendingScan?.isTicket || false);
           setSuccessMsg(paymentMethod === 'cash' ? 'Boarded — cash payment recorded' : 'Boarding successful');
           setSuccessAmount(result.totalFare || 0);
           setSuccessBalance(paymentMethod === 'cash' ? null : result.newBalance);
@@ -1057,6 +1110,8 @@ const ScanPage: React.FC = () => {
           setBaggageSelection(null);
           setSelectedDestination('');
           setScanState('success');
+          setSuccessPassengerType(pendingScan?.passengerType || 'regular');
+          setSuccessIsTicket(true);
           setSuccessMsg('Ticket boarded successfully');
           setSuccessAmount(0);
           setSuccessBalance(null);
@@ -1191,6 +1246,8 @@ const ScanPage: React.FC = () => {
         setSelectedBoardingPoint('');
         setScanState('success');
         setSuccessMsg('Boarded — saved offline (network lost), will sync when online');
+        setSuccessPassengerType(pendingScan?.passengerType || 'regular');
+        setSuccessIsTicket(pendingScan?.isTicket || false);
         setSuccessAmount((pendingScan.fare || 0) + (baggageSelection?.fee || 0));
         setSuccessBalance(null);
         setTimeout(async () => {
@@ -1604,6 +1661,8 @@ const ScanPage: React.FC = () => {
       );
       setSuccessAmount(totalFare);
       setSuccessBalance(result.newBalance);
+      setSuccessPassengerType(pendingAlighting?.cardType || pendingAlighting?.passengerType || 'regular');
+      setSuccessIsTicket(false);
       setGpsResult(null);
       setPendingAlighting(null);
       setScanState('success');
@@ -1650,6 +1709,8 @@ const ScanPage: React.FC = () => {
       setSuccessMsg(result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully');
       setSuccessAmount(result.fareAmount);
       setSuccessBalance(null);
+      setSuccessPassengerType(pendingAlighting?.passengerType || 'regular');
+      setSuccessIsTicket(true);
       setGpsResult(null);
       setPendingAlighting(null);
       setScanState('success');
@@ -2154,19 +2215,26 @@ const ScanPage: React.FC = () => {
                       animate={{ opacity: 1, scale: 1 }}
                       style={{ position: 'absolute', inset: 0, background: 'rgba(21,128,61,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 220, padding: '24px 20px' }}
                     >
-                      <motion.div animate={{ scale: [0.8, 1.15, 1] }} transition={{ duration: 0.4 }}>
-                        <CheckCircle size={56} color="white" />
-                      </motion.div>
-                      <span style={{ color: 'white', fontWeight: 800, fontSize: '1.15rem', textAlign: 'center' }}>Success!</span>
+                      {/* Card type image */}
+                      <motion.img
+                        src={getCardImage(successPassengerType, successIsTicket)}
+                        alt={passengerTypeLabel(successPassengerType)}
+                        initial={{ scale: 0.7, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.35, type: 'spring', stiffness: 220 }}
+                        style={{ width: 72, height: 72, objectFit: 'contain', borderRadius: 14, background: 'rgba(255,255,255,0.15)', padding: 6 }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <motion.div animate={{ scale: [0.8, 1.15, 1] }} transition={{ duration: 0.4 }}>
+                          <CheckCircle size={28} color="white" />
+                        </motion.div>
+                        <span style={{ color: 'white', fontWeight: 800, fontSize: '1.15rem' }}>Success!</span>
+                      </div>
+                      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: '0.8rem', background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 12px' }}>
+                        {passengerTypeLabel(successPassengerType)} {successIsTicket ? 'Ticket' : 'Card'}
+                      </span>
                       <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '0.88rem', textAlign: 'center' }}>{successMsg}</span>
-
-                      {/* Display scanned QR code */}
-                      {debugScannedCode && (
-                        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.9)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
-                          <span style={{ color: '#15803d', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>SCANNED QR:</span>
-                          <span style={{ color: '#1a1a1a', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 500, wordBreak: 'break-all' }}>{debugScannedCode}</span>
-                        </div>
-                      )}
 
                       {/* Balance display */}
                       {successBalance !== null && (
@@ -2183,11 +2251,11 @@ const ScanPage: React.FC = () => {
                       )}
                       {successAmount > 0 && successBalance === null && (
                         <span style={{ color: 'white', fontWeight: 800, fontSize: '1.1rem', background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '6px 16px' }}>
-                          ₱{successAmount.toFixed(2)} deducted
+                          ₱{successAmount.toFixed(2)}
                         </span>
                       )}
 
-                      <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.73rem', marginTop: 2 }}>Resuming in 2.5s…</span>
+                      <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.73rem', marginTop: 2 }}>Resuming in 1.5s…</span>
                     </motion.div>
                   )}
 
@@ -2363,29 +2431,47 @@ const ScanPage: React.FC = () => {
                     <SoftCard variant="glass" style={{ marginBottom: 14 }}>
                       {/* From (current GPS stop or boarding point selection for offline) */}
                       {!isOnline ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
                             <MapPin size={16} color="var(--color-success)" />
                           </div>
                           <div style={{ flex: 1 }}>
                             <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
-                            <select
-                              className="bus-select"
-                              value={selectedBoardingPoint}
-                              onChange={e => setSelectedBoardingPoint(e.target.value)}
-                            >
-                              <option value="">— Select boarding point —</option>
-                              <option value="Agora Terminal">Agora Terminal</option>
-                              <option value="Puerto">Puerto</option>
-                              <option value="Ba-e">Ba-e</option>
-                              <option value="Mambatangan">Mambatangan</option>
-                              <option value="Maitom">Maitom</option>
-                              <option value="Ala-e">Ala-e</option>
-                              <option value="Lonocan">Lonocan</option>
-                              <option value="San Miguel">San Miguel</option>
-                              <option value="Diclum">Diclum</option>
-                              <option value="Manolo Fortich">Manolo Fortich</option>
-                            </select>
+                            <div style={{ position: 'relative', marginBottom: 8 }}>
+                              <input
+                                type="text"
+                                placeholder="Search stop…"
+                                value={boardingSearch}
+                                onChange={e => setBoardingSearch(e.target.value)}
+                                style={{
+                                  width: '100%', padding: '8px 12px 8px 32px', borderRadius: 8,
+                                  border: '1.5px solid var(--glass-border)', background: 'var(--bg-tertiary)',
+                                  color: 'var(--text-primary)', fontSize: '0.88rem', outline: 'none',
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                              <MapPin size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {displayStops
+                                .filter(s => s.toLowerCase().includes(boardingSearch.toLowerCase()))
+                                .map(stop => (
+                                  <button
+                                    key={stop}
+                                    type="button"
+                                    onClick={() => { setSelectedBoardingPoint(stop); setBoardingSearch(''); }}
+                                    style={{
+                                      padding: '6px 12px', borderRadius: 20, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                                      border: selectedBoardingPoint === stop ? '2px solid var(--color-success)' : '1.5px solid var(--glass-border)',
+                                      background: selectedBoardingPoint === stop ? 'var(--color-success)' : 'var(--bg-tertiary)',
+                                      color: selectedBoardingPoint === stop ? 'white' : 'var(--text-primary)',
+                                      transition: 'all 0.15s',
+                                    }}
+                                  >
+                                    {stop}
+                                  </button>
+                                ))}
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -2426,30 +2512,53 @@ const ScanPage: React.FC = () => {
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>select stop below</span>
                       </div>
 
-                      {/* To — native select dropdown */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {/* To — searchable stop list */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
                           <Navigation size={16} color="var(--color-primary)" />
                         </div>
                         <div style={{ flex: 1 }}>
                           <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
-                          <select
-                            className="bus-select"
-                            value={selectedDestination}
-                            onChange={e => setSelectedDestination(e.target.value)}
-                          >
-                            <option value="">— Choose destination —</option>
-                            <option value="Agora Terminal">Agora Terminal</option>
-                            <option value="Puerto">Puerto</option>
-                            <option value="Ba-e">Ba-e</option>
-                            <option value="Mambatangan">Mambatangan</option>
-                            <option value="Maitom">Maitom</option>
-                            <option value="Ala-e">Ala-e</option>
-                            <option value="Lonocan">Lonocan</option>
-                            <option value="San Miguel">San Miguel</option>
-                            <option value="Diclum">Diclum</option>
-                            <option value="Manolo Fortich">Manolo Fortich</option>
-                          </select>
+                          {/* Search input */}
+                          <div style={{ position: 'relative', marginBottom: 8 }}>
+                            <input
+                              type="text"
+                              placeholder="Search stop…"
+                              value={destSearch}
+                              onChange={e => setDestSearch(e.target.value)}
+                              style={{
+                                width: '100%', padding: '8px 12px 8px 32px', borderRadius: 8,
+                                border: '1.5px solid var(--glass-border)', background: 'var(--bg-tertiary)',
+                                color: 'var(--text-primary)', fontSize: '0.88rem', outline: 'none',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                            <ScanLine size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                          </div>
+                          {/* Stop buttons */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {displayStops
+                              .filter(s => s.toLowerCase().includes(destSearch.toLowerCase()))
+                              .map(stop => (
+                                <button
+                                  key={stop}
+                                  type="button"
+                                  onClick={() => { setSelectedDestination(stop); setDestSearch(''); }}
+                                  style={{
+                                    padding: '6px 12px', borderRadius: 20, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                                    border: selectedDestination === stop ? '2px solid var(--color-primary)' : '1.5px solid var(--glass-border)',
+                                    background: selectedDestination === stop ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                                    color: selectedDestination === stop ? 'white' : 'var(--text-primary)',
+                                    transition: 'all 0.15s',
+                                  }}
+                                >
+                                  {stop}
+                                </button>
+                              ))}
+                            {displayStops.filter(s => s.toLowerCase().includes(destSearch.toLowerCase())).length === 0 && (
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '4px 0' }}>No stops match</span>
+                            )}
+                          </div>
                         </div>
                       </div>
 

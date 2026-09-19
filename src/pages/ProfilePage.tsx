@@ -32,6 +32,7 @@ const ProfilePage: React.FC = () => {
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
   const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
   const [selectedEmergencyType, setSelectedEmergencyType] = useState<'medical' | 'accident' | 'security' | 'mechanical' | 'other'>('other');
+  const [sendingEmergency, setSendingEmergency] = useState(false);
 
   // New modal states
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -60,15 +61,17 @@ const ProfilePage: React.FC = () => {
     showNotification('Signed out successfully', 'success');
   }
 
-  async function sendEmergencyAlert() {
+  async function sendEmergencyAlert(emergencyType?: 'medical' | 'accident' | 'security' | 'mechanical' | 'other') {
     if (!profile) return;
+    const alertType = emergencyType ?? selectedEmergencyType;
     
     // Check if there's an active trip
     if (!currentTrip?.id) {
       showNotification('Please start a trip before sending emergency alerts.', 'warning');
       return;
     }
-    
+
+    setSendingEmergency(true);
     let gpsPosition = null;
     let locationName = undefined;
     let driverName = 'Unknown';
@@ -95,7 +98,7 @@ const ProfilePage: React.FC = () => {
       if (geoResult) locationName = geoResult;
 
       // Step 3: Insert emergency alert to database with retry logic
-      const alertData = await insertEmergencyAlertWithRetry(gpsPosition, locationName);
+      const alertData = await insertEmergencyAlertWithRetry(gpsPosition, locationName, alertType);
       
       // Step 4: Queue SMS with comprehensive information
       if (profile.emergency_phone) {
@@ -107,7 +110,7 @@ const ProfilePage: React.FC = () => {
         await smsService.queueEmergencySMS(
           profile.emergency_phone,
           {
-            emergencyType: selectedEmergencyType,
+            emergencyType: alertType,
             location,
             locationName,
             tripId: currentTrip.id,
@@ -131,7 +134,7 @@ const ProfilePage: React.FC = () => {
       
       // Final fallback: send alert with minimal information
       try {
-        await sendMinimalEmergencyAlert(driverName);
+        await sendMinimalEmergencyAlert(driverName, alertType);
         showNotification('Emergency alert sent with basic information.', 'success');
         setShowEmergencyAlert(false);
         setSelectedEmergencyType('other');
@@ -139,6 +142,8 @@ const ProfilePage: React.FC = () => {
         console.error('Error in fallback emergency alert:', fallbackError);
         showNotification('Failed to send emergency alert. Please try again or call emergency services directly.', 'danger');
       }
+    } finally {
+      setSendingEmergency(false);
     }
   }
 
@@ -160,7 +165,7 @@ const ProfilePage: React.FC = () => {
   }
 
   // Helper function: Insert emergency alert with retry logic
-  async function insertEmergencyAlertWithRetry(gpsPosition: any, locationName: string | undefined, maxRetries = 2): Promise<any> {
+  async function insertEmergencyAlertWithRetry(gpsPosition: any, locationName: string | undefined, alertType: string, maxRetries = 2): Promise<any> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const { data: alert, error: insertError } = await supabase.from('emergency_alerts').insert({
@@ -172,7 +177,7 @@ const ProfilePage: React.FC = () => {
           location_source: gpsPosition?.source || 'unknown',
           location_accuracy: gpsPosition?.accuracy,
           status: 'active',
-          type: selectedEmergencyType,
+          type: alertType,
           created_at: new Date().toISOString(),
         }).select().single();
 
@@ -188,12 +193,12 @@ const ProfilePage: React.FC = () => {
   }
 
   // Helper function: Send minimal emergency alert as final fallback
-  async function sendMinimalEmergencyAlert(driverName: string): Promise<void> {
+  async function sendMinimalEmergencyAlert(driverName: string, alertType: string): Promise<void> {
     const { data: alert, error: dbError } = await supabase.from('emergency_alerts').insert({
       conductor_id: profile.id,
       trip_id: currentTrip.id,
       status: 'active',
-      type: selectedEmergencyType,
+      type: alertType,
       location_source: 'fallback',
       created_at: new Date().toISOString(),
     }).select().single();
@@ -204,7 +209,7 @@ const ProfilePage: React.FC = () => {
       await smsService.queueEmergencySMS(
         profile.emergency_phone,
         {
-          emergencyType: selectedEmergencyType,
+          emergencyType: alertType,
           location: undefined,
           tripId: currentTrip.id,
           busInfo: currentBus ? {
@@ -487,13 +492,16 @@ const ProfilePage: React.FC = () => {
               { type: 'security',   label: 'Security',   desc: 'Threat or suspicious activity',   icon: ShieldAlert,  color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
               { type: 'mechanical', label: 'Mechanical', desc: 'Bus breakdown or malfunction',    icon: Wrench,       color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
               { type: 'other',      label: 'Other',      desc: 'Other emergency situation',       icon: ClipboardList, color: '#059669', bg: 'rgba(5,150,105,0.08)' },
-            ].map(({ type, label, desc, icon: Icon, color, bg }) => (
+            ].map(({ type, label, desc, icon: Icon, color, bg }) => {
+              const isSelected = selectedEmergencyType === type && sendingEmergency;
+              return (
               <button
                 key={type}
                 type="button"
+                disabled={sendingEmergency}
                 onClick={() => {
                   setSelectedEmergencyType(type as any);
-                  sendEmergencyAlert();
+                  sendEmergencyAlert(type as any);
                 }}
                 style={{ 
                   width: '100%',
@@ -501,20 +509,25 @@ const ProfilePage: React.FC = () => {
                   alignItems: 'center', 
                   gap: 12,
                   padding: '14px 16px',
-                  background: '#f9f9f9',
-                  border: `1px solid ${color}40`,
+                  background: isSelected ? `${color}12` : '#f9f9f9',
+                  border: isSelected ? `2px solid ${color}` : `1px solid ${color}40`,
                   borderRadius: 12,
-                  cursor: 'pointer',
+                  cursor: sendingEmergency ? 'not-allowed' : 'pointer',
                   transition: 'background 0.2s, border-color 0.2s',
                   boxSizing: 'border-box',
+                  opacity: sendingEmergency && !isSelected ? 0.5 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f0f0f0';
-                  e.currentTarget.style.borderColor = color;
+                  if (!sendingEmergency) {
+                    e.currentTarget.style.background = '#f0f0f0';
+                    e.currentTarget.style.borderColor = color;
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f9f9f9';
-                  e.currentTarget.style.borderColor = `${color}40`;
+                  if (!sendingEmergency) {
+                    e.currentTarget.style.background = isSelected ? `${color}12` : '#f9f9f9';
+                    e.currentTarget.style.borderColor = isSelected ? color : `${color}40`;
+                  }
                 }}
               >
                 <div style={{
@@ -527,24 +540,31 @@ const ProfilePage: React.FC = () => {
                   justifyContent: 'center',
                   flexShrink: 0,
                 }}>
-                  <Icon size={20} color={color} />
+                  {isSelected
+                    ? <CheckCircle2 size={20} color={color} />
+                    : <Icon size={20} color={color} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.95rem', color: '#1a1a1a' }}>
                     {label}
                   </p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#666', lineHeight: 1.3 }}>
-                    {desc}
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: isSelected ? color : '#666', lineHeight: 1.3, fontWeight: isSelected ? 600 : 400 }}>
+                    {isSelected ? 'Sending alert…' : desc}
                   </p>
                 </div>
+                {isSelected && (
+                  <div style={{ width: 20, height: 20, border: `2px solid ${color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                )}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* Cancel */}
           <button
             type="button"
-            onClick={() => setShowEmergencyAlert(false)}
+            onClick={() => { if (!sendingEmergency) setShowEmergencyAlert(false); }}
+            disabled={sendingEmergency}
             style={{ 
               width: '100%',
               marginTop: 14, 

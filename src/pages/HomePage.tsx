@@ -8,12 +8,13 @@ import {
   IonFabButton,
   IonRefresher,
   IonRefresherContent,
+  IonAlert,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ScanLine, Wallet, AlertTriangle,
-  CheckCircle, Bus, Play,
+  CheckCircle, Bus, Play, Users, Plus, Minus, Square,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -83,6 +84,9 @@ const HomePage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
+  const [showEndTripConfirm, setShowEndTripConfirm] = useState(false);
+  const [manualCount, setManualCount] = useState<number | null>(null);
+  const [savingManualCount, setSavingManualCount] = useState(false);
   const [tripStats, setTripStats] = useState<TripStats>({
     passengerCount: 0,
     irregularities: [],
@@ -471,6 +475,23 @@ const HomePage: React.FC = () => {
   }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load bus info when profile is available (works offline too)
+  // Also restore manual count from localStorage
+  useEffect(() => {
+    if (currentTrip) {
+      const key = `manual_count_${currentTrip.id}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        try {
+          const { count } = JSON.parse(stored);
+          setManualCount(count);
+        } catch { /* ignore */ }
+      } else {
+        setManualCount(tripStats.passengerCount);
+      }
+    }
+  }, [currentTrip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load bus info when profile is available (works offline too)
   useEffect(() => {
     if (profile?.bus_id && !currentBus) {
       loadBusInfo();
@@ -624,6 +645,30 @@ const HomePage: React.FC = () => {
       setStarting(false);
     }
   }, [selectedStartingPoint, customStartingPoint, currentBus, profile, setCurrentTrip, setValidatedCount, setFareCollected, showNotification]);
+
+  const saveManualCount = useCallback(async (count: number) => {
+    if (!currentTrip) return;
+    setSavingManualCount(true);
+    try {
+      if (isOnline) {
+        await supabase.from('passenger_counts').insert({
+          trip_id: currentTrip.id,
+          count,
+          source: 'manual',
+          recorded_at: new Date().toISOString(),
+        });
+      }
+      // Always persist locally so it's not lost offline
+      const key = `manual_count_${currentTrip.id}`;
+      localStorage.setItem(key, JSON.stringify({ count, savedAt: new Date().toISOString() }));
+      showNotification(`Manual count saved: ${count} passengers`, 'success');
+    } catch (err) {
+      console.error('[HomePage] Error saving manual count:', err);
+      showNotification('Failed to save count', 'danger');
+    } finally {
+      setSavingManualCount(false);
+    }
+  }, [currentTrip, isOnline, showNotification]);
 
   const startTrip = useCallback(async () => {
     console.log('[HomePage] Profile data:', profile);
@@ -1106,11 +1151,64 @@ const HomePage: React.FC = () => {
                 transition={{ duration: 0.5, delay: 0.2 }}
                 style={{ marginBottom: 24 }}
               >
+                {/* Capacity Ring + Key Stats */}
+                <SoftCard style={{ marginBottom: 12, padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    {/* SVG Capacity Ring */}
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <svg width={72} height={72} viewBox="0 0 72 72">
+                        <circle cx={36} cy={36} r={30} fill="none" stroke="var(--border-subtle)" strokeWidth={6} />
+                        <circle
+                          cx={36} cy={36} r={30}
+                          fill="none"
+                          stroke={
+                            tripStats.capacityPercent >= 90 ? '#ef4444'
+                            : tripStats.capacityPercent >= 70 ? '#f59e0b'
+                            : '#10b981'
+                          }
+                          strokeWidth={6}
+                          strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 30}`}
+                          strokeDashoffset={`${2 * Math.PI * 30 * (1 - Math.min(tripStats.capacityPercent, 100) / 100)}`}
+                          transform="rotate(-90 36 36)"
+                          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+                        />
+                      </svg>
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1 }}>
+                          {tripStats.capacityPercent.toFixed(0)}%
+                        </span>
+                        <span style={{ fontSize: '0.55rem', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.3 }}>full</span>
+                      </div>
+                    </div>
+                    {/* Stats beside ring */}
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: '0 0 2px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>On Board</p>
+                      <p style={{ margin: '0 0 8px', fontSize: '2rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1 }}>
+                        {tripStats.passengerCount}
+                        <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-secondary)', marginLeft: 4 }}>
+                          / {currentBus?.seat_capacity ?? '—'}
+                        </span>
+                      </p>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#3b82f6', background: 'rgba(59,130,246,0.1)', borderRadius: 20, padding: '2px 8px' }}>
+                          ₱{fareCollected.toFixed(0)} collected
+                        </span>
+                        {tripStats.irregularities.length > 0 && (
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.1)', borderRadius: 20, padding: '2px 8px' }}>
+                            {tripStats.irregularities.length} alert{tripStats.irregularities.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </SoftCard>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
                   <DashboardCard
                     icon={ScanLine}
-                    label="Passengers"
-                    value={tripStats.passengerCount.toString()}
+                    label="Total Validated"
+                    value={validatedCount.toString()}
                     trend={undefined}
                     iconColor="#10b981"
                     iconBg="rgba(16, 185, 129, 0.1)"
@@ -1123,23 +1221,81 @@ const HomePage: React.FC = () => {
                     iconColor="#3b82f6"
                     iconBg="rgba(59, 130, 246, 0.1)"
                   />
-                  <DashboardCard
-                    icon={Bus}
-                    label="Capacity"
-                    value={`${tripStats.capacityPercent.toFixed(0)}%`}
-                    trend={undefined}
-                    iconColor="#f59e0b"
-                    iconBg="rgba(245, 158, 11, 0.1)"
-                  />
-                  <DashboardCard
-                    icon={AlertTriangle}
-                    label="Irregularities"
-                    value={tripStats.irregularities.length.toString()}
-                    trend={undefined}
-                    iconColor={tripStats.irregularities.length > 0 ? '#ef4444' : '#10b981'}
-                    iconBg={tripStats.irregularities.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)'}
-                  />
                 </div>
+              </motion.div>
+
+              {/* Manual Passenger Count */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.25 }}
+                style={{ marginBottom: 24 }}
+              >
+                <SoftCard>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={18} color="var(--color-primary)" />
+                      <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>Manual Count</h3>
+                    </div>
+                    <StatusBadge variant={manualCount !== null && Math.abs((manualCount ?? 0) - tripStats.passengerCount) > 3 ? 'warning' : 'success'}>
+                      {manualCount !== null && Math.abs((manualCount ?? 0) - tripStats.passengerCount) > 3 ? 'Mismatch' : 'Synced'}
+                    </StatusBadge>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.92 }}
+                      onClick={() => setManualCount(c => Math.max(0, (c ?? tripStats.passengerCount) - 1))}
+                      style={{ width: 44, height: 44, borderRadius: 12, border: '1.5px solid var(--border-subtle)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                    >
+                      <Minus size={18} color="var(--text-primary)" />
+                    </motion.button>
+                    <div style={{ flex: 1, textAlign: 'center' }}>
+                      <span style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1 }}>
+                        {manualCount ?? tripStats.passengerCount}
+                      </span>
+                      <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        QR count: {tripStats.passengerCount}
+                        {manualCount !== null && manualCount !== tripStats.passengerCount && (
+                          <span style={{ color: '#f59e0b', marginLeft: 4 }}>
+                            (Δ {manualCount - tripStats.passengerCount > 0 ? '+' : ''}{manualCount - tripStats.passengerCount})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.92 }}
+                      onClick={() => setManualCount(c => (c ?? tripStats.passengerCount) + 1)}
+                      style={{ width: 44, height: 44, borderRadius: 12, border: '1.5px solid var(--border-subtle)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                    >
+                      <Plus size={18} color="var(--text-primary)" />
+                    </motion.button>
+                  </div>
+                  {manualCount !== null && manualCount !== tripStats.passengerCount && (
+                    <AnimatePresence>
+                      <motion.button
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        type="button"
+                        onClick={() => saveManualCount(manualCount)}
+                        disabled={savingManualCount}
+                        style={{
+                          marginTop: 12, width: '100%', padding: '10px 16px',
+                          borderRadius: 10, border: 'none',
+                          background: 'var(--color-primary)', color: 'white',
+                          fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                          opacity: savingManualCount ? 0.7 : 1,
+                        }}
+                      >
+                        {savingManualCount ? <IonSpinner name="crescent" style={{ width: 16, height: 16 }} /> : <CheckCircle size={15} />}
+                        Save Manual Count
+                      </motion.button>
+                    </AnimatePresence>
+                  )}
+                </SoftCard>
               </motion.div>
 
               {/* Trip Progress */}
@@ -1156,7 +1312,7 @@ const HomePage: React.FC = () => {
                     nextStop={routeStops[1]}
                     eta={routeStops[1] ? '~8 min' : undefined}
                     progress={tripStats.capacityPercent}
-                    onEndTrip={endTrip}
+                    onEndTrip={() => setShowEndTripConfirm(true)}
                   />
                 </SoftCard>
               </motion.div>
@@ -1272,6 +1428,25 @@ const HomePage: React.FC = () => {
         duration={2500}
         color={toastColor}
         position="top"
+      />
+
+      {/* End Trip Confirmation */}
+      <IonAlert
+        isOpen={showEndTripConfirm}
+        onDidDismiss={() => setShowEndTripConfirm(false)}
+        header="End Trip?"
+        message={`You have ${tripStats.passengerCount} passenger${tripStats.passengerCount !== 1 ? 's' : ''} on board and collected ₱${fareCollected.toFixed(2)}. Are you sure you want to end this trip?`}
+        cssClass="solid-alert"
+        buttons={[
+          { text: 'Cancel', role: 'cancel' },
+          {
+            text: 'End Trip',
+            handler: () => {
+              setShowEndTripConfirm(false);
+              endTrip();
+            },
+          },
+        ]}
       />
 
       {/* Starting Point Selection Modal for Offline Mode */}

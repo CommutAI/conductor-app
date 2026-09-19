@@ -12,7 +12,7 @@ export interface StaffProfile {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'conductor' | 'cs_desk';
+  role: 'conductor';
   is_active: boolean;
   bus_id: string | null;
 }

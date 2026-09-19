@@ -35,7 +35,7 @@ export type Database = {
           id: string;
           full_name: string;
           email: string;
-          role: 'admin' | 'conductor' | 'cs_desk';
+          role: 'conductor';
           is_active: boolean;
           created_at: string;
         };

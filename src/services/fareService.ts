@@ -445,12 +445,33 @@ async function processTemporaryTicket(
 // ── API Functions ─────────────────────────────────────────────────────────────
 
 export async function getBaggageFees(): Promise<BaggageFee[]> {
-  // Use hardcoded baggage fees - no database or cache needed
+  // Try fetching from database first (allows admin to update fees without app release)
+  try {
+    const { data, error } = await supabase
+      .from('baggage_fee_matrix')
+      .select('id, category, max_weight_kg, fee, remarks')
+      .order('fee', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data.map(row => ({
+        id: row.id,
+        category: row.category,
+        max_weight_kg: Number(row.max_weight_kg),
+        fee: Number(row.fee),
+        remarks: row.remarks ?? undefined,
+      }));
+    }
+  } catch {
+    // Fall through to hardcoded values if DB unreachable
+  }
+
+  // Offline fallback — matches the DB seed data exactly
   return [
-    { id: 'hardcoded-1', category: 'Extra Large', max_weight_kg: 20, fee: 50, remarks: 'Oversized baggage' },
-    { id: 'hardcoded-2', category: 'Large', max_weight_kg: 15, fee: 30, remarks: 'Large baggage' },
-    { id: 'hardcoded-3', category: 'Medium', max_weight_kg: 10, fee: 20, remarks: 'Medium baggage' },
-    { id: 'hardcoded-4', category: 'Small', max_weight_kg: 7, fee: 15, remarks: 'Small baggage' },
+    { id: 'local-0', category: 'Free Carry-on', max_weight_kg: 7,  fee: 0,   remarks: 'Included in passenger fare' },
+    { id: 'local-1', category: 'Small',          max_weight_kg: 10, fee: 20,  remarks: 'Fits under seat or overhead area' },
+    { id: 'local-2', category: 'Medium',          max_weight_kg: 20, fee: 40,  remarks: 'Stored in baggage compartment' },
+    { id: 'local-3', category: 'Large',           max_weight_kg: 30, fee: 60,  remarks: 'Requires larger storage space' },
+    { id: 'local-4', category: 'Oversized',       max_weight_kg: 31, fee: 100, remarks: 'Subject to conductor approval' },
   ];
 }
 
