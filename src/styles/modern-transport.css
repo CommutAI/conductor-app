@@ -138,6 +138,18 @@ body {
   background: transparent;
 }
 
+/* ─── Fix: each IonPage must be opaque so it fully covers the page beneath it
+         during navigation. We replicate the same gradient used on html/body so
+         the visual result is identical — the background canvas still shows
+         through the transparent ion-content inside the page. ────────────────── */
+.ion-page {
+  background: linear-gradient(135deg, #0f172a 0%, #431407 50%, #0f172a 100%) !important;
+}
+
+[data-theme="dark"] .ion-page {
+  background: linear-gradient(135deg, #0a0f1e 0%, #3b0d00 50%, #0a0f1e 100%) !important;
+}
+
 .app-page-bg--gradient {
   background: transparent;
 }
