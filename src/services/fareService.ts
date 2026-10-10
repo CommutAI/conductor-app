@@ -77,6 +77,259 @@ export type ScanResult =
 
 const DEFAULT_FARE = 12;
 
+// ── Fare Matrix ───────────────────────────────────────────────────────────────
+// Based on the provided fare matrix for Manolo Fortich → Cagayan de Oro route
+// Format: from_stop -> to_stop -> { regularFare, discountedFare }
+
+const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discountedFare: number }>> = {
+  'Gaisano CDO': {
+    'Agora': { regularFare: 15, discountedFare: 15 },
+  },
+  'Agora': {
+    'Gusa': { regularFare: 15, discountedFare: 15 },
+    'Cugman': { regularFare: 20, discountedFare: 15 },
+    'Tablon Baloi': { regularFare: 25, discountedFare: 20 },
+    'Tablon': { regularFare: 25, discountedFare: 20 },
+    'Agusan': { regularFare: 30, discountedFare: 20 },
+    'Puerto': { regularFare: 30, discountedFare: 25 },
+    'Bae Upper Puerto': { regularFare: 45, discountedFare: 25 },
+    'Mambatangan': { regularFare: 45, discountedFare: 35 },
+    'Balubal': { regularFare: 45, discountedFare: 35 },
+    'Maitum': { regularFare: 50, discountedFare: 40 },
+    'Alae Manolo': { regularFare: 55, discountedFare: 45 },
+    'Lunocan': { regularFare: 65, discountedFare: 55 },
+    'Cawayanon': { regularFare: 80, discountedFare: 75 },
+    'San Miguel': { regularFare: 65, discountedFare: 55 },
+    'Dicklum': { regularFare: 75, discountedFare: 65 },
+    'Tankulan': { regularFare: 75, discountedFare: 65 },
+    'Sankanan': { regularFare: 100, discountedFare: 90 },
+    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
+  },
+  'Gusa': {
+    'Cugman': { regularFare: 15, discountedFare: 15 },
+    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
+    'Tablon': { regularFare: 15, discountedFare: 15 },
+    'Agusan': { regularFare: 20, discountedFare: 15 },
+    'Puerto': { regularFare: 23, discountedFare: 20 },
+    'Bae Upper Puerto': { regularFare: 35, discountedFare: 30 },
+    'Mambatangan': { regularFare: 40, discountedFare: 35 },
+    'Balubal': { regularFare: 40, discountedFare: 35 },
+    'Maitum': { regularFare: 48, discountedFare: 40 },
+    'Alae Manolo': { regularFare: 52, discountedFare: 45 },
+    'Lunocan': { regularFare: 55, discountedFare: 55 },
+    'Cawayanon': { regularFare: 80, discountedFare: 75 },
+    'San Miguel': { regularFare: 65, discountedFare: 55 },
+    'Dicklum': { regularFare: 75, discountedFare: 65 },
+    'Tankulan': { regularFare: 75, discountedFare: 65 },
+    'Sankanan': { regularFare: 100, discountedFare: 90 },
+    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
+  },
+  'Cugman': {
+    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
+    'Tablon': { regularFare: 15, discountedFare: 15 },
+    'Agusan': { regularFare: 17, discountedFare: 15 },
+    'Puerto': { regularFare: 20, discountedFare: 15 },
+    'Bae Upper Puerto': { regularFare: 30, discountedFare: 25 },
+    'Mambatangan': { regularFare: 35, discountedFare: 30 },
+    'Balubal': { regularFare: 35, discountedFare: 30 },
+    'Maitum': { regularFare: 40, discountedFare: 35 },
+    'Alae Manolo': { regularFare: 50, discountedFare: 40 },
+    'Lunocan': { regularFare: 50, discountedFare: 50 },
+    'Cawayanon': { regularFare: 75, discountedFare: 75 },
+    'San Miguel': { regularFare: 60, discountedFare: 50 },
+    'Dicklum': { regularFare: 70, discountedFare: 60 },
+    'Tankulan': { regularFare: 70, discountedFare: 60 },
+    'Sankanan': { regularFare: 95, discountedFare: 85 },
+    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
+  },
+  'Tablon Baloi': {
+    'Tablon': { regularFare: 15, discountedFare: 15 },
+    'Agusan': { regularFare: 15, discountedFare: 15 },
+    'Puerto': { regularFare: 15, discountedFare: 15 },
+    'Bae Upper Puerto': { regularFare: 25, discountedFare: 20 },
+    'Mambatangan': { regularFare: 30, discountedFare: 20 },
+    'Balubal': { regularFare: 30, discountedFare: 20 },
+    'Maitum': { regularFare: 35, discountedFare: 25 },
+    'Alae Manolo': { regularFare: 40, discountedFare: 30 },
+    'Lunocan': { regularFare: 50, discountedFare: 40 },
+    'Cawayanon': { regularFare: 75, discountedFare: 65 },
+    'San Miguel': { regularFare: 55, discountedFare: 45 },
+    'Dicklum': { regularFare: 60, discountedFare: 50 },
+    'Tankulan': { regularFare: 70, discountedFare: 50 },
+    'Sankanan': { regularFare: 95, discountedFare: 85 },
+    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
+  },
+  'Tablon': {
+    'Agusan': { regularFare: 15, discountedFare: 15 },
+    'Puerto': { regularFare: 15, discountedFare: 15 },
+    'Bae Upper Puerto': { regularFare: 24, discountedFare: 20 },
+    'Mambatangan': { regularFare: 30, discountedFare: 25 },
+    'Balubal': { regularFare: 30, discountedFare: 25 },
+    'Maitum': { regularFare: 35, discountedFare: 30 },
+    'Alae Manolo': { regularFare: 40, discountedFare: 35 },
+    'Lunocan': { regularFare: 45, discountedFare: 40 },
+    'Cawayanon': { regularFare: 75, discountedFare: 65 },
+    'San Miguel': { regularFare: 55, discountedFare: 45 },
+    'Dicklum': { regularFare: 60, discountedFare: 50 },
+    'Tankulan': { regularFare: 63, discountedFare: 50 },
+    'Sankanan': { regularFare: 90, discountedFare: 80 },
+    'Kalugmanan Manolo': { regularFare: 100, discountedFare: 90 },
+  },
+  'Agusan': {
+    'Puerto': { regularFare: 15, discountedFare: 15 },
+    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
+    'Mambatangan': { regularFare: 25, discountedFare: 20 },
+    'Balubal': { regularFare: 25, discountedFare: 20 },
+    'Maitum': { regularFare: 30, discountedFare: 20 },
+    'Alae Manolo': { regularFare: 35, discountedFare: 25 },
+    'Lunocan': { regularFare: 40, discountedFare: 35 },
+    'Cawayanon': { regularFare: 60, discountedFare: 50 },
+    'San Miguel': { regularFare: 50, discountedFare: 40 },
+    'Dicklum': { regularFare: 55, discountedFare: 45 },
+    'Tankulan': { regularFare: 58, discountedFare: 45 },
+    'Sankanan': { regularFare: 85, discountedFare: 75 },
+    'Kalugmanan Manolo': { regularFare: 95, discountedFare: 85 },
+  },
+  'Puerto': {
+    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
+    'Mambatangan': { regularFare: 20, discountedFare: 20 },
+    'Balubal': { regularFare: 20, discountedFare: 20 },
+    'Maitum': { regularFare: 25, discountedFare: 20 },
+    'Alae Manolo': { regularFare: 30, discountedFare: 25 },
+    'Lunocan': { regularFare: 40, discountedFare: 35 },
+    'Cawayanon': { regularFare: 60, discountedFare: 50 },
+    'San Miguel': { regularFare: 45, discountedFare: 35 },
+    'Dicklum': { regularFare: 55, discountedFare: 45 },
+    'Tankulan': { regularFare: 55, discountedFare: 45 },
+    'Sankanan': { regularFare: 80, discountedFare: 70 },
+    'Kalugmanan Manolo': { regularFare: 90, discountedFare: 80 },
+  },
+  'Bae Upper Puerto': {
+    'Mambatangan': { regularFare: 15, discountedFare: 15 },
+    'Balubal': { regularFare: 15, discountedFare: 15 },
+    'Maitum': { regularFare: 20, discountedFare: 15 },
+    'Alae Manolo': { regularFare: 25, discountedFare: 20 },
+    'Lunocan': { regularFare: 30, discountedFare: 25 },
+    'Cawayanon': { regularFare: 50, discountedFare: 40 },
+    'San Miguel': { regularFare: 40, discountedFare: 35 },
+    'Dicklum': { regularFare: 45, discountedFare: 35 },
+    'Tankulan': { regularFare: 50, discountedFare: 40 },
+    'Sankanan': { regularFare: 75, discountedFare: 65 },
+    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+  },
+  'Mambatangan': {
+    'Balubal': { regularFare: 15, discountedFare: 15 },
+    'Maitum': { regularFare: 15, discountedFare: 15 },
+    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
+    'Lunocan': { regularFare: 30, discountedFare: 20 },
+    'Cawayanon': { regularFare: 50, discountedFare:  40 },
+    'San Miguel': { regularFare: 35, discountedFare: 25 },
+    'Dicklum': { regularFare: 45, discountedFare: 35 },
+    'Tankulan': { regularFare: 48, discountedFare: 38 },
+    'Sankanan': { regularFare: 75, discountedFare: 65 },
+    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+  },
+  'Balubal': {
+    'Maitum': { regularFare: 15, discountedFare: 15 },
+    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
+    'Lunocan': { regularFare: 30, discountedFare: 20 },
+    'Cawayanon': { regularFare: 50, discountedFare: 40 },
+    'San Miguel': { regularFare: 35, discountedFare: 30 },
+    'Dicklum': { regularFare: 45, discountedFare: 35 },
+    'Tankulan': { regularFare: 48, discountedFare: 38 },
+    'Sankanan': { regularFare: 75, discountedFare: 65 },
+    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+  },
+  'Maitum': {
+    'Alae Manolo': { regularFare: 15, discountedFare: 15 },
+    'Lunocan': { regularFare: 25, discountedFare: 20 },
+    'Cawayanon': { regularFare: 40, discountedFare: 30 },
+    'San Miguel': { regularFare: 35, discountedFare: 25 },
+    'Dicklum': { regularFare: 35, discountedFare: 30 },
+    'Tankulan': { regularFare: 40, discountedFare: 30 },
+    'Sankanan': { regularFare: 65, discountedFare: 55 },
+    'Kalugmanan Manolo': { regularFare: 75, discountedFare: 65 },
+  },
+  'Alae Manolo': {
+    'Lunocan': { regularFare: 15, discountedFare: 15 },
+    'Cawayanon': { regularFare: 30, discountedFare: 25 },
+    'San Miguel': { regularFare: 20, discountedFare: 15 },
+    'Dicklum': { regularFare: 30, discountedFare: 20 },
+    'Tankulan': { regularFare: 30, discountedFare: 20 },
+    'Sankanan': { regularFare: 55, discountedFare: 45 },
+    'Kalugmanan Manolo': { regularFare: 65, discountedFare: 55 },
+  },
+  'Lunocan': {
+    'Cawayanon': { regularFare: 25, discountedFare: 15 },
+    'San Miguel': { regularFare: 20, discountedFare: 15 },
+    'Dicklum': { regularFare: 20, discountedFare: 20 },
+    'Tankulan': { regularFare: 25, discountedFare: 20 },
+    'Sankanan': { regularFare: 50, discountedFare: 40 },
+    'Kalugmanan Manolo': { regularFare: 60, discountedFare: 50 },
+  },
+  'Cawayanon': {
+    'San Miguel': { regularFare: 20, discountedFare: 15 },
+    'Dicklum': { regularFare: 20, discountedFare: 15 },
+    'Tankulan': { regularFare: 20, discountedFare: 15 },
+    'Sankanan': { regularFare: 45, discountedFare: 35 },
+    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
+  },
+  'San Miguel': {
+    'Dicklum': { regularFare: 15, discountedFare: 15 },
+    'Tankulan': { regularFare: 20, discountedFare: 15 },
+    'Sankanan': { regularFare: 45, discountedFare: 35 },
+    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
+  },
+  'Dicklum': {
+    'Tankulan': { regularFare: 15, discountedFare: 15 },
+    'Sankanan': { regularFare: 40, discountedFare: 30 },
+    'Kalugmanan Manolo': { regularFare: 50, discountedFare: 40 },
+  },
+  'Tankulan': {
+    'Sankanan': { regularFare: 25, discountedFare: 15 },
+    'Kalugmanan Manolo': { regularFare: 35, discountedFare: 25 },
+  },
+  'Sankanan': {
+    'Kalugmanan Manolo': { regularFare: 20, discountedFare: 15 },
+  },
+};
+
+/**
+ * Get fare from matrix based on origin and destination stops
+ * @param fromStop - Origin stop name
+ * @param toStop - Destination stop name
+ * @param passengerType - Passenger type (regular, student, senior_citizen, pwd)
+ * @returns Fare amount or null if route not found
+ */
+export function getFareFromMatrix(fromStop: string | undefined, toStop: string | undefined, passengerType: PassengerType = 'regular'): number | null {
+  if (!fromStop || !toStop) {
+    console.warn(`[FareMatrix] Missing fromStop or toStop`);
+    return null;
+  }
+
+  const normalizedFrom = fromStop.trim();
+  const normalizedTo = toStop.trim();
+
+  const fromRoutes = FARE_MATRIX[normalizedFrom];
+  if (!fromRoutes) {
+    console.warn(`[FareMatrix] No fare data found for origin: ${normalizedFrom}`);
+    return null;
+  }
+
+  const fareData = fromRoutes[normalizedTo];
+  if (!fareData) {
+    console.warn(`[FareMatrix] No fare data found for destination: ${normalizedTo} from ${normalizedFrom}`);
+    return null;
+  }
+
+  // Return discounted fare for student, senior_citizen, pwd
+  if (passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd') {
+    return fareData.discountedFare;
+  }
+
+  return fareData.regularFare;
+}
+
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
 function normalizeQrCode(scannedUid: string): string {
@@ -105,11 +358,37 @@ function normalizeRoute(route: string): string {
 
 // ── Fare Calculation ─────────────────────────────────────────────────────────
 
-export function calculateFare(baseFare: number, passengerType: PassengerType, baggageSelection?: BaggageSelection): FareCalculationResult {
+export function calculateFare(
+  baseFare: number,
+  passengerType: PassengerType,
+  baggageSelection?: BaggageSelection,
+  fromStop?: string | undefined,
+  toStop?: string | undefined
+): FareCalculationResult {
+  // Use fare matrix if both stops are provided
+  if (fromStop && toStop) {
+    const matrixFare = getFareFromMatrix(fromStop, toStop, passengerType);
+    if (matrixFare !== null) {
+      const baggageFee = baggageSelection?.fee || 0;
+      const totalFare = matrixFare + baggageFee;
+
+      return {
+        baseFare: matrixFare,
+        discountPercentage: passengerType === 'regular' ? 0 : 0.20,
+        discountAmount: passengerType === 'regular' ? 0 : matrixFare * 0.20,
+        finalFare: matrixFare,
+        passengerType,
+        baggageFee,
+        totalFare
+      };
+    }
+  }
+
+  // Fallback to default calculation if matrix lookup fails or stops not provided
   const discountPercentage = getDiscountPercentage(passengerType);
   const discountAmount = baseFare * discountPercentage;
   const finalFare = baseFare - discountAmount;
-  
+
   const baggageFee = baggageSelection?.fee || 0;
   const totalFare = finalFare + baggageFee;
 
@@ -148,9 +427,10 @@ export async function processScan(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'qr_card' | 'cash' = 'qr_card',
+  paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
+  console.log('[FareService] processScan called with boardingStop:', boardingStop, 'currentDestination:', currentDestination);
   const normalizedUid = normalizeQrCode(scannedUid);
 
   // Check cache for QR card first
@@ -212,7 +492,7 @@ async function processQRCard(
   baggageFee?: number,
   baggageCategory?: string,
   baggageWeight?: number,
-  paymentMethod: 'card' | 'qr_card' | 'cash' = 'qr_card',
+  paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
   // Check for fake QR
@@ -244,7 +524,7 @@ async function processQRCard(
   // Find the most recent active (not yet alighted) boarding for this card on this trip
   const boardedPassengerResult = await supabase
     .from('boarded_passengers')
-    .select('id, alighted_at')
+    .select('id, alighted_at, boarding_stop')
     .eq('trip_id', tripId)
     .eq('card_id', card.id)
     .is('alighted_at', null)
@@ -257,7 +537,7 @@ async function processQRCard(
   if (!boardedPassenger.data) {
     boardedPassenger = await supabase
       .from('boarded_passengers')
-      .select('id, alighted_at')
+      .select('id, alighted_at, boarding_stop')
       .eq('trip_id', tripId)
       .eq('temp_ticket_id', card.id)
       .is('alighted_at', null)
@@ -300,11 +580,18 @@ async function processQRCard(
     return { status: 'qr_inactive' };
   }
 
-  const fare = DEFAULT_FARE;
+  // Calculate fare using matrix if boarding stop and destination are provided
+  let fare = DEFAULT_FARE;
+  if (scanType === 'onboarding' && boardingStop && currentDestination) {
+    const matrixFare = getFareFromMatrix(boardingStop, currentDestination, card.passenger_type);
+    if (matrixFare !== null) {
+      fare = matrixFare;
+    }
+  }
   const totalFare = fare + (baggageFee || 0);
 
   if (scanType === 'onboarding') {
-    // For card payments, check balance. For cash payments, skip balance check.
+    // For card payments, check balance. For cash and GCash payments, skip balance check.
     const isCardPayment = paymentMethod === 'card' || paymentMethod === 'qr_card';
     if (isCardPayment && card.balance < totalFare) {
       return { status: 'qr_fail_balance', balance: card.balance, fare: totalFare, baggageFee, totalFare };
@@ -334,7 +621,7 @@ async function processQRCard(
       trip_id: tripId,
       type: 'fare_validation',
       amount: totalFare,
-      channel: paymentMethod === 'cash' ? 'cash' : 'qr_card',
+      channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
       staff_id: conductorId,
       baggage_category: baggageCategory || null,
       baggage_weight: baggageWeight || null,
@@ -348,7 +635,7 @@ async function processQRCard(
       trip_id: tripId,
       card_id: card.id,
       boarded_at: new Date().toISOString(),
-      payment_method: paymentMethod === 'cash' ? 'cash' : 'qr_card',
+      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
       boarding_stop: boardingStop || null,
       destination_stop: currentDestination || null,
     });

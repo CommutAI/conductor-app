@@ -14,6 +14,7 @@ interface StaffProfile {
   role: 'conductor';
   is_active: boolean;
   bus_id: string | null;
+  emergency_phone?: string;
 }
 
 interface Bus {

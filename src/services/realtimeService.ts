@@ -239,6 +239,36 @@ class RealtimeService {
   }
 
   /**
+   * Subscribe to GPS location updates for a specific bus
+   */
+  subscribeToGpsLocations(busId: string, callbacks: {
+    onInsert?: (location: any) => void;
+    onUpdate?: (location: any, oldLocation: any) => void;
+  }): () => void {
+    return this.subscribe({
+      table: 'bus_locations',
+      filter: `bus_id=eq.${busId}`,
+      onInsert: callbacks.onInsert,
+      onUpdate: callbacks.onUpdate,
+    });
+  }
+
+  /**
+   * Subscribe to AI passenger count updates for a specific bus
+   */
+  subscribeToAiPassengerCounts(busId: string, callbacks: {
+    onInsert?: (count: any) => void;
+    onUpdate?: (count: any, oldCount: any) => void;
+  }): () => void {
+    return this.subscribe({
+      table: 'ai_passenger_counts',
+      filter: `bus_id=eq.${busId}`,
+      onInsert: callbacks.onInsert,
+      onUpdate: callbacks.onUpdate,
+    });
+  }
+
+  /**
    * Cleanup all subscriptions
    */
   cleanup() {

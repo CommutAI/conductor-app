@@ -592,7 +592,9 @@ class OfflineQueueService {
     }
 
     const paymentMethod =
-      scan.paymentMethod === 'cash' ? 'cash' : tempTicketId ? 'ticket' : 'qr_card';
+      scan.paymentMethod === 'cash' ? 'cash' : 
+      scan.paymentMethod === 'gcash' ? 'gcash' : 
+      tempTicketId ? 'ticket' : 'qr_card';
 
     // Implement two-phase commit for atomicity
     let passengerId: string | null = null;
@@ -629,7 +631,7 @@ class OfflineQueueService {
           amount: totalAmount,
           baggage_fee: scan.baggageFee || null,
           type: 'fare_validation',
-          channel: scan.paymentMethod === 'cash' ? 'cash' : 'offline_sync',
+          channel: scan.paymentMethod === 'cash' ? 'cash' : scan.paymentMethod === 'gcash' ? 'gcash' : 'offline_sync',
           created_at: scan.timestamp,
         });
 

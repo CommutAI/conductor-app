@@ -101,25 +101,25 @@ const ProfilePage: React.FC = () => {
       const alertData = await insertEmergencyAlertWithRetry(gpsPosition, locationName, alertType);
       
       // Step 4: Queue SMS with comprehensive information
-      if (profile.emergency_phone) {
+      if (profile?.emergency_phone) {
         const location = gpsPosition ? {
           lat: gpsPosition.lat,
           lng: gpsPosition.lng
         } : undefined;
 
         await smsService.queueEmergencySMS(
-          profile.emergency_phone,
+          profile?.emergency_phone || '',
           {
             emergencyType: alertType,
             location,
             locationName,
-            tripId: currentTrip.id,
+            tripId: currentTrip?.id || '',
             busInfo: currentBus ? {
               plateNumber: currentBus.plate_number,
               route: currentBus.route
             } : undefined,
             driverName,
-            conductorName: profile.full_name
+            conductorName: profile?.full_name || 'Conductor'
           }
         );
       }
@@ -169,8 +169,8 @@ const ProfilePage: React.FC = () => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const { data: alert, error: insertError } = await supabase.from('emergency_alerts').insert({
-          conductor_id: profile.id,
-          trip_id: currentTrip.id,
+          conductor_id: profile?.id || '',
+          trip_id: currentTrip?.id || '',
           lat: gpsPosition?.lat,
           lng: gpsPosition?.lng,
           location_name: locationName,
@@ -195,8 +195,8 @@ const ProfilePage: React.FC = () => {
   // Helper function: Send minimal emergency alert as final fallback
   async function sendMinimalEmergencyAlert(driverName: string, alertType: string): Promise<void> {
     const { data: alert, error: dbError } = await supabase.from('emergency_alerts').insert({
-      conductor_id: profile.id,
-      trip_id: currentTrip.id,
+      conductor_id: profile?.id || '',
+      trip_id: currentTrip?.id || '',
       status: 'active',
       type: alertType,
       location_source: 'fallback',
@@ -205,19 +205,19 @@ const ProfilePage: React.FC = () => {
 
     if (dbError) throw dbError;
 
-    if (profile.emergency_phone) {
+    if (profile?.emergency_phone) {
       await smsService.queueEmergencySMS(
-        profile.emergency_phone,
+        profile?.emergency_phone || '',
         {
           emergencyType: alertType,
           location: undefined,
-          tripId: currentTrip.id,
+          tripId: currentTrip?.id || '',
           busInfo: currentBus ? {
             plateNumber: currentBus.plate_number,
             route: currentBus.route
           } : undefined,
           driverName,
-          conductorName: profile.full_name
+          conductorName: profile?.full_name || 'Conductor'
         }
       );
     }
