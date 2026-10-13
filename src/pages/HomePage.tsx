@@ -4,16 +4,27 @@ import {
   IonContent,
   IonSpinner,
   IonToast,
-  IonFab,
-  IonFabButton,
   IonRefresher,
   IonRefresherContent,
-  IonAlert,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Bus, ScanLine,
+  Bus,
+  ScanLine,
+  Users,
+  Wallet,
+  Gauge,
+  Radio,
+  Clock,
+  ChevronRight,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
+  History,
+  Activity,
+  User,
+  Calendar,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -80,6 +91,33 @@ const HomePage: React.FC = () => {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   }, [currentDate]);
+
+  const formattedDate = useMemo(() => {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    }).format(currentDate);
+  }, [currentDate]);
+
+  const seatCapacity = currentBus?.seat_capacity || 50;
+  const occupancyPercent = Math.min(Math.round((validatedCount / seatCapacity) * 100), 100);
+  const remainingSeats = Math.max(0, seatCapacity - validatedCount);
+
+  const occupancyStatus = useMemo(() => {
+    if (validatedCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
+    if (validatedCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
+    return { label: 'Seats Available', variant: 'success' as const };
+  }, [validatedCount, seatCapacity]);
+
+  const tripStartTime = useMemo(() => {
+    if (!currentTrip?.started_at) return null;
+    try {
+      return new Date(currentTrip.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return null;
+    }
+  }, [currentTrip?.started_at]);
 
   // Handlers
 
@@ -531,7 +569,13 @@ const HomePage: React.FC = () => {
                 {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'inactive' ? 'No GPS' : 'GPS...'}
               </span>
             </div>
-            <ProfileAvatar name={profile?.full_name || 'User'} size="sm" />
+            <div
+              onClick={() => history.push('/profile')}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title="View Profile"
+            >
+              <ProfileAvatar name={profile?.full_name || 'User'} size="sm" />
+            </div>
           </div>
         }
       />
@@ -548,8 +592,34 @@ const HomePage: React.FC = () => {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            style={{ marginBottom: 20 }}
+            style={{ marginBottom: 18 }}
           >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: 'rgba(255, 255, 255, 0.75)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}>
+                <Calendar size={13} />
+                {formattedDate}
+              </span>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 10,
+                background: hasActiveTrip ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.15)',
+                color: hasActiveTrip ? '#4ade80' : 'rgba(255, 255, 255, 0.9)',
+                border: `1px solid ${hasActiveTrip ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+              }}>
+                {hasActiveTrip ? 'Shift Active' : 'Shift Standby'}
+              </span>
+            </div>
             <h1 style={{
               margin: 0,
               fontSize: '1.75rem',
@@ -562,128 +632,375 @@ const HomePage: React.FC = () => {
             </h1>
             <p style={{
               margin: 0,
-              fontSize: '0.95rem',
+              fontSize: '0.9rem',
               color: 'rgba(255, 255, 255, 0.85)',
               fontWeight: 500
             }}>
-              {hasActiveTrip ? 'Your trip is in progress' : 'Ready to start your shift'}
+              {hasActiveTrip
+                ? `In Transit • Bus #${currentBus?.plate_number || ''}`
+                : 'Ready for departure • Awaiting driver'}
             </p>
           </motion.div>
 
           {!hasActiveTrip ? (
-            /* No Active Trip - Show Waiting for Driver Message */
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden' }}>
-                {/* Decorative Elements */}
-                <div style={{
-                  position: 'absolute',
-                  top: -50,
-                  right: -50,
-                  width: 200,
-                  height: 200,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%',
-                  filter: 'blur(40px)'
-                }} />
-                <div style={{
-                  position: 'absolute',
-                  bottom: -30,
-                  left: -30,
-                  width: 150,
-                  height: 150,
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: '50%',
-                  filter: 'blur(30px)'
-                }} />
+            /* No Active Trip - Polished Waiting for Driver View */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Hero Waiting Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+              >
+                <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden', position: 'relative' }}>
+                  {/* Decorative Ambient Background Elements */}
+                  <div style={{
+                    position: 'absolute',
+                    top: -40,
+                    right: -40,
+                    width: 180,
+                    height: 180,
+                    background: 'rgba(255, 255, 255, 0.12)',
+                    borderRadius: '50%',
+                    filter: 'blur(35px)',
+                    pointerEvents: 'none',
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: -30,
+                    left: -30,
+                    width: 140,
+                    height: 140,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: '50%',
+                    filter: 'blur(25px)',
+                    pointerEvents: 'none',
+                  }} />
 
-                <div style={{ padding: '16px 12px', position: 'relative', zIndex: 1 }}>
-                  {/* Animated Illustration */}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                    <AnimatedIllustration type="waiting" size={60} />
+                  <div style={{ padding: '24px 20px', position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                    {/* Animated Waiting Illustration */}
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+                      <AnimatedIllustration type="waiting" size={68} />
+                    </div>
+
+                    {/* Status Pill */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '4px 12px',
+                      borderRadius: 20,
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      marginBottom: 12,
+                    }}>
+                      <div style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#fde047',
+                        boxShadow: '0 0 8px #fde047',
+                        animation: 'pulse 1.5s infinite',
+                      }} />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.5px' }}>
+                        AWAITING DEPARTURE
+                      </span>
+                    </div>
+
+                    <h2 style={{
+                      margin: '0 0 6px',
+                      fontSize: '1.4rem',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      letterSpacing: '-0.4px',
+                    }}>
+                      Waiting for Driver
+                    </h2>
+
+                    <p style={{
+                      margin: '0 auto 16px',
+                      fontSize: '0.88rem',
+                      color: 'rgba(255, 255, 255, 0.92)',
+                      lineHeight: 1.45,
+                      fontWeight: 400,
+                      maxWidth: 320,
+                    }}>
+                      {profile?.bus_id
+                        ? 'The driver will start the trip from the terminal console. Scanner and trip metrics will activate automatically.'
+                        : 'No bus assigned to your account. Please contact your dispatch administrator.'}
+                    </p>
+
+                    {/* Bus Info Glass Chip inside Hero */}
+                    {profile?.bus_id && (
+                      <div
+                        className="glass-chip"
+                        style={{
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          textAlign: 'left',
+                          background: 'rgba(255, 255, 255, 0.18)',
+                          backdropFilter: 'blur(12px)',
+                          borderRadius: 14,
+                        }}
+                      >
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.25)',
+                          borderRadius: 10,
+                          padding: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff',
+                        }}>
+                          <Bus size={22} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{
+                            margin: '0 0 2px',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.6px',
+                          }}>
+                            Assigned Bus
+                          </p>
+                          <p style={{
+                            margin: 0,
+                            color: '#ffffff',
+                            fontSize: '1rem',
+                            fontWeight: 800,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            Bus #{currentBus?.plate_number || 'Loading...'}
+                          </p>
+                        </div>
+                        <div style={{
+                          padding: '4px 8px',
+                          borderRadius: 8,
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          color: '#ffffff',
+                        }}>
+                          {currentBus?.seat_capacity ? `${currentBus.seat_capacity} Seats` : 'Assigned'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </SoftCard>
+              </motion.div>
+
+              {/* Conductor Pre-Shift Readiness Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+              >
+                <SoftCard padding="md">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                    <ShieldCheck size={18} color="var(--color-primary)" />
+                    <h3 style={{
+                      margin: 0,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: 'var(--text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.8px',
+                    }}>
+                      Pre-Shift Readiness
+                    </h3>
                   </div>
 
-                  <h2 style={{
-                    margin: '0 0 4px',
-                    fontSize: '1.2rem',
-                    fontWeight: 800,
-                    color: 'white',
-                    textAlign: 'center',
-                    letterSpacing: '-0.5px'
-                  }}>
-                    Waiting for Driver
-                  </h2>
-
-                  <p style={{
-                    margin: '0 0 16px',
-                    fontSize: '0.85rem',
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    textAlign: 'center',
-                    lineHeight: 1.4,
-                    fontWeight: 400
-                  }}>
-                    {profile?.bus_id
-                      ? 'The driver will start the trip. You can begin scanning passengers once the trip is active.'
-                      : 'No bus assigned. Please contact your administrator.'}
-                  </p>
-
-                  {/* Bus Info Card */}
-                  {profile?.bus_id && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                      className="glass-chip"
-                      style={{
-                        padding: '10px',
-                        marginBottom: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8
-                      }}
-                    >
-                      <div style={{
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        borderRadius: 6,
-                        padding: 6,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <Bus size={16} color="white" />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Ticket Scanner (QR & NFC Barcode)
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <p style={{
-                          margin: '0 0 1px',
-                          color: 'rgba(255, 255, 255, 0.7)',
-                          fontSize: '0.65rem',
-                          fontWeight: 600,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
-                        }}>
-                          Assigned Bus
-                        </p>
-                        <p style={{
-                          margin: 0,
-                          color: 'white',
-                          fontSize: '0.85rem',
-                          fontWeight: 700
-                        }}>
-                          Bus #{currentBus?.plate_number || 'Loading...'}
-                        </p>
+                      <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>Ready</span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Offline Fare Matrix & Cache
                       </div>
-                    </motion.div>
-                  )}
+                      <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>Cached</span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color={isOnline ? '#10b981' : '#f59e0b'} />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Real-time Fleet Dispatch Link
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: isOnline ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                        {isOnline ? 'Connected' : 'Offline Ready'}
+                      </span>
+                    </div>
+                  </div>
+                </SoftCard>
+              </motion.div>
+
+              {/* Quick Navigation Cards */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  onClick={() => history.push('/history')}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 14,
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'rgba(249, 115, 22, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-primary)',
+                    marginBottom: 8,
+                  }}>
+                    <History size={16} />
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Trip History
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Past shifts & sales
+                  </div>
                 </div>
-              </SoftCard>
-            </motion.div>
+
+                <div
+                  onClick={() => history.push('/profile')}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 14,
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#3b82f6',
+                    marginBottom: 8,
+                  }}>
+                    <User size={16} />
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Profile & Staff
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Account settings
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           ) : (
-            /* Active Trip - Show Simplified Stats */
+            /* Active Trip - Full Conductor Dashboard */
             <>
-              {/* Combined Stats Card - Professional Design */}
+              {/* Live Trip Status Bar */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  marginBottom: 16,
+                  padding: '12px 16px',
+                  borderRadius: 16,
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: '#10b981',
+                    boxShadow: '0 0 10px #10b981',
+                    animation: 'pulse 1.8s infinite',
+                  }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.5px' }}>
+                    TRIP IN PROGRESS
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {tripStartTime && (
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.85)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={13} />
+                      {tripStartTime}
+                    </span>
+                  )}
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: 12,
+                    background: 'rgba(249, 115, 22, 0.25)',
+                    color: '#ffedd5',
+                    border: '1px solid rgba(249, 115, 22, 0.4)',
+                  }}>
+                    Bus #{currentBus?.plate_number || '---'}
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* Passenger Occupancy & Capacity Card */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -693,180 +1010,379 @@ const HomePage: React.FC = () => {
                 <SoftCard
                   style={{
                     padding: '20px',
-                    background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05)',
-                    border: '1px solid rgba(0, 0, 0, 0.06)'
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(20px)',
+                    border: '1px solid var(--border-subtle)',
+                    boxShadow: 'var(--shadow-md)',
                   }}
                 >
                   {/* Card Header */}
-                  <div style={{ marginBottom: 20 }}>
-                    <h3 style={{
-                      margin: 0,
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      color: 'var(--text-secondary)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '1px',
-                      marginBottom: 4
-                    }}>
-                      Trip Overview
-                    </h3>
-                    <p style={{
-                      margin: 0,
-                      fontSize: '0.75rem',
-                      color: 'var(--text-tertiary)',
-                      fontWeight: 500
-                    }}>
-                      Real-time passenger and fare metrics
-                    </p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                    <div>
+                      <p style={{
+                        margin: 0,
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                      }}>
+                        Passenger Occupancy
+                      </p>
+                      <h3 style={{
+                        margin: '2px 0 0',
+                        fontSize: '1.05rem',
+                        fontWeight: 800,
+                        color: 'var(--text-primary)',
+                      }}>
+                        {currentBus?.route || 'Active Route'}
+                      </h3>
+                    </div>
+                    <StatusBadge variant={occupancyStatus.variant} dot={true}>
+                      {occupancyStatus.label}
+                    </StatusBadge>
                   </div>
 
-                  {/* Unified Stats Card */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.3 }}
-                    style={{
-                      padding: '24px',
-                      borderRadius: 16,
-                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05)',
-                      marginBottom: 24
-                    }}
-                  >
-                    {/* Content Layout */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 24, alignItems: 'center' }}>
-                      {/* Left Side - Circular Passenger Count */}
-                      <div style={{ position: 'relative' }}>
-                        <svg width="120" height="120" viewBox="0 0 120 120">
-                          {/* Background circle */}
-                          <circle
-                            cx="60"
-                            cy="60"
-                            r="50"
-                            fill="none"
-                            stroke="rgba(16, 185, 129, 0.1)"
-                            strokeWidth="8"
-                          />
-                          {/* Progress circle */}
-                          <motion.circle
-                            cx="60"
-                            cy="60"
-                            r="50"
-                            fill="none"
-                            stroke="url(#circleGradient)"
-                            strokeWidth="8"
-                            strokeLinecap="round"
-                            strokeDasharray={`${2 * Math.PI * 50}`}
-                            strokeDashoffset={`${2 * Math.PI * 50 * (1 - Math.min((validatedCount / (currentBus?.seat_capacity || 50)) || 0, 1))}`}
-                            initial={{ strokeDashoffset: 2 * Math.PI * 50 }}
-                            animate={{ strokeDashoffset: 2 * Math.PI * 50 * (1 - Math.min((validatedCount / (currentBus?.seat_capacity || 50)) || 0, 1)) }}
-                            transition={{ duration: 1, ease: "easeOut" }}
-                            transform="rotate(-90 60 60)"
-                          />
-                          {/* Gradient definition */}
-                          <defs>
-                            <linearGradient id="circleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                              <stop offset="0%" stopColor="#10b981" />
-                              <stop offset="100%" stopColor="#059669" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
-                        {/* Center content - only count */}
-                        <div style={{
-                          position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
+                  {/* Gauge and Breakdown Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                    {/* Radial Progress Ring */}
+                    <div style={{ position: 'relative', width: 110, height: 110, flexShrink: 0 }}>
+                      <svg width="110" height="110" viewBox="0 0 110 110">
+                        <circle
+                          cx="55"
+                          cy="55"
+                          r="44"
+                          fill="none"
+                          stroke="var(--bg-secondary)"
+                          strokeWidth="8"
+                        />
+                        <motion.circle
+                          cx="55"
+                          cy="55"
+                          r="44"
+                          fill="none"
+                          stroke={occupancyPercent >= 100 ? '#ef4444' : occupancyPercent >= 80 ? '#f59e0b' : '#10b981'}
+                          strokeWidth="8"
+                          strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 44}`}
+                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1))}`}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 44 }}
+                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1)) }}
+                          transition={{ duration: 1, ease: 'easeOut' }}
+                          transform="rotate(-90 55 55)"
+                        />
+                      </svg>
+                      <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <span style={{
+                          fontSize: '1.35rem',
+                          fontWeight: 900,
+                          color: 'var(--text-primary)',
+                          lineHeight: 1,
                         }}>
-                          <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 600, color: '#10b981', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            Passengers
-                          </p>
-                          <p style={{ margin: '2px 0 0', fontSize: '1.5rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
-                            {validatedCount}
-                          </p>
+                          {occupancyPercent}%
+                        </span>
+                        <span style={{
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          color: 'var(--text-tertiary)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          marginTop: 3,
+                        }}>
+                          Capacity
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Labeled Metrics Stack */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            Validated Onboard
+                          </div>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-primary)' }}>
+                            {validatedCount} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)' }}>passengers</span>
+                          </div>
+                        </div>
+                        <div style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          background: 'rgba(249, 115, 22, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--color-primary)',
+                        }}>
+                          <Users size={16} />
                         </div>
                       </div>
 
-                      {/* Right Side - Capacity Ratio and Revenue */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Capacity Ratio */}
-                        <div style={{
-                          padding: '16px 20px',
-                          borderRadius: 12,
-                          background: 'rgba(16, 185, 129, 0.05)',
-                          border: '1px solid rgba(16, 185, 129, 0.1)',
-                          textAlign: 'center'
-                        }}>
-                          <p style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
-                            {validatedCount} / {currentBus?.seat_capacity || '—'}
-                          </p>
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            Available Seats
+                          </div>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: remainingSeats > 0 ? '#10b981' : '#ef4444' }}>
+                            {remainingSeats} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)' }}>/ {seatCapacity}</span>
+                          </div>
                         </div>
-
-                        {/* Revenue Section */}
                         <div style={{
-                          padding: '16px 20px',
-                          borderRadius: 12,
-                          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%)',
-                          border: '1px solid rgba(59, 130, 246, 0.15)',
-                          textAlign: 'center'
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          background: remainingSeats > 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: remainingSeats > 0 ? '#10b981' : '#ef4444',
                         }}>
-                          <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 800, color: '#2563eb', lineHeight: 1 }}>
-                            ₱{fareCollected.toFixed(0)}
-                          </p>
+                          <Gauge size={16} />
                         </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
+
+                  {/* AI Camera Cross-verification Pill */}
+                  {aiPassengerCount > 0 && (
+                    <div style={{
+                      marginTop: 14,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Sparkles size={14} color="#3b82f6" />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          AI Camera Count:
+                        </span>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#3b82f6' }}>
+                          {aiPassengerCount}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        color: aiPassengerCount === validatedCount ? '#10b981' : '#f59e0b',
+                      }}>
+                        {aiPassengerCount === validatedCount ? 'Count Matched' : `${Math.abs(aiPassengerCount - validatedCount)} discrepancy`}
+                      </span>
+                    </div>
+                  )}
                 </SoftCard>
               </motion.div>
 
-              {/* Home Page Image - Enhanced */}
+              {/* Financial & Validations KPI Row */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <DashboardCard
+                  icon={Wallet}
+                  label="Fare Collected"
+                  value={`₱${fareCollected.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                  trend="Live Trip Total"
+                  iconColor="#10b981"
+                  iconBg="rgba(16, 185, 129, 0.12)"
+                  delay={0.1}
+                />
+                <DashboardCard
+                  icon={ScanLine}
+                  label="Tickets Validated"
+                  value={validatedCount.toString()}
+                  trend="Scanned Entries"
+                  iconColor="#3b82f6"
+                  iconBg="rgba(59, 130, 246, 0.12)"
+                  delay={0.2}
+                />
+              </motion.div>
+
+              {/* Primary Action Button: Open Scanner */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.35 }}
+                style={{ marginBottom: 12 }}
+              >
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => history.push('/scan')}
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    borderRadius: 18,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 8px 24px rgba(249, 115, 22, 0.35)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      background: 'rgba(255, 255, 255, 0.22)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <ScanLine size={24} color="#ffffff" />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.3px', color: '#ffffff' }}>
+                        Scan Passengers
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500 }}>
+                        QR Cards, Temporary Tickets & GCash
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight size={22} color="#ffffff" />
+                </motion.button>
+              </motion.div>
+
+              {/* Secondary Action: Passenger Manifest */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.4 }}
                 style={{ marginBottom: 16 }}
               >
-                <div style={{
-                  position: 'relative',
-                  borderRadius: 16,
-                  overflow: 'hidden',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08)'
-                }}>
-                  <img
-                    src="/assets/home-page image.jpg"
-                    alt="CommutAI Card Scanning"
-                    style={{
-                      width: '100%',
-                      height: 'auto',
-                      display: 'block',
-                      objectFit: 'cover'
-                    }}
-                  />
-                  {/* Gradient overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.1) 100%)',
-                    pointerEvents: 'none'
-                  }} />
-                </div>
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => history.push('/passengers')}
+                  style={{
+                    width: '100%',
+                    padding: '13px 18px',
+                    borderRadius: 14,
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    color: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#3b82f6',
+                    }}>
+                      <Users size={18} />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Passenger Manifest
+                      </div>
+                      <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>
+                        Review onboard passengers & alighting stops
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight size={18} color="var(--text-tertiary)" />
+                </motion.button>
+              </motion.div>
+
+              {/* Live Telemetry & GPS Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.45 }}
+                style={{ marginBottom: 20 }}
+              >
+                <SoftCard padding="sm">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Radio size={15} color="var(--color-primary)" />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--text-secondary)' }}>
+                        Vehicle Telemetry
+                      </span>
+                    </div>
+                    <StatusBadge variant={isOnline ? 'success' : 'warning'} dot={true} pulse={isOnline}>
+                      {isOnline ? 'Cloud Synced' : 'Offline Buffer'}
+                    </StatusBadge>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
+                    <div style={{ padding: '8px 4px', background: 'var(--bg-secondary)', borderRadius: 10 }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>Vehicle Speed</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
+                        {gpsSpeed > 0 ? `${Math.round(gpsSpeed)} km/h` : '0 km/h'}
+                      </div>
+                    </div>
+                    <div style={{ padding: '8px 4px', background: 'var(--bg-secondary)', borderRadius: 10 }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>GPS Status</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: gpsStatus === 'active' ? '#10b981' : '#f59e0b', marginTop: 2 }}>
+                        {gpsStatus === 'active' ? 'Locked' : gpsStatus === 'searching' ? 'Searching' : 'Standby'}
+                      </div>
+                    </div>
+                    <div style={{ padding: '8px 4px', background: 'var(--bg-secondary)', borderRadius: 10 }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>Telemetry Sync</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
+                        {gpsLastUpdate ? new Date(gpsLastUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active'}
+                      </div>
+                    </div>
+                  </div>
+                </SoftCard>
               </motion.div>
             </>
           )}
         </div>
       </IonContent>
 
-      {hasActiveTrip && (
-        <IonFab slot="fixed" vertical="bottom" horizontal="end">
-          <IonFabButton className="fab-scan" onClick={() => history.push('/scan')}>
-            <ScanLine size={28} color="white" />
-          </IonFabButton>
-        </IonFab>
-      )}
 
       <BottomNav />
 
