@@ -8,6 +8,7 @@ import {
   MapPin, AlertTriangle, X, CreditCard,
   XCircle, Navigation, ChevronRight, Package, Loader,
   LogIn, LogOut as AlightIcon,
+  Smartphone, Banknote, Maximize2, QrCode,
 } from 'lucide-react';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { useApp } from '../context/AppContext';
@@ -191,6 +192,8 @@ const ScanPage: React.FC = () => {
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<string>('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'qr_card' | 'cash' | 'gcash' | ''>('');
+  const [gcashRefNumber, setGcashRefNumber] = useState<string>('');
+  const [showGcashQrZoom, setShowGcashQrZoom] = useState<boolean>(false);
   const [baggageSelection, setBaggageSelection] = useState<BaggageSelection | null>(null);
   const [showBaggageSelector, setShowBaggageSelector] = useState(false);
   const [pendingAlighting, setPendingAlighting] = useState<any | null>(null);
@@ -552,8 +555,12 @@ const ScanPage: React.FC = () => {
       }
     }
 
+    const cardBalance = detectedType.isTicket ? 0 : (StorageService.getCachedCard(normalizedCode)?.balance ?? 999);
+    const defaultMethod = detectedType.isTicket ? 'cash' : (cardBalance >= estimatedFare ? 'qr_card' : 'cash');
     setSelectedDestination('');
-    setSelectedPaymentMethod('');
+    setSelectedPaymentMethod(defaultMethod);
+    setGcashRefNumber('');
+    setShowGcashQrZoom(false);
     // Go directly to destination picker where boarding point will be selected
     setScanState('pick_destination');
     return true;
@@ -678,7 +685,9 @@ const ScanPage: React.FC = () => {
             tempTicketId: ticket.id,
           });
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('cash');
+          setGcashRefNumber('');
+          setShowGcashQrZoom(false);
           setScanState('pick_destination');
           return;
         }
@@ -758,8 +767,11 @@ const ScanPage: React.FC = () => {
           isTicket: false,
           cardId: card.id,
         });
+        const defaultMethod = Number(card.balance) >= DEFAULT_FARE ? 'qr_card' : 'cash';
         setSelectedDestination('');
-    setSelectedPaymentMethod('');
+        setSelectedPaymentMethod(defaultMethod);
+        setGcashRefNumber('');
+        setShowGcashQrZoom(false);
         setScanState('pick_destination');
         return;
       }
@@ -789,17 +801,32 @@ const ScanPage: React.FC = () => {
     console.log('currentTrip:', currentTrip);
     console.log('profile:', profile);
 
-    if (!pendingScan || !selectedDestination || !selectedPaymentMethod || !currentTrip || !profile) {
+    if (!pendingScan || !selectedDestination || !currentTrip || !profile) {
       console.error('Missing required data for boarding:', {
         hasPendingScan: !!pendingScan,
         hasSelectedDestination: !!selectedDestination,
-        hasSelectedPaymentMethod: !!selectedPaymentMethod,
         hasCurrentTrip: !!currentTrip,
         hasProfile: !!profile
       });
-      setFailedMsg('Please select destination and payment method');
+      setFailedMsg('Please select a destination');
       setScanState('failed');
       return;
+    }
+
+    // Smart payment method fallback so onboarding never fails abruptly
+    let effectivePaymentMethod = selectedPaymentMethod;
+    if (!effectivePaymentMethod) {
+      if (pendingScan.isTicket) {
+        effectivePaymentMethod = 'cash';
+      } else {
+        const fromStop = selectedBoardingPoint || currentStopName || undefined;
+        const passengerType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+        const matrixFare = getFareFromMatrix(fromStop, selectedDestination, passengerType);
+        const finalFare = matrixFare !== null ? matrixFare : (pendingScan.fare || 0);
+        const totalFare = finalFare + (baggageSelection?.fee || 0);
+        effectivePaymentMethod = pendingScan.balance >= totalFare ? 'qr_card' : 'cash';
+      }
+      setSelectedPaymentMethod(effectivePaymentMethod);
     }
 
     // For offline mode, require boarding point selection
@@ -812,7 +839,7 @@ const ScanPage: React.FC = () => {
     await commitBoardingWithDestination(
       pendingScan.code,
       selectedDestination,
-      selectedPaymentMethod,
+      effectivePaymentMethod,
       selectedBoardingPoint || undefined
     );
   }
@@ -820,6 +847,19 @@ const ScanPage: React.FC = () => {
   /** Handle payment method selection change */
   function handlePaymentMethodChange(method: string) {
     setSelectedPaymentMethod(method as 'qr_card' | 'cash' | 'gcash');
+  }
+
+  /** Handle destination change and dynamically update calculated fare */
+  function handleDestinationSelect(dest: string) {
+    setSelectedDestination(dest);
+    if (pendingScan) {
+      const fromStop = selectedBoardingPoint || currentStopName || undefined;
+      const passengerType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+      const matrixFare = dest ? getFareFromMatrix(fromStop, dest, passengerType) : null;
+      if (matrixFare !== null) {
+        setPendingScan(prev => prev ? { ...prev, fare: matrixFare } : null);
+      }
+    }
   }
 
   /** Commit boarding with a specific destination (used for both manual and auto-confirm) */
@@ -2112,6 +2152,24 @@ const ScanPage: React.FC = () => {
                       </span>
                       <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '0.75rem', textAlign: 'center' }}>{successMsg}</span>
 
+                      {successMsg.includes('GCash') && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          background: 'rgba(0, 125, 254, 0.4)',
+                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          borderRadius: 20,
+                          padding: '3px 10px',
+                          marginTop: 2,
+                        }}>
+                          <Smartphone size={13} color="#ffffff" />
+                          <span style={{ color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, letterSpacing: 0.3 }}>
+                            GCash Payment Verified
+                          </span>
+                        </div>
+                      )}
+
                       {/* Balance display */}
                       {successBalance !== null && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '6px 16px', marginTop: 2 }}>
@@ -2309,7 +2367,7 @@ const ScanPage: React.FC = () => {
                           <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
                           <select
                             value={selectedDestination}
-                            onChange={e => setSelectedDestination(e.target.value)}
+                            onChange={e => handleDestinationSelect(e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px 12px',
@@ -2332,35 +2390,243 @@ const ScanPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Payment Method — dropdown selection */}
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
-                          <CreditCard size={16} color="var(--color-primary)" />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Payment Method</p>
-                          <select
-                            value={selectedPaymentMethod || ''}
-                            onChange={e => handlePaymentMethodChange(e.target.value)}
+                      {/* Payment Method — Segmented selector */}
+                      {(() => {
+                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0);
+                        const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
+
+                        return (
+                          <div style={{ marginBottom: 12 }}>
+                            <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                              Payment Method
+                            </p>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: pendingScan.isTicket ? '1fr 1fr' : '1fr 1fr 1fr',
+                              gap: 8,
+                            }}>
+                              {/* QR Card option */}
+                              {!pendingScan.isTicket && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePaymentMethodChange('qr_card')}
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: '10px 6px',
+                                    borderRadius: 10,
+                                    border: `2px solid ${selectedPaymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--glass-border)'}`,
+                                    background: selectedPaymentMethod === 'qr_card' ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    position: 'relative',
+                                    opacity: isLowBalance ? 0.65 : 1,
+                                  }}
+                                >
+                                  <CreditCard size={18} color={selectedPaymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-primary)' }}>
+                                    Card
+                                  </span>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isLowBalance ? '#EF4444' : 'var(--text-secondary)' }}>
+                                    ₱{pendingScan.balance.toFixed(2)}
+                                  </span>
+                                  {isLowBalance && (
+                                    <span style={{ position: 'absolute', top: -5, right: -5, background: '#EF4444', color: '#fff', fontSize: '0.55rem', fontWeight: 800, padding: '1px 5px', borderRadius: 6 }}>
+                                      LOW
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Cash option */}
+                              <button
+                                type="button"
+                                onClick={() => handlePaymentMethodChange('cash')}
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '10px 6px',
+                                  borderRadius: 10,
+                                  border: `2px solid ${selectedPaymentMethod === 'cash' ? '#22C55E' : 'var(--glass-border)'}`,
+                                  background: selectedPaymentMethod === 'cash' ? 'rgba(34, 197, 94, 0.12)' : 'var(--bg-tertiary)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Banknote size={18} color={selectedPaymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'cash' ? '#16A34A' : 'var(--text-primary)' }}>
+                                  Cash
+                                </span>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                  Standard
+                                </span>
+                              </button>
+
+                              {/* GCash option */}
+                              <button
+                                type="button"
+                                onClick={() => handlePaymentMethodChange('gcash')}
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '10px 6px',
+                                  borderRadius: 10,
+                                  border: `2px solid ${selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--glass-border)'}`,
+                                  background: selectedPaymentMethod === 'gcash' ? 'rgba(0, 125, 254, 0.12)' : 'var(--bg-tertiary)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Smartphone size={18} color={selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--text-primary)' }}>
+                                  GCash
+                                </span>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#007DFE' }}>
+                                  Scan QR
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Dedicated GCash Payment Details Card */}
+                      {selectedPaymentMethod === 'gcash' && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.2 }}
+                          style={{
+                            margin: '12px 0 16px',
+                            padding: '14px',
+                            borderRadius: 12,
+                            background: 'linear-gradient(135deg, rgba(0, 125, 254, 0.08) 0%, rgba(0, 85, 204, 0.14) 100%)',
+                            border: '1.5px solid rgba(0, 125, 254, 0.35)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: 8,
+                                background: '#007DFE',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: '0 2px 6px rgba(0, 125, 254, 0.4)',
+                              }}>
+                                <Smartphone size={18} color="#ffffff" />
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#007DFE' }}>
+                                  GCash QR Payment
+                                </span>
+                                <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                                  Scan with GCash app to pay
+                                </span>
+                              </div>
+                            </div>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              color: '#007DFE',
+                              background: 'rgba(0, 125, 254, 0.15)',
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                            }}>
+                              ₱{((pendingScan.fare || 0) + (baggageSelection?.fee || 0)).toFixed(2)}
+                            </span>
+                          </div>
+
+                          {/* QR Code Presentation Box */}
+                          <div
                             style={{
-                              width: '100%',
-                              padding: '10px 12px',
-                              borderRadius: 8,
-                              border: '1.5px solid var(--glass-border)',
-                              background: 'var(--bg-tertiary)',
-                              color: 'var(--text-primary)',
-                              fontSize: '0.9rem',
-                              outline: 'none',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              background: '#ffffff',
+                              padding: '12px 16px',
+                              borderRadius: 12,
+                              boxShadow: '0 3px 12px rgba(0,0,0,0.06)',
                               cursor: 'pointer',
+                              position: 'relative',
                             }}
+                            onClick={() => setShowGcashQrZoom(true)}
                           >
-                            <option value="">-- Select payment method --</option>
-                            <option value="qr_card">QR Card Balance</option>
-                            <option value="cash">Cash</option>
-                            <option value="gcash">GCash</option>
-                          </select>
-                        </div>
-                      </div>
+                            <img
+                              src="/assets/qr-code-gcash.jpg"
+                              alt="GCash QR Code"
+                              style={{
+                                width: 148,
+                                height: 148,
+                                objectFit: 'contain',
+                                display: 'block',
+                                borderRadius: 6,
+                              }}
+                            />
+                            <div style={{
+                              position: 'absolute',
+                              bottom: 8,
+                              right: 8,
+                              background: 'rgba(0, 0, 0, 0.75)',
+                              color: '#ffffff',
+                              borderRadius: 6,
+                              padding: '3px 7px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontSize: '0.65rem',
+                              fontWeight: 600,
+                            }}>
+                              <Maximize2 size={11} />
+                              Tap to zoom
+                            </div>
+                          </div>
+
+                          {/* Instructions */}
+                          <p style={{
+                            margin: '10px 0 8px',
+                            fontSize: '0.72rem',
+                            color: 'var(--text-secondary)',
+                            textAlign: 'center',
+                            lineHeight: 1.4,
+                          }}>
+                            Passenger opens GCash, scans QR, enters <strong style={{ color: '#007DFE' }}>₱{((pendingScan.fare || 0) + (baggageSelection?.fee || 0)).toFixed(2)}</strong>, and verifies.
+                          </p>
+
+                          {/* Optional Reference Number */}
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                              GCash Ref. No. (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 1029 3847 2891"
+                              value={gcashRefNumber}
+                              onChange={e => setGcashRefNumber(e.target.value)}
+                              maxLength={25}
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                borderRadius: 8,
+                                border: '1.5px solid var(--glass-border)',
+                                background: 'var(--bg-tertiary)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem',
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
 
                       {/* Divider */}
                       <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0 12px' }} />
@@ -2395,87 +2661,110 @@ const ScanPage: React.FC = () => {
                       </button>
 
                       {/* Fare breakdown */}
-                      <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Base Fare</span>
-                          <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            ₱{pendingScan.fare.toFixed(2)}
-                          </span>
-                        </div>
-                        {baggageSelection && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                              Baggage ({baggageSelection.quantity}× {baggageSelection.category})
-                            </span>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              ₱{baggageSelection.fee.toFixed(2)}
-                            </span>
-                          </div>
-                        )}
-                        <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.88rem', color: 'var(--color-primary)', fontWeight: 800 }}>Total</span>
-                          <span style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--color-primary)' }}>
-                            ₱{(pendingScan.fare + (baggageSelection?.fee || 0)).toFixed(2)}
-                          </span>
-                        </div>
+                      {(() => {
+                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0);
+                        const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
 
-                        {/* Low balance warning */}
-                        {!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0)) && (
-                          <div style={{
-                            marginTop: 10,
-                            padding: '8px 10px',
-                            borderRadius: 8,
-                            background: 'rgba(239, 68, 68, 0.12)',
-                            border: '1px solid rgba(239, 68, 68, 0.35)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}>
-                            <AlertTriangle size={14} color="#EF4444" style={{ flexShrink: 0 }} />
-                            <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#EF4444', display: 'block' }}>
-                                Insufficient Balance — ₱{pendingScan.balance.toFixed(2)} available
-                              </span>
-                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                Tap confirm to pay in cash
+                        return (
+                          <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Base Fare</span>
+                              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                ₱{pendingScan.fare.toFixed(2)}
                               </span>
                             </div>
+                            {baggageSelection && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                  Baggage ({baggageSelection.quantity}× {baggageSelection.category})
+                                </span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  ₱{baggageSelection.fee.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
+                            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.88rem', color: 'var(--color-primary)', fontWeight: 800 }}>Total</span>
+                              <span style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--color-primary)' }}>
+                                ₱{currentTotalFare.toFixed(2)}
+                              </span>
+                            </div>
+
+                            {/* Low balance warning */}
+                            {isLowBalance && (
+                              <div style={{
+                                marginTop: 10,
+                                padding: '8px 10px',
+                                borderRadius: 8,
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}>
+                                <AlertTriangle size={14} color="#EF4444" style={{ flexShrink: 0 }} />
+                                <div style={{ flex: 1 }}>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#EF4444', display: 'block' }}>
+                                    Insufficient Balance — ₱{pendingScan.balance.toFixed(2)} available
+                                  </span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                    Please select Cash or GCash above
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </SoftCard>
 
                     {/* Button Row - Confirm and Cancel */}
-                    <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                      <PrimaryButton
-                        onClick={retryCamera}
-                        variant="ghost"
-                        icon={<RefreshCw size={15} />}
-                        style={{ flex: 1 }}
-                      >
-                        Cancel
-                      </PrimaryButton>
-                      <PrimaryButton
-                        onClick={commitBoarding}
-                        disabled={!selectedDestination}
-                        icon={
-                          !pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))
-                            ? <CreditCard size={20} />
-                            : <CheckCircle size={20} />
-                        }
-                        style={{
-                          flex: 1,
-                          ...((!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))) && {
-                            background: 'linear-gradient(135deg, #22C55E, #16A34A)',
-                          }),
-                        }}
-                      >
-                        {!pendingScan.isTicket && pendingScan.balance < (pendingScan.fare + (baggageSelection?.fee || 0))
-                          ? 'Pay in Cash'
-                          : 'Confirm Boarding'}
-                      </PrimaryButton>
-                    </div>
+                    {(() => {
+                      const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0);
+                      const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
+
+                      return (
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                          <PrimaryButton
+                            onClick={retryCamera}
+                            variant="ghost"
+                            icon={<RefreshCw size={15} />}
+                            style={{ flex: 1 }}
+                          >
+                            Cancel
+                          </PrimaryButton>
+                          <PrimaryButton
+                            onClick={commitBoarding}
+                            disabled={!selectedDestination || (selectedPaymentMethod === 'qr_card' && isLowBalance)}
+                            icon={
+                              selectedPaymentMethod === 'gcash'
+                                ? <Smartphone size={18} />
+                                : selectedPaymentMethod === 'cash' || isLowBalance
+                                ? <Banknote size={18} />
+                                : <CheckCircle size={18} />
+                            }
+                            style={{
+                              flex: 1.5,
+                              ...(selectedPaymentMethod === 'gcash' && {
+                                background: 'linear-gradient(135deg, #007DFE, #0056B3)',
+                              }),
+                              ...(selectedPaymentMethod === 'cash' && {
+                                background: 'linear-gradient(135deg, #22C55E, #16A34A)',
+                              }),
+                            }}
+                          >
+                            {selectedPaymentMethod === 'gcash'
+                              ? `Confirm GCash (₱${currentTotalFare.toFixed(2)})`
+                              : selectedPaymentMethod === 'cash'
+                              ? `Confirm Cash (₱${currentTotalFare.toFixed(2)})`
+                              : isLowBalance
+                              ? 'Pay via Cash / GCash'
+                              : `Confirm Card (₱${currentTotalFare.toFixed(2)})`}
+                          </PrimaryButton>
+                        </div>
+                      );
+                    })()}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -2565,18 +2854,18 @@ const ScanPage: React.FC = () => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 gap: 6,
-                                padding: '10px 14px',
+                                padding: '10px 10px',
                                 borderRadius: 10,
                                 border: `2px solid ${pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--glass-border)'}`,
                                 background: pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary-subtle)' : 'transparent',
                                 opacity: pendingAlighting.paymentMethod === 'qr_card' ? 1 : 0.45,
                               }}>
-                                <CreditCard size={16} color={pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
-                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)' }}>
+                                <CreditCard size={15} color={pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)' }}>
                                   QR Card
                                 </span>
                                 {pendingAlighting.paymentMethod === 'qr_card' && (
-                                  <CheckCircle size={13} color="var(--color-primary)" />
+                                  <CheckCircle size={12} color="var(--color-primary)" />
                                 )}
                               </div>
                               {/* Cash option */}
@@ -2586,18 +2875,39 @@ const ScanPage: React.FC = () => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 gap: 6,
-                                padding: '10px 14px',
+                                padding: '10px 10px',
                                 borderRadius: 10,
                                 border: `2px solid ${pendingAlighting.paymentMethod === 'cash' ? '#22C55E' : 'var(--glass-border)'}`,
                                 background: pendingAlighting.paymentMethod === 'cash' ? 'rgba(34,197,94,0.1)' : 'transparent',
                                 opacity: pendingAlighting.paymentMethod === 'cash' ? 1 : 0.45,
                               }}>
-                                <span style={{ fontSize: '1rem' }}>💵</span>
-                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)' }}>
+                                <Banknote size={15} color={pendingAlighting.paymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)' }}>
                                   Cash
                                 </span>
                                 {pendingAlighting.paymentMethod === 'cash' && (
-                                  <CheckCircle size={13} color="#16A34A" />
+                                  <CheckCircle size={12} color="#16A34A" />
+                                )}
+                              </div>
+                              {/* GCash option */}
+                              <div style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                padding: '10px 10px',
+                                borderRadius: 10,
+                                border: `2px solid ${pendingAlighting.paymentMethod === 'gcash' ? '#007DFE' : 'var(--glass-border)'}`,
+                                background: pendingAlighting.paymentMethod === 'gcash' ? 'rgba(0,125,254,0.12)' : 'transparent',
+                                opacity: pendingAlighting.paymentMethod === 'gcash' ? 1 : 0.45,
+                              }}>
+                                <Smartphone size={15} color={pendingAlighting.paymentMethod === 'gcash' ? '#007DFE' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: pendingAlighting.paymentMethod === 'gcash' ? '#007DFE' : 'var(--text-secondary)' }}>
+                                  GCash
+                                </span>
+                                {pendingAlighting.paymentMethod === 'gcash' && (
+                                  <CheckCircle size={12} color="#007DFE" />
                                 )}
                               </div>
                             </div>
@@ -2765,6 +3075,57 @@ const ScanPage: React.FC = () => {
             }}
           >
             OK
+          </PrimaryButton>
+        </div>
+      </AnimatedModal>
+
+      {/* GCash QR Code Zoom Modal */}
+      <AnimatedModal
+        isOpen={showGcashQrZoom}
+        onClose={() => setShowGcashQrZoom(false)}
+        title="GCash QR Code"
+        variant="center"
+      >
+        <div style={{ textAlign: 'center', padding: '12px 4px' }}>
+          <div style={{
+            background: '#ffffff',
+            padding: 16,
+            borderRadius: 16,
+            display: 'inline-block',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+            marginBottom: 16,
+            maxWidth: '100%',
+          }}>
+            <img
+              src="/assets/qr-code-gcash.jpg"
+              alt="GCash QR Code Zoomed"
+              style={{
+                width: 260,
+                height: 260,
+                objectFit: 'contain',
+                display: 'block',
+                borderRadius: 8,
+              }}
+            />
+          </div>
+
+          <p style={{ margin: '0 0 4px', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+            Amount Due
+          </p>
+          <p style={{ margin: '0 0 14px', fontSize: '2rem', fontWeight: 900, color: '#007DFE' }}>
+            ₱{((pendingScan?.fare || 0) + (baggageSelection?.fee || 0)).toFixed(2)}
+          </p>
+
+          <p style={{ margin: '0 0 20px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+            Ask passenger to scan with their GCash app and input the exact amount shown above.
+          </p>
+
+          <PrimaryButton
+            onClick={() => setShowGcashQrZoom(false)}
+            variant="primary"
+            style={{ width: '100%', background: 'linear-gradient(135deg, #007DFE, #0056B3)' }}
+          >
+            Done Scanning
           </PrimaryButton>
         </div>
       </AnimatedModal>
