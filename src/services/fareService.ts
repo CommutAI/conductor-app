@@ -462,20 +462,20 @@ export async function processScan(
   const cachedTicket = cache.get<any>(CacheKeys.ticket(normalizedUid));
   if (cachedTicket) {
     console.log('[FareService] Cache hit for ticket:', normalizedUid);
-    return processTemporaryTicket(cachedTicket, scannedUid, tripId, conductorId, busRoute);
+    return processTemporaryTicket(cachedTicket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   // Check for temporary ticket from database
   const { data: ticket } = await supabase
     .from('temporary_tickets')
-    .select('id, ticket_uid, fare_amount, status, issued_at')
+    .select('id, ticket_uid, fare_amount, status, destination, passenger_type, issued_at')
     .eq('ticket_uid', normalizedUid)
     .maybeSingle();
 
   if (ticket) {
     // Cache the ticket data
     cache.set(CacheKeys.ticket(normalizedUid), ticket, CacheTTL.SHORT);
-    return processTemporaryTicket(ticket, scannedUid, tripId, conductorId, busRoute);
+    return processTemporaryTicket(ticket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   return { status: 'not_found' };
@@ -685,48 +685,122 @@ async function processTemporaryTicket(
   scannedUid: string,
   tripId: string,
   conductorId: string,
-  busRoute?: string
+  busRoute?: string,
+  scanType: 'onboarding' | 'alighting' = 'onboarding',
+  currentDestination?: string,
+  baggageFee?: number,
+  baggageCategory?: string,
+  baggageWeight?: number,
+  paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'cash',
+  boardingStop?: string,
 ): Promise<ScanResult> {
-  if (ticket.status !== 'issued') {
-    return { status: 'ticket_already_used' };
+  // Check for fake QR
+  if (!scannedUid || scannedUid.length < 4) {
+    return { status: 'qr_fake', reason: 'Invalid ticket format' };
   }
 
-  const { error: updateErr } = await supabase
-    .from('temporary_tickets')
-    .update({
-      status: 'validated',
-      validated_at: new Date().toISOString(),
+  // Find the most recent active (not yet alighted) boarding for this ticket on this trip
+  const boardedPassengerResult = await supabase
+    .from('boarded_passengers')
+    .select('id, alighted_at, boarding_stop')
+    .eq('trip_id', tripId)
+    .eq('temp_ticket_id', ticket.id)
+    .is('alighted_at', null)
+    .order('boarded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const boardedData = boardedPassengerResult.data;
+
+  if (scanType === 'onboarding') {
+    if (boardedData) {
+      return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
+    }
+
+    if (ticket.status !== 'issued') {
+      return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
+    }
+
+    const { error: updateErr } = await supabase
+      .from('temporary_tickets')
+      .update({
+        status: 'validated',
+        validated_at: new Date().toISOString(),
+        trip_id: tripId,
+      })
+      .eq('id', ticket.id);
+
+    if (updateErr) {
+      return { status: 'error', message: `Failed to validate ticket: ${updateErr.message}` };
+    }
+    
+    // Invalidate cache for this ticket after validation
+    cache.delete(CacheKeys.ticket(ticket.ticket_uid));
+    console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
+
+    const baseFare = ticket.fare_amount || DEFAULT_FARE;
+    const totalFare = baseFare + (baggageFee || 0);
+
+    const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
+    const { error: txErr } = await supabase.from('transactions').insert({
+      temp_ticket_id: ticket.id,
       trip_id: tripId,
-    })
-    .eq('id', ticket.id);
+      type: 'fare_validation',
+      amount: totalFare,
+      channel: txChannel,
+      staff_id: conductorId,
+      baggage_category: baggageCategory || null,
+      baggage_weight: baggageWeight || null,
+      baggage_fee: baggageFee || null,
+    });
 
-  if (updateErr) {
-    return { status: 'error', message: `Failed to validate ticket: ${updateErr.message}` };
+    if (txErr) {
+      return { status: 'error', message: `Failed to create transaction: ${txErr.message}` };
+    }
+
+    const boardPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'ticket';
+    const { error: boardErr } = await supabase.from('boarded_passengers').insert({
+      trip_id: tripId,
+      temp_ticket_id: ticket.id,
+      boarded_at: new Date().toISOString(),
+      payment_method: boardPaymentMethod,
+      boarding_stop: boardingStop || null,
+      destination_stop: currentDestination || ticket.destination || null,
+    });
+
+    if (boardErr) {
+      return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
+    }
+
+    return {
+      status: 'ticket_validated',
+      fareAmount: totalFare,
+      destination: currentDestination || ticket.destination,
+      passengerName: ticket.passenger_type || 'Passenger',
+    };
+  } else {
+    // Alighting
+    if (!boardedData) {
+      return { status: 'error', message: 'Ticket not boarded on this trip' };
+    }
+
+    const { error: alightErr } = await supabase
+      .from('boarded_passengers')
+      .update({ alighted_at: new Date().toISOString() })
+      .eq('id', boardedData.id);
+
+    if (alightErr) {
+      return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
+    }
+
+    return {
+      status: 'ticket_validated',
+      fareAmount: 0,
+      destination: currentDestination || ticket.destination,
+      passengerName: ticket.passenger_type || 'Passenger',
+      boardingPoint: boardedData.boarding_stop,
+    };
   }
-  
-  // Invalidate cache for this ticket after validation
-  cache.delete(CacheKeys.ticket(ticket.ticket_uid));
-  console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
-
-  const { error: txErr } = await supabase.from('transactions').insert({
-    temp_ticket_id: ticket.id,
-    trip_id: tripId,
-    type: 'fare_validation',
-    amount: ticket.fare_amount,
-    channel: 'temp_ticket',
-    staff_id: conductorId,
-  });
-
-  if (txErr) {
-    return { status: 'error', message: `Failed to create transaction: ${txErr.message}` };
-  }
-
-  return {
-    status: 'ticket_validated',
-    fareAmount: ticket.fare_amount,
-    destination: ticket.destination,
-    passengerName: ticket.passenger_type || 'Passenger',
-  };
 }
 
 // ── API Functions ─────────────────────────────────────────────────────────────
