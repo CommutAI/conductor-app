@@ -30,6 +30,8 @@ export interface LocalPassengerRecord {
   cardId?: string;
   tempTicketId?: string;
   destination?: string;
+  boardingStop?: string;
+  passengerType?: string;
   fare: number;
   baggageFee?: number;
   paymentMethod?: string;

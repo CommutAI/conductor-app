@@ -60,12 +60,12 @@ export interface FareCalculationResult {
 }
 
 export type ScanResult =
-  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string }
+  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string }
   | { status: 'qr_fail_balance'; balance: number; fare: number; baggageFee?: number; totalFare?: number }
   | { status: 'qr_inactive' }
   | { status: 'qr_wrong_trip'; expectedRoute: string }
   | { status: 'qr_fake'; reason: string }
-  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string }
+  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string }
   | { status: 'ticket_already_used' }
   | { status: 'ticket_expired' }
   | { status: 'ticket_wrong_trip'; expectedRoute: string }
@@ -75,7 +75,7 @@ export type ScanResult =
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_FARE = 12;
+export const DEFAULT_FARE = 12;
 
 // ── Fare Matrix ───────────────────────────────────────────────────────────────
 // Based on the provided fare matrix for Manolo Fortich → Cagayan de Oro route
@@ -548,6 +548,7 @@ async function processQRCard(
 
   const boardedData = boardedPassenger.data;
 
+  let destinationMismatchOccurred = false;
   if (scanType === 'onboarding') {
     // Duplicate check: is the card currently on board (boarded but not yet alighted)?
     if (boardedData) {
@@ -565,13 +566,14 @@ async function processQRCard(
                                  normalizedCurrentDest.includes(normalizedCardDest);
       
       if (!isDestinationMatch) {
+        destinationMismatchOccurred = true;
         await supabase.from('fare_irregularities').insert({
           trip_id: tripId,
           type: 'other',
           description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
           detected_at: new Date().toISOString(),
         });
-        return { status: 'error', message: `Destination mismatch. Card is for: ${card.destination}` };
+        console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
       }
     }
   }
@@ -672,10 +674,12 @@ async function processQRCard(
       fare: 0,
       baggageFee: 0,
       totalFare: 0,
-      destination: currentDestination,
+      destination: currentDestination || card.destination,
       contactNumber: card.contact_number,
       passengerName: card.owner_name,
       boardingPoint: boardedData.boarding_stop,
+      destinationMismatch: destinationMismatchOccurred,
+      expectedDestination: card.destination,
     };
   }
 }
@@ -877,4 +881,36 @@ export async function getRouteInfo(terminal: string, destination: string): Promi
     distance_km: data.distance_km ? Number(data.distance_km) : undefined,
     estimated_time_minutes: data.estimated_time_minutes
   };
+}
+
+/**
+ * Manually marks a boarded passenger as alighted (e.g. from the passenger manifest list)
+ */
+export async function alightBoardedPassenger(
+  boardedPassengerId: string,
+  tripId: string,
+  alightingStop?: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const updateData: { alighted_at: string; destination_stop?: string } = {
+      alighted_at: new Date().toISOString(),
+    };
+    if (alightingStop) {
+      updateData.destination_stop = alightingStop;
+    }
+    const { error } = await supabase
+      .from('boarded_passengers')
+      .update(updateData)
+      .eq('id', boardedPassengerId)
+      .eq('trip_id', tripId);
+
+    if (error) {
+      console.error('[FareService] Error alighting passenger:', error);
+      return { success: false, message: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('[FareService] Exception alighting passenger:', err);
+    return { success: false, message: err?.message || 'Unknown error' };
+  }
 }

@@ -25,6 +25,15 @@ import {
   Activity,
   User,
   Calendar,
+  LogIn,
+  LogOut as AlightIcon,
+  CreditCard,
+  Banknote,
+  Smartphone,
+  Navigation,
+  MapPin,
+  X,
+  QrCode,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -33,6 +42,9 @@ import { StorageService } from '../services/storageService';
 import { getLocationAndDecode } from '../services/geoService';
 import { realtimeService } from '../services/realtimeService';
 import { isLikelyNetworkError } from '../utils/networkUtils';
+import { offlineQueueService } from '../services/offlineQueueService';
+import { getFareFromMatrix, calculateFare, DEFAULT_FARE, PassengerType as FarePassengerType, alightBoardedPassenger } from '../services/fareService';
+import { playTransitChime } from '../utils/transitAudio';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -40,6 +52,7 @@ import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, DashboardCard,
   LoadingSkeleton, AnimatedIllustration,
+  AnimatedModal, PrimaryButton,
 } from '../components/ui';
 import '../styles/modern-transport.css';
 
@@ -69,8 +82,28 @@ const HomePage: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Context
-  const { profile, currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, loading: authLoading } = useApp();
-  const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
+  const {
+    profile, currentTrip, currentBus, validatedCount, currentPassengersCount,
+    fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus,
+    setValidatedCount, setCurrentPassengersCount, setFareCollected,
+    incrementCurrentPassengers, decrementCurrentPassengers, incrementValidated,
+    loading: authLoading,
+  } = useApp();
+  const { isOnline, syncInProgress, lastSyncAt, bumpPending } = useNetwork();
+
+  // Individual Modals for Boarding and Alighting
+  const [showBoardingModal, setShowBoardingModal] = useState(false);
+  const [showAlightingModal, setShowAlightingModal] = useState(false);
+
+  // Cash boarding state inside Boarding Modal
+  const [cashDestination, setCashDestination] = useState<string>('');
+  const [cashPassengerType, setCashPassengerType] = useState<FarePassengerType>('regular');
+  const [isSubmittingCash, setIsSubmittingCash] = useState(false);
+
+  // Alighting modal onboard passengers state
+  const [alightModalPassengers, setAlightModalPassengers] = useState<any[]>([]);
+  const [loadingAlightList, setLoadingAlightList] = useState(false);
+  const [alightingPassengerId, setAlightingPassengerId] = useState<string | null>(null);
 
   // Refs
   const gpsTrackerRef = useRef<any>(null);
@@ -84,7 +117,20 @@ const HomePage: React.FC = () => {
   // Computed Values
   const isLoading = authLoading || isRestoringTrip || !initialLoadDone;
 
-  const currentDate = useMemo(() => new Date(), []);
+  // Live Actual Time Clock
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const liveActualTime = useMemo(() => {
+    return currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [currentDate]);
+
   const greeting = useMemo(() => {
     const hour = currentDate.getHours();
     if (hour < 12) return 'Good Morning';
@@ -119,6 +165,52 @@ const HomePage: React.FC = () => {
     }
   }, [currentTrip?.started_at]);
 
+  const tripDuration = useMemo(() => {
+    if (!currentTrip?.started_at) return null;
+    try {
+      const startMs = new Date(currentTrip.started_at).getTime();
+      if (isNaN(startMs)) return null;
+      const diffMins = Math.max(0, Math.floor((currentDate.getTime() - startMs) / 60000));
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      if (hours > 0) return `${hours}h ${mins}m elapsed`;
+      return `${mins}m elapsed`;
+    } catch {
+      return null;
+    }
+  }, [currentTrip?.started_at, currentDate]);
+
+  // Route stops helpers
+  const routeStops = useMemo(() => {
+    if (!currentBus?.route) return [];
+    const separators = ['↔', '←', '→', '-', '–', '—', '>', '<', '|'];
+    for (const sep of separators) {
+      const stops = currentBus.route.split(sep).map((s: string) => s.trim()).filter(Boolean);
+      if (stops.length >= 2) return stops;
+    }
+    return [];
+  }, [currentBus?.route]);
+
+  const displayStops = useMemo(() => routeStops.length >= 2 ? routeStops : [
+    'Agora Terminal',
+    'Puerto',
+    'Ba-e',
+    'Mambatangan',
+    'Maitom',
+    'Camp Phillips',
+    'Alae',
+    'Manolo Fortich',
+  ], [routeStops]);
+
+  const boardingStop = displayStops[0] || 'Agora Terminal';
+
+  const computedCashFare = useMemo(() => {
+    if (!cashDestination) return 0;
+    const mFare = getFareFromMatrix(boardingStop, cashDestination, cashPassengerType);
+    if (mFare !== null) return mFare;
+    return calculateFare(DEFAULT_FARE, cashPassengerType).finalFare;
+  }, [boardingStop, cashDestination, cashPassengerType]);
+
   // Handlers
 
   const showNotification = useCallback((message: string, color: 'success' | 'danger' | 'warning') => {
@@ -126,6 +218,153 @@ const HomePage: React.FC = () => {
     setToastColor(color);
     setShowToast(true);
   }, []);
+
+  const loadAlightModalPassengers = useCallback(async () => {
+    if (!currentTrip) return;
+    setLoadingAlightList(true);
+    try {
+      if (isOnline) {
+        const { data, error } = await supabase
+          .from('boarded_passengers')
+          .select(`
+            id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop,
+            qr_cards(card_uid, passenger_type, destination, owner_name),
+            temporary_tickets(ticket_uid, passenger_type, destination, fare_amount)
+          `)
+          .eq('trip_id', currentTrip.id)
+          .is('alighted_at', null)
+          .order('boarded_at', { ascending: false });
+
+        if (!error && data) {
+          setAlightModalPassengers(data.map((p: any) => ({
+            id: p.id,
+            card_uid: p.qr_cards?.card_uid || p.temporary_tickets?.ticket_uid || (p.card_id ? 'QR Card' : 'Cash Passenger'),
+            passenger_type: p.qr_cards?.passenger_type || p.temporary_tickets?.passenger_type || 'regular',
+            destination: p.destination_stop || p.qr_cards?.destination || p.temporary_tickets?.destination || 'Open Stop',
+            boarding_stop: p.boarding_stop || 'Trip Origin',
+            payment_method: p.payment_method || 'cash',
+          })));
+          return;
+        }
+      }
+      // Fallback to local storage
+      const cachedState = StorageService.loadTripState();
+      const localPassengers = (cachedState?.localPassengers || []).filter(lp => !lp.alightedAt);
+      setAlightModalPassengers(localPassengers.map(lp => ({
+        id: lp.id,
+        card_uid: lp.cardUid || lp.ticketUid || 'Offline Passenger',
+        passenger_type: lp.passengerType || 'regular',
+        destination: lp.destination || 'Open Stop',
+        boarding_stop: lp.boardingStop || 'Trip Origin',
+        payment_method: lp.paymentMethod || 'cash',
+      })));
+    } catch (err) {
+      console.error('[loadAlightModalPassengers] Error:', err);
+    } finally {
+      setLoadingAlightList(false);
+    }
+  }, [currentTrip?.id, isOnline]);
+
+  useEffect(() => {
+    if (showAlightingModal) {
+      loadAlightModalPassengers();
+    }
+  }, [showAlightingModal, loadAlightModalPassengers]);
+
+  const handleDirectCashBoarding = async () => {
+    if (!currentTrip || !cashDestination) {
+      showNotification('Please select a destination stop', 'warning');
+      return;
+    }
+    setIsSubmittingCash(true);
+    try {
+      const nowIso = new Date().toISOString();
+      if (isOnline) {
+        await supabase.from('boarded_passengers').insert({
+          trip_id: currentTrip.id,
+          payment_method: 'cash',
+          boarding_stop: boardingStop,
+          destination_stop: cashDestination,
+          boarded_at: nowIso,
+        });
+        await supabase.from('transactions').insert({
+          trip_id: currentTrip.id,
+          conductor_id: profile?.id,
+          amount: computedCashFare,
+          channel: 'cash',
+          payment_method: 'cash',
+          type: 'fare_validation',
+          route: currentBus?.route,
+          created_at: nowIso,
+        });
+      } else {
+        offlineQueueService.addScan({
+          type: 'boarding',
+          paymentMethod: 'cash',
+          fare: computedCashFare,
+          destination: cashDestination,
+          boardingPoint: boardingStop,
+          tripId: currentTrip.id,
+        });
+        bumpPending(offlineQueueService.getPendingCount());
+      }
+
+      StorageService.addLocalPassenger(currentTrip.id, {
+        destination: cashDestination,
+        boardingStop,
+        passengerType: cashPassengerType,
+        fare: computedCashFare,
+        paymentMethod: 'cash',
+        boardedAt: nowIso,
+        isTicket: false,
+      });
+
+      setValidatedCount(validatedCount + 1);
+      incrementCurrentPassengers();
+      incrementValidated(computedCashFare);
+      setFareCollected(fareCollected + computedCashFare);
+      playTransitChime('board');
+      showNotification(`Boarded cash passenger (₱${computedCashFare.toFixed(2)})`, 'success');
+      setCashDestination('');
+      setShowBoardingModal(false);
+    } catch (err) {
+      console.error('Cash boarding error:', err);
+      showNotification('Error recording cash passenger', 'danger');
+    } finally {
+      setIsSubmittingCash(false);
+    }
+  };
+
+  const handleDirectAlight = async (passenger: any) => {
+    if (!currentTrip) return;
+    setAlightingPassengerId(passenger.id);
+    try {
+      const alightStop = displayStops[displayStops.length - 1] || 'Destination';
+      if (isOnline && !passenger.id.startsWith('local_')) {
+        await alightBoardedPassenger(passenger.id, currentTrip.id, alightStop);
+      } else {
+        StorageService.markLocalAlighted(currentTrip.id, passenger.card_uid, passenger.card_uid);
+        offlineQueueService.addScan({
+          type: 'alighting',
+          cardUid: passenger.card_uid,
+          tripId: currentTrip.id,
+          destination: alightStop,
+          fare: 0,
+        });
+        bumpPending(offlineQueueService.getPendingCount());
+      }
+      StorageService.markLocalAlighted(currentTrip.id, passenger.card_uid, passenger.card_uid);
+      decrementCurrentPassengers();
+      playTransitChime('alight');
+      showNotification(`Alighted ${passenger.card_uid}`, 'success');
+      setAlightModalPassengers(prev => prev.filter(p => p.id !== passenger.id));
+    } catch (err) {
+      console.error('Alighting error:', err);
+      showNotification('Failed to alight passenger', 'danger');
+    } finally {
+      setAlightingPassengerId(null);
+    }
+  };
 
   const loadBusInfo = useCallback(async () => {
     if (!profile?.bus_id) return;
@@ -979,13 +1218,38 @@ const HomePage: React.FC = () => {
                     TRIP IN PROGRESS
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {/* Actual Current Time Clock */}
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: 'rgba(255, 255, 255, 0.16)',
+                    padding: '3px 9px',
+                    borderRadius: 12,
+                    backdropFilter: 'blur(8px)',
+                  }}>
+                    <Clock size={13} color="#ffffff" />
+                    {liveActualTime}
+                  </span>
+
+                  {/* Trip Start Reference & Elapsed Duration */}
                   {tripStartTime && (
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.85)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Clock size={13} />
-                      {tripStartTime}
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      color: 'rgba(255, 255, 255, 0.85)',
+                      background: 'rgba(0, 0, 0, 0.22)',
+                      padding: '3px 8px',
+                      borderRadius: 10,
+                    }}>
+                      Started {tripStartTime}{tripDuration ? ` · ${tripDuration}` : ''}
                     </span>
                   )}
+
                   <span style={{
                     fontSize: '0.72rem',
                     fontWeight: 700,
@@ -1232,54 +1496,144 @@ const HomePage: React.FC = () => {
                 />
               </motion.div>
 
-              {/* Primary Action Button: Open Scanner */}
+              {/* Primary Boarding & Alighting Action Buttons */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.35 }}
-                style={{ marginBottom: 12 }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                  marginBottom: 12,
+                }}
               >
+                {/* Boarding Action */}
                 <motion.button
                   type="button"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => history.push('/scan')}
+                  onClick={() => setShowBoardingModal(true)}
                   style={{
                     width: '100%',
-                    padding: '16px 20px',
+                    padding: '16px 14px',
                     borderRadius: 18,
                     border: 'none',
-                    background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                     color: '#ffffff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    minHeight: 104,
+                    boxShadow: '0 8px 24px rgba(16, 185, 129, 0.35)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    boxShadow: '0 8px 24px rgba(249, 115, 22, 0.35)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    width: '100%',
+                    marginBottom: 10,
+                  }}>
                     <div style={{
-                      width: 44,
-                      height: 44,
+                      width: 38,
+                      height: 38,
                       borderRadius: 12,
                       background: 'rgba(255, 255, 255, 0.22)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                      <ScanLine size={24} color="#ffffff" />
+                      <LogIn size={20} color="#ffffff" />
                     </div>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.3px', color: '#ffffff' }}>
-                        Scan Passengers
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500 }}>
-                        QR Cards, Temporary Tickets & GCash
-                      </div>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      letterSpacing: '0.4px',
+                      textTransform: 'uppercase',
+                    }}>
+                      Tap-In
+                    </span>
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '1.02rem', fontWeight: 800, letterSpacing: '-0.2px', color: '#ffffff' }}>
+                      Board Passengers
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500, marginTop: 2 }}>
+                      QR Card · Ticket · Cash
                     </div>
                   </div>
-                  <ChevronRight size={22} color="#ffffff" />
+                </motion.button>
+
+                {/* Alighting Action */}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowAlightingModal(true)}
+                  style={{
+                    width: '100%',
+                    padding: '16px 14px',
+                    borderRadius: 18,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    minHeight: 104,
+                    boxShadow: '0 8px 24px rgba(245, 158, 11, 0.35)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    marginBottom: 10,
+                  }}>
+                    <div style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 12,
+                      background: 'rgba(255, 255, 255, 0.22)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <AlightIcon size={20} color="#ffffff" />
+                    </div>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      letterSpacing: '0.4px',
+                      textTransform: 'uppercase',
+                    }}>
+                      Tap-Out
+                    </span>
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '1.02rem', fontWeight: 800, letterSpacing: '-0.2px', color: '#ffffff' }}>
+                      Alight Passengers
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500, marginTop: 2 }}>
+                      Scan Disembarking Cards
+                    </div>
+                  </div>
                 </motion.button>
               </motion.div>
 
@@ -1298,7 +1652,7 @@ const HomePage: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '13px 18px',
-                    borderRadius: 14,
+                    borderRadius: 16,
                     border: '1px solid var(--border-subtle)',
                     background: 'var(--glass-bg)',
                     backdropFilter: 'blur(16px)',
@@ -1312,8 +1666,8 @@ const HomePage: React.FC = () => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
-                      width: 34,
-                      height: 34,
+                      width: 36,
+                      height: 36,
                       borderRadius: 10,
                       background: 'rgba(59, 130, 246, 0.1)',
                       display: 'flex',
@@ -1324,15 +1678,33 @@ const HomePage: React.FC = () => {
                       <Users size={18} />
                     </div>
                     <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Passenger Manifest
+                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Passenger Manifest & Drops
                       </div>
-                      <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>
-                        Review onboard passengers & alighting stops
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        Onboard passenger list & manual alighting
                       </div>
                     </div>
                   </div>
-                  <ChevronRight size={18} color="var(--text-tertiary)" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: currentPassengersCount > 0 ? '#10b981' : 'var(--text-secondary)',
+                      background: currentPassengersCount > 0 ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-secondary)',
+                      padding: '4px 10px',
+                      borderRadius: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}>
+                      {currentPassengersCount > 0 && (
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                      )}
+                      {currentPassengersCount} Onboard
+                    </span>
+                    <ChevronRight size={18} color="var(--text-tertiary)" />
+                  </div>
                 </motion.button>
               </motion.div>
 
@@ -1383,6 +1755,432 @@ const HomePage: React.FC = () => {
         </div>
       </IonContent>
 
+      {/* ══════════════════════════════════════════════════════════════
+          BOARDING MODAL (TAP-IN)
+      ══════════════════════════════════════════════════════════════ */}
+      <AnimatedModal
+        isOpen={showBoardingModal}
+        onClose={() => setShowBoardingModal(false)}
+        title="Board Passengers (Tap-In)"
+        variant="sheet"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Status info bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            background: 'var(--bg-tertiary)',
+            borderRadius: 14,
+            border: '1px solid var(--border-subtle)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MapPin size={16} color="var(--color-primary)" />
+              <div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Boarding At
+                </div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {boardingStop}
+                </div>
+              </div>
+            </div>
+            <StatusBadge variant={occupancyStatus.variant} dot={true}>
+              {remainingSeats} seats left
+            </StatusBadge>
+          </div>
+
+          {/* Primary Action: QR / Ticket Camera Scanner */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            onClick={() => {
+              setShowBoardingModal(false);
+              history.push('/scan', { mode: 'onboarding' });
+            }}
+            style={{
+              width: '100%',
+              padding: '16px',
+              borderRadius: 18,
+              border: '1.5px solid rgba(16, 185, 129, 0.4)',
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.08) 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                flexShrink: 0,
+              }}>
+                <QrCode size={26} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Scan QR Card or Ticket
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Direct camera tap-in validation & balance check
+                </div>
+              </div>
+            </div>
+            <ChevronRight size={20} color="var(--color-primary)" />
+          </motion.button>
+
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              Or Quick Cash Boarding
+            </span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+          </div>
+
+          {/* Quick Cash Boarding Form */}
+          <div style={{
+            padding: '16px',
+            background: 'var(--bg-tertiary)',
+            borderRadius: 18,
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+          }}>
+            {/* Passenger Type */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Passenger Type
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                {[
+                  { id: 'regular' as FarePassengerType, label: 'Regular' },
+                  { id: 'student' as FarePassengerType, label: 'Student' },
+                  { id: 'senior_citizen' as FarePassengerType, label: 'Senior' },
+                  { id: 'pwd' as FarePassengerType, label: 'PWD' },
+                ].map((type) => {
+                  const isSelected = cashPassengerType === type.id;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setCashPassengerType(type.id)}
+                      style={{
+                        padding: '8px 4px',
+                        borderRadius: 10,
+                        border: isSelected ? '1.5px solid var(--color-primary)' : '1px solid var(--border-subtle)',
+                        background: isSelected ? 'var(--color-primary-subtle)' : 'var(--bg-secondary)',
+                        color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)',
+                        fontSize: '0.74rem',
+                        fontWeight: isSelected ? 800 : 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {type.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Destination Stop */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <label style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                  Destination Stop
+                </label>
+                {cashDestination && (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-primary)', fontWeight: 600 }}>
+                    Selected: {cashDestination}
+                  </span>
+                )}
+              </div>
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                maxHeight: 130,
+                overflowY: 'auto',
+                padding: '2px',
+              }}>
+                {displayStops.map((stop) => {
+                  const isBoarding = stop === boardingStop;
+                  const isSelected = cashDestination === stop;
+                  return (
+                    <button
+                      key={stop}
+                      type="button"
+                      disabled={isBoarding}
+                      onClick={() => setCashDestination(stop)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 20,
+                        border: isSelected ? '1.5px solid #10b981' : '1px solid var(--border-subtle)',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.15)' : isBoarding ? 'var(--bg-secondary)' : 'var(--bg-secondary)',
+                        color: isSelected ? '#10b981' : isBoarding ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                        fontSize: '0.75rem',
+                        fontWeight: isSelected ? 800 : 500,
+                        cursor: isBoarding ? 'not-allowed' : 'pointer',
+                        opacity: isBoarding ? 0.5 : 1,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {stop} {isBoarding ? '(Current)' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Fare Summary & Submit */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 12,
+              marginTop: 2,
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                  Calculated Cash Fare
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  ₱{computedCashFare.toFixed(2)}
+                </div>
+              </div>
+              <PrimaryButton
+                onClick={handleDirectCashBoarding}
+                disabled={!cashDestination || isSubmittingCash || remainingSeats <= 0}
+                style={{ padding: '10px 20px', minWidth: 140 }}
+              >
+                {isSubmittingCash ? (
+                  <IonSpinner name="crescent" style={{ width: 18, height: 18, color: '#ffffff' }} />
+                ) : (
+                  <>
+                    <Banknote size={16} />
+                    Board Passenger
+                  </>
+                )}
+              </PrimaryButton>
+            </div>
+          </div>
+        </div>
+      </AnimatedModal>
+
+      {/* ══════════════════════════════════════════════════════════════
+          ALIGHTING MODAL (TAP-OUT)
+      ══════════════════════════════════════════════════════════════ */}
+      <AnimatedModal
+        isOpen={showAlightingModal}
+        onClose={() => setShowAlightingModal(false)}
+        title="Alight Passengers (Tap-Out)"
+        variant="sheet"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Status info bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            background: 'var(--bg-tertiary)',
+            borderRadius: 14,
+            border: '1px solid var(--border-subtle)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Navigation size={16} color="#F59E0B" />
+              <div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Current Route
+                </div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {currentBus?.route || 'Route In Progress'}
+                </div>
+              </div>
+            </div>
+            <StatusBadge variant="info">
+              {validatedCount} Onboard
+            </StatusBadge>
+          </div>
+
+          {/* Primary Action: QR Camera Scanner */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            onClick={() => {
+              setShowAlightingModal(false);
+              history.push('/scan', { mode: 'alighting' });
+            }}
+            style={{
+              width: '100%',
+              padding: '16px',
+              borderRadius: 18,
+              border: '1.5px solid rgba(245, 158, 11, 0.4)',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.08) 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                flexShrink: 0,
+              }}>
+                <AlightIcon size={26} />
+              </div>
+              <div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Scan Disembarking Cards
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Tap-out camera validation for cards & transit passes
+                </div>
+              </div>
+            </div>
+            <ChevronRight size={20} color="#F59E0B" />
+          </motion.button>
+
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              Onboard Passengers ({alightModalPassengers.length})
+            </span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+          </div>
+
+          {/* Quick 1-Tap Alight Passengers List */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxHeight: 260,
+            overflowY: 'auto',
+            paddingRight: 2,
+          }}>
+            {loadingAlightList ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', gap: 10 }}>
+                <IonSpinner name="crescent" style={{ width: 24, height: 24, color: 'var(--color-primary)' }} />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Loading onboard passengers...</span>
+              </div>
+            ) : alightModalPassengers.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '28px 16px',
+                background: 'var(--bg-tertiary)',
+                borderRadius: 16,
+                border: '1px solid var(--border-subtle)',
+              }}>
+                <Users size={28} color="var(--text-tertiary)" style={{ margin: '0 auto 8px', opacity: 0.6 }} />
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                  No Passengers Recorded Onboard
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
+                  Use "Board Passengers" or scan cards when passengers enter.
+                </div>
+              </div>
+            ) : (
+              alightModalPassengers.map((p) => {
+                const isAlightingThis = alightingPassengerId === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 14,
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        background: p.payment_method === 'cash' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: p.payment_method === 'cash' ? '#10b981' : '#3b82f6',
+                        flexShrink: 0,
+                      }}>
+                        {p.payment_method === 'cash' ? <Banknote size={18} /> : <CreditCard size={18} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {p.card_uid}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          To: <span style={{ fontWeight: 600 }}>{p.destination}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isAlightingThis}
+                      onClick={() => handleDirectAlight(p)}
+                      style={{
+                        padding: '7px 14px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                        color: '#ffffff',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        cursor: isAlightingThis ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                        opacity: isAlightingThis ? 0.7 : 1,
+                      }}
+                    >
+                      {isAlightingThis ? (
+                        <IonSpinner name="crescent" style={{ width: 14, height: 14, color: '#ffffff' }} />
+                      ) : (
+                        <>
+                          <AlightIcon size={13} />
+                          Alight
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </AnimatedModal>
 
       <BottomNav />
 

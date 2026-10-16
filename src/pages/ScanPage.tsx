@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { IonPage, IonContent } from '@ionic/react';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { useIonViewWillLeave } from '@ionic/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,6 +22,7 @@ import { supabase } from '../supabaseClient';
 import { Html5Qrcode } from 'html5-qrcode';
 import { stripQrShadedRegion } from '../utils/qrScannerUi';
 import { shouldUseOfflineScanPath, isLikelyNetworkError } from '../utils/networkUtils';
+import { playTransitChime } from '../utils/transitAudio';
 import { Camera } from '@capacitor/camera';
 import OfflineBanner from '../components/OfflineBanner';
 import PageHeader from '../components/layout/PageHeader';
@@ -186,7 +187,12 @@ const ScanPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
   const [modalColor, setModalColor] = useState<'success' | 'danger' | 'warning'>('success');
-  const [scanType, setScanType] = useState<'onboarding' | 'alighting'>('onboarding');
+  const location = useLocation<{ mode?: 'onboarding' | 'alighting' }>();
+  const initialScanType = (location.state?.mode as 'onboarding' | 'alighting') || 'onboarding';
+  const [scanType, setScanType] = useState<'onboarding' | 'alighting'>(initialScanType);
+  const [lastDetectedCode, setLastDetectedCode] = useState<string>('');
+  const [crossModeAction, setCrossModeAction] = useState<'prompt_alight' | 'prompt_board' | null>(null);
+  const [showManualBoardingStopPicker, setShowManualBoardingStopPicker] = useState<boolean>(false);
 
   // Post-scan state (onboarding: waiting for destination pick)
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
@@ -274,31 +280,44 @@ const ScanPage: React.FC = () => {
     };
   }, []);
 
-  // Haptic feedback on scan outcome (gracefully no-ops on web/desktop)
+  // Haptic and audio feedback on scan outcome
   useEffect(() => {
     if (scanState === 'success') {
       Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+      playTransitChime(scanType === 'onboarding' ? 'board' : 'alight');
     } else if (scanState === 'failed') {
       Haptics.notification({ type: NotificationType.Error }).catch(() => {});
+      playTransitChime('error');
     } else if (scanState === 'detected') {
       Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+      playTransitChime('scan_tick');
     }
-  }, [scanState]);
+  }, [scanState, scanType]);
 
-  // Auto-restart scanner after failed state (only for onboarding duplicate scans)
+  const switchScanType = (mode: 'onboarding' | 'alighting') => {
+    if (scanType !== mode) {
+      playTransitChime('switch_mode');
+      Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+      setScanType(mode);
+      setCrossModeAction(null);
+    }
+  };
+
+  // Auto-restart scanner after failed state (only for onboarding duplicate scans without actionable prompt)
   useEffect(() => {
     if (scanState !== 'failed') return;
-    // Only auto-restart for onboarding duplicate scans, not for alighting errors
+    if (crossModeAction) return; // Retain prompt for conductor action
     if (scanType !== 'onboarding' || !failedMsg.includes('Already boarded')) return;
     const timeout = setTimeout(() => {
       setFailedMsg('');
+      setLastDetectedCode('');
       processingRef.current = false;
       lastScanTimeRef.current = 0;
       lastScanCodeRef.current = '';
       setScanState('scanning');
     }, 2000);
     return () => clearTimeout(timeout);
-  }, [scanState, scanType, failedMsg]);
+  }, [scanState, scanType, failedMsg, crossModeAction]);
 
   // Subscribe to offline queue changes
   useEffect(() => {
@@ -428,6 +447,9 @@ const ScanPage: React.FC = () => {
     setSelectedBoardingPoint('');
     setCurrentStopName(null);
     setCurrentCoordinates(null);
+    setCrossModeAction(null);
+    setLastDetectedCode('');
+    setShowManualBoardingStopPicker(false);
     processingRef.current = false;
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
@@ -438,13 +460,15 @@ const ScanPage: React.FC = () => {
     setPendingScan(null);
     setSelectedDestination('');
     setSelectedPaymentMethod('');
-    setSelectedPaymentMethod('');
     setDestSearch('');
     setBoardingSearch('');
     setSelectedBoardingPoint('');
     setFailedMsg('');
     setCurrentStopName(null);
     setCurrentCoordinates(null);
+    setCrossModeAction(null);
+    setLastDetectedCode('');
+    setShowManualBoardingStopPicker(false);
     processingRef.current = false;
     lastScanTimeRef.current = 0;
     lastScanCodeRef.current = '';
@@ -492,13 +516,18 @@ const ScanPage: React.FC = () => {
     const ticketUidNorm = detectedType.isTicket ? normalizedCode.toUpperCase() : undefined;
 
     if (offlineQueueService.hasPendingBoarding(currentTrip.id, cardUidNorm, ticketUidNorm)) {
+      setLastDetectedCode(scannedCode);
+      setCrossModeAction('prompt_alight');
       setFailedMsg('Already boarded — pending offline sync');
       setScanState('failed');
       return true;
     }
 
+    const cachedTicket = detectedType.isTicket ? StorageService.getCachedTicket(normalizedCode) : null;
+    const cachedCard = !detectedType.isTicket ? StorageService.getCachedCard(normalizedCode) : null;
+    const presetDestination = (detectedType.isTicket ? cachedTicket?.destination : cachedCard?.destination) || '';
+
     if (detectedType.isTicket) {
-      const cachedTicket = StorageService.getCachedTicket(normalizedCode);
       if (cachedTicket) {
         if (cachedTicket.status === 'validated' || cachedTicket.status === 'expired') {
           setFailedMsg(cachedTicket.status === 'expired' ? 'Ticket expired' : 'Ticket already used');
@@ -526,7 +555,6 @@ const ScanPage: React.FC = () => {
         });
       }
     } else {
-      const cachedCard = StorageService.getCachedCard(normalizedCode);
       if (cachedCard) {
         if (cachedCard.status !== 'active') {
           setFailedMsg('Card is inactive');
@@ -555,9 +583,9 @@ const ScanPage: React.FC = () => {
       }
     }
 
-    const cardBalance = detectedType.isTicket ? 0 : (StorageService.getCachedCard(normalizedCode)?.balance ?? 999);
+    const cardBalance = detectedType.isTicket ? 0 : (cachedCard?.balance ?? 999);
     const defaultMethod = detectedType.isTicket ? 'cash' : (cardBalance >= estimatedFare ? 'qr_card' : 'cash');
-    setSelectedDestination('');
+    setSelectedDestination(presetDestination);
     setSelectedPaymentMethod(defaultMethod);
     setGcashRefNumber('');
     setShowGcashQrZoom(false);
@@ -653,6 +681,8 @@ const ScanPage: React.FC = () => {
 
           // Check if already boarded in offline queue (prevent duplicate boarding scans)
           if (offlineQueueService.hasPendingBoarding(currentTrip.id, undefined, normalizedCode.toUpperCase())) {
+            setLastDetectedCode(scannedCode);
+            setCrossModeAction('prompt_alight');
             setFailedMsg('Already boarded — pending offline sync');
             setScanState('failed');
             return;
@@ -669,11 +699,14 @@ const ScanPage: React.FC = () => {
             .maybeSingle();
 
           if (boardedTicket) {
+            setLastDetectedCode(scannedCode);
+            setCrossModeAction('prompt_alight');
             setFailedMsg('Already boarded on this trip');
             setScanState('failed');
             return;
           }
 
+          const presetTicketDest = ticket.destination || '';
           setPendingScan({
             code: scannedCode,
             balance: ticket.fare_amount,
@@ -684,7 +717,7 @@ const ScanPage: React.FC = () => {
             isTicket: true,
             tempTicketId: ticket.id,
           });
-          setSelectedDestination('');
+          setSelectedDestination(presetTicketDest);
           setSelectedPaymentMethod('cash');
           setGcashRefNumber('');
           setShowGcashQrZoom(false);
@@ -733,6 +766,8 @@ const ScanPage: React.FC = () => {
 
         // Check if already boarded in offline queue (prevent duplicate boarding scans)
         if (offlineQueueService.hasPendingBoarding(currentTrip.id, normalizedCode.toUpperCase(), undefined)) {
+          setLastDetectedCode(scannedCode);
+          setCrossModeAction('prompt_alight');
           setFailedMsg('Already boarded — pending offline sync');
           setScanState('failed');
           return;
@@ -749,6 +784,8 @@ const ScanPage: React.FC = () => {
           .maybeSingle();
 
         if (boardedPassenger) {
+          setLastDetectedCode(scannedCode);
+          setCrossModeAction('prompt_alight');
           setFailedMsg('Already boarded on this trip');
           setScanState('failed');
           return;
@@ -757,18 +794,23 @@ const ScanPage: React.FC = () => {
         const passengerType = detectedType.passengerType;
         console.log('Card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
+        const presetCardDest = card.destination || '';
+        const fromStop = selectedBoardingPoint || currentStopName || undefined;
+        const matrixFare = presetCardDest ? getFareFromMatrix(fromStop, presetCardDest, passengerType) : null;
+        const initialFare = matrixFare !== null ? matrixFare : DEFAULT_FARE;
+
         setPendingScan({
           code: scannedCode,
           balance: card.balance,
           cardDestination: card.destination,
-          fare: DEFAULT_FARE,
+          fare: initialFare,
           passengerType: passengerType,
           cardUid: (card.card_uid || scannedCode).toUpperCase(),
           isTicket: false,
           cardId: card.id,
         });
-        const defaultMethod = Number(card.balance) >= DEFAULT_FARE ? 'qr_card' : 'cash';
-        setSelectedDestination('');
+        const defaultMethod = Number(card.balance) >= initialFare ? 'qr_card' : 'cash';
+        setSelectedDestination(presetCardDest);
         setSelectedPaymentMethod(defaultMethod);
         setGcashRefNumber('');
         setShowGcashQrZoom(false);
@@ -932,6 +974,21 @@ const ScanPage: React.FC = () => {
           tripId: currentTrip.id,
         });
 
+        StorageService.addLocalPassenger(currentTrip.id, {
+          cardUid,
+          ticketUid,
+          cardId,
+          tempTicketId,
+          destination,
+          boardingStop: boardingPoint || pendingScan?.boardingPoint,
+          passengerType: pendingScan?.passengerType || 'regular',
+          fare: totalFare,
+          baggageFee: baggageSelection?.fee,
+          paymentMethod,
+          boardedAt: new Date().toISOString(),
+          isTicket: !!ticketUid,
+        });
+
         bumpPending(offlineQueueService.getPendingCount());
 
         setValidatedCount(validatedCount + 1);
@@ -985,6 +1042,20 @@ const ScanPage: React.FC = () => {
           incrementCurrentPassengers();
           incrementValidated(result.totalFare || 0);
           setBoardedCount(c => c + 1);
+          StorageService.addLocalPassenger(currentTrip.id, {
+            cardUid: pendingScan?.isTicket ? undefined : (pendingScan?.code || code),
+            ticketUid: pendingScan?.isTicket ? (pendingScan?.code || code) : undefined,
+            cardId: pendingScan?.cardId,
+            tempTicketId: pendingScan?.tempTicketId,
+            destination,
+            boardingStop: boardingPoint || selectedBoardingPoint || currentStopName || 'Agora Terminal',
+            passengerType: pendingScan?.passengerType || 'regular',
+            fare: result.totalFare || 0,
+            baggageFee: baggageSelection?.fee,
+            paymentMethod,
+            boardedAt: new Date().toISOString(),
+            isTicket: pendingScan?.isTicket || false,
+          });
           setPendingScan(null);
           setBaggageSelection(null);
           setSelectedDestination('');
@@ -1012,6 +1083,20 @@ const ScanPage: React.FC = () => {
           incrementCurrentPassengers();
           incrementValidated(result.fareAmount || 0);
           setBoardedCount(c => c + 1);
+          StorageService.addLocalPassenger(currentTrip.id, {
+            cardUid: undefined,
+            ticketUid: pendingScan?.code || code,
+            cardId: undefined,
+            tempTicketId: pendingScan?.tempTicketId,
+            destination,
+            boardingStop: boardingPoint || selectedBoardingPoint || currentStopName || 'Agora Terminal',
+            passengerType: pendingScan?.passengerType || 'regular',
+            fare: result.fareAmount || 0,
+            baggageFee: baggageSelection?.fee,
+            paymentMethod,
+            boardedAt: new Date().toISOString(),
+            isTicket: true,
+          });
           setPendingScan(null);
           setBaggageSelection(null);
           setSelectedDestination('');
@@ -1142,6 +1227,21 @@ const ScanPage: React.FC = () => {
           destination,
           boardingPoint: selectedBoardingPoint || pendingScan?.boardingPoint || undefined,
           tripId: currentTrip.id,
+        });
+
+        StorageService.addLocalPassenger(currentTrip.id, {
+          cardUid,
+          ticketUid,
+          cardId: pendingScan.cardId,
+          tempTicketId: pendingScan.tempTicketId,
+          destination,
+          boardingStop: selectedBoardingPoint || pendingScan?.boardingPoint || 'Agora Terminal',
+          passengerType: pendingScan?.passengerType || 'regular',
+          fare: (pendingScan.fare || 0) + (baggageSelection?.fee || 0),
+          baggageFee: baggageSelection?.fee,
+          paymentMethod,
+          boardedAt: new Date().toISOString(),
+          isTicket: !!ticketUid,
         });
 
         bumpPending(offlineQueueService.getPendingCount());
@@ -1350,6 +1450,8 @@ const ScanPage: React.FC = () => {
             .maybeSingle();
 
           if (!boardedTicket) {
+            setLastDetectedCode(scannedCode);
+            setCrossModeAction('prompt_board');
             setFailedMsg('Ticket not boarded on this trip');
             setScanState('failed');
             return;
@@ -1463,6 +1565,8 @@ const ScanPage: React.FC = () => {
       console.log('[Alighting] Boarded passenger check error:', boardedPassenger.error);
 
       if (!actualBoardedPassenger) {
+        setLastDetectedCode(scannedCode);
+        setCrossModeAction('prompt_board');
         setFailedMsg('Card not boarded on this trip');
         setScanState('failed');
         return;
@@ -1565,10 +1669,20 @@ const ScanPage: React.FC = () => {
         });
       }
       
+      if (currentTrip) {
+        StorageService.markLocalAlighted(
+          currentTrip.id,
+          pendingAlighting?.cardUid || pendingAlighting?.code,
+          pendingAlighting?.ticketUid,
+        );
+      }
+      
       setSuccessMsg(
-        result.destination
-          ? `Alighted @ ${result.destination}`
-          : 'Alighted successfully',
+        result.destinationMismatch
+          ? `Alighted Early @ ${result.destination} (Ticket was ${result.expectedDestination})`
+          : (result.destination
+            ? `Alighted @ ${result.destination}`
+            : 'Alighted successfully')
       );
       setSuccessAmount(totalFare);
       setSuccessBalance(result.newBalance);
@@ -1616,8 +1730,20 @@ const ScanPage: React.FC = () => {
           console.error('[SMS] Failed to queue alighting SMS:', smsError);
         });
       }
+
+      if (currentTrip) {
+        StorageService.markLocalAlighted(
+          currentTrip.id,
+          undefined,
+          pendingAlighting?.ticketUid || pendingAlighting?.code,
+        );
+      }
       
-      setSuccessMsg(result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully');
+      setSuccessMsg(
+        result.destinationMismatch
+          ? `Alighted Early @ ${result.destination} (Ticket was ${result.expectedDestination})`
+          : (result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully')
+      );
       setSuccessAmount(result.fareAmount);
       setSuccessBalance(null);
       setSuccessPassengerType(pendingAlighting?.passengerType || 'regular');
@@ -1713,6 +1839,8 @@ const ScanPage: React.FC = () => {
           paymentMethod: pendingAlighting.paymentMethod,
         });
 
+        StorageService.markLocalAlighted(currentTrip.id, cardUid, ticketUid);
+
         bumpPending(offlineQueueService.getPendingCount());
 
         // Don't decrement validatedCount - it represents total validated passengers
@@ -1779,6 +1907,8 @@ const ScanPage: React.FC = () => {
           baggageFee: pendingAlighting.baggageInfo?.fee,
           paymentMethod: pendingAlighting.paymentMethod,
         });
+
+        StorageService.markLocalAlighted(currentTrip.id, cardUid, ticketUid);
 
         bumpPending(offlineQueueService.getPendingCount());
         // Don't decrement validatedCount - it represents total validated passengers
@@ -1872,17 +2002,15 @@ const ScanPage: React.FC = () => {
               {/* Hero */}
               <SoftCard variant="glass" style={{ marginBottom: 12, padding: '16px 14px', textAlign: 'center' }}>
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
-                  <motion.div
+                  <div
                     style={{ width: 80, height: 80, borderRadius: 24, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    animate={{ scale: [1, 1.06, 1] }}
-                    transition={{ duration: 2.5, repeat: Infinity }}
                   >
                     {scanType === 'alighting' ? (
                       <MapPin size={40} color="var(--color-primary)" strokeWidth={1.5} />
                     ) : (
                       <ScanLine size={40} color="var(--color-primary)" strokeWidth={1.5} />
                     )}
-                  </motion.div>
+                  </div>
                 </div>
                 <h2 style={{ color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>
                   {isOnline ? (scanType === 'alighting' ? 'Alighting Scanner' : 'Onboarding Scanner') : 'Offline Scanner'}
@@ -1896,16 +2024,13 @@ const ScanPage: React.FC = () => {
 
               {/* Mode selector card */}
               <SoftCard variant="glass" style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-                  <AnimatedIllustration type="scanning" size={50} />
-                </div>
                 <h4 className="heading-small" style={{ marginBottom: 8, textAlign: 'center' }}>Scan Mode</h4>
                 <div style={{ display: 'flex', gap: 10, marginBottom: scanType === 'alighting' && routeStops.length > 0 ? 12 : 0 }}>
-                  <button type="button" className={`scanner-type-btn ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`} onClick={() => setScanType('onboarding')}>
+                  <button type="button" className={`scanner-type-btn ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`} onClick={() => switchScanType('onboarding')}>
                     <span className="scanner-type-btn__icon"><LogIn size={16} /></span>
                     Onboarding
                   </button>
-                  <button type="button" className={`scanner-type-btn ${scanType === 'alighting' ? 'scanner-type-btn--active' : ''}`} onClick={() => setScanType('alighting')}>
+                  <button type="button" className={`scanner-type-btn ${scanType === 'alighting' ? 'scanner-type-btn--active' : ''}`} onClick={() => switchScanType('alighting')}>
                     <span className="scanner-type-btn__icon"><AlightIcon size={16} /></span>
                     Alighting
                   </button>
@@ -2007,17 +2132,74 @@ const ScanPage: React.FC = () => {
                 display: shouldShowCamera(scanState) ? 'block' : 'none',
               }}>
 
-                {/* Card header bar */}
-                <div className="scanner-active-card__header">
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    background: scanType === 'alighting' ? 'var(--color-warning-subtle)' : 'var(--color-success-subtle)',
-                    color: scanType === 'alighting' ? '#A16207' : 'var(--color-success)',
-                    borderRadius: 20, padding: '4px 12px', fontSize: '0.78rem', fontWeight: 700,
-                  }}>
-                    {scanType === 'alighting' ? 'Alighting' : 'Onboarding'}
-                    {!isOnline && ' · Offline'}
-                  </span>
+                {/* Card header bar with in-camera mode toggle */}
+                <div className="scanner-active-card__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 24,
+                      padding: '3px',
+                      border: '1.5px solid var(--glass-border)',
+                      boxShadow: 'var(--shadow-xs)',
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => switchScanType('onboarding')}
+                        style={{
+                          border: 'none',
+                          borderRadius: 20,
+                          padding: '5px 12px',
+                          background: scanType === 'onboarding' ? 'linear-gradient(135deg, #22C55E, #16A34A)' : 'transparent',
+                          color: scanType === 'onboarding' ? '#ffffff' : 'var(--text-secondary)',
+                          fontSize: '0.76rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <LogIn size={13} />
+                        Onboarding
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => switchScanType('alighting')}
+                        style={{
+                          border: 'none',
+                          borderRadius: 20,
+                          padding: '5px 12px',
+                          background: scanType === 'alighting' ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'transparent',
+                          color: scanType === 'alighting' ? '#ffffff' : 'var(--text-secondary)',
+                          fontSize: '0.76rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <AlightIcon size={13} />
+                        Alighting
+                      </button>
+                    </div>
+                    {!isOnline && (
+                      <span style={{
+                        background: 'var(--color-danger-subtle)',
+                        color: 'var(--color-danger)',
+                        borderRadius: 14,
+                        padding: '3px 8px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                      }}>
+                        Offline
+                      </span>
+                    )}
+                  </div>
                   <button type="button" onClick={stopCamera}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4, borderRadius: 8 }}
                     aria-label="Cancel"
@@ -2213,6 +2395,86 @@ const ScanPage: React.FC = () => {
                           <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>{debugScannedCode}</span>
                         </div>
                       )}
+                      {crossModeAction === 'prompt_alight' && (
+                        <div style={{
+                          marginTop: 10,
+                          padding: '12px 14px',
+                          background: 'rgba(0, 0, 0, 0.45)',
+                          border: '1.5px solid rgba(251, 191, 36, 0.65)',
+                          borderRadius: 14,
+                          width: '100%',
+                          maxWidth: 290,
+                          textAlign: 'center',
+                          boxShadow: '0 6px 18px rgba(0,0,0,0.3)',
+                        }}>
+                          <span style={{ fontSize: '0.8rem', color: '#FEF08A', fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                            Passenger is currently on board this trip!
+                          </span>
+                          <PrimaryButton
+                            onClick={async () => {
+                              const codeToAlight = lastDetectedCode || debugScannedCode;
+                              setCrossModeAction(null);
+                              setScanType('alighting');
+                              setFailedMsg('');
+                              await handleAlightingScan(codeToAlight);
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                              color: '#ffffff',
+                              fontWeight: 800,
+                              fontSize: '0.84rem',
+                              padding: '10px 14px',
+                              borderRadius: 10,
+                              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)',
+                            }}
+                            icon={<AlightIcon size={16} />}
+                          >
+                            Alight Passenger Now
+                          </PrimaryButton>
+                        </div>
+                      )}
+
+                      {crossModeAction === 'prompt_board' && (
+                        <div style={{
+                          marginTop: 10,
+                          padding: '12px 14px',
+                          background: 'rgba(0, 0, 0, 0.45)',
+                          border: '1.5px solid rgba(74, 222, 128, 0.65)',
+                          borderRadius: 14,
+                          width: '100%',
+                          maxWidth: 290,
+                          textAlign: 'center',
+                          boxShadow: '0 6px 18px rgba(0,0,0,0.3)',
+                        }}>
+                          <span style={{ fontSize: '0.8rem', color: '#BBF7D0', fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                            Card is not yet boarded on this trip!
+                          </span>
+                          <PrimaryButton
+                            onClick={async () => {
+                              const codeToBoard = lastDetectedCode || debugScannedCode;
+                              setCrossModeAction(null);
+                              setScanType('onboarding');
+                              setFailedMsg('');
+                              await handleOnboardingPreScan(codeToBoard);
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'linear-gradient(135deg, #22C55E, #16A34A)',
+                              color: '#ffffff',
+                              fontWeight: 800,
+                              fontSize: '0.84rem',
+                              padding: '10px 14px',
+                              borderRadius: 10,
+                              boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)',
+                            }}
+                            icon={<LogIn size={16} />}
+                          >
+                            Board Passenger Now
+                          </PrimaryButton>
+                        </div>
+                      )}
+
                       <PrimaryButton
                         onClick={retryCamera}
                         variant="ghost"
@@ -2321,50 +2583,170 @@ const ScanPage: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <div
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: locationStatus === 'unavailable' ? 'pointer' : 'default' }}
-                          onClick={locationStatus === 'unavailable' ? refreshBoardingLocation : undefined}
-                          role={locationStatus === 'unavailable' ? 'button' : undefined}
-                        >
-                          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <MapPin size={16} color="var(--color-success)" />
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                              <MapPin size={16} color="var(--color-success)" />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowManualBoardingStopPicker(!showManualBoardingStopPicker)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--color-primary)',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    padding: '0 4px',
+                                  }}
+                                >
+                                  {showManualBoardingStopPicker ? 'Close Stops' : 'Change Stop'}
+                                </button>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                                  {selectedBoardingPoint || currentStopName || (locationStatus === 'requesting' ? 'Locating GPS…' : 'Tap to set boarding stop')}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={refreshBoardingLocation}
+                                  title="Refresh GPS"
+                                  style={{
+                                    background: 'var(--bg-tertiary)',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: 6,
+                                    padding: '3px 8px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                >
+                                  <RefreshCw size={11} className={locationStatus === 'requesting' ? 'primary-btn__spinner' : ''} />
+                                  GPS
+                                </button>
+                              </div>
+                              {currentCoordinates && !selectedBoardingPoint && (
+                                <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                                  GPS Fix: {currentCoordinates.lat.toFixed(5)}, {currentCoordinates.lng.toFixed(5)}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                              {locationStatus === 'requesting' && (
-                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Requesting location…</span>
-                              )}
-                              {locationStatus === 'ready' && currentStopName}
-                              {locationStatus === 'unavailable' && (
-                                <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Tap to request location</span>
-                              )}
-                              {locationStatus === 'idle' && (
-                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Preparing GPS…</span>
-                              )}
-                            </p>
-                            {currentCoordinates && (
-                              <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-                                {currentCoordinates.lat.toFixed(6)}, {currentCoordinates.lng.toFixed(6)}
+
+                          {/* Quick Boarding Stop Picker in Online Mode */}
+                          {showManualBoardingStopPicker && (
+                            <div style={{ marginTop: 8, paddingLeft: 40 }}>
+                              <p style={{ margin: '0 0 6px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                Tap a stop to override current boarding terminal:
                               </p>
-                            )}
-                          </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 100, overflowY: 'auto' }}>
+                                {displayStops.map(stop => (
+                                  <button
+                                    key={stop}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBoardingPoint(stop);
+                                      setShowManualBoardingStopPicker(false);
+                                      if (selectedDestination && pendingScan) {
+                                        const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+                                        const mFare = getFareFromMatrix(stop, selectedDestination, pType);
+                                        if (mFare !== null) {
+                                          setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '5px 10px',
+                                      borderRadius: 14,
+                                      fontSize: '0.74rem',
+                                      fontWeight: (selectedBoardingPoint || currentStopName) === stop ? 700 : 500,
+                                      border: (selectedBoardingPoint || currentStopName) === stop ? '1.5px solid var(--color-success)' : '1px solid var(--glass-border)',
+                                      background: (selectedBoardingPoint || currentStopName) === stop ? 'var(--color-success)' : 'var(--bg-tertiary)',
+                                      color: (selectedBoardingPoint || currentStopName) === stop ? 'white' : 'var(--text-primary)',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    {(selectedBoardingPoint || currentStopName) === stop ? '✓ ' : ''}{stop}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {/* Divider with route line */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingLeft: 12 }}>
                         <div style={{ width: 4, height: 32, borderRadius: 2, background: 'linear-gradient(to bottom, var(--color-success), var(--color-primary))' }} />
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>select stop below</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>select destination below</span>
                       </div>
 
-                      {/* To — dropdown selection */}
+                      {/* To — Destination selection with quick chips */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
                         <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-primary-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
                           <Navigation size={16} color="var(--color-primary)" />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
+                            {pendingScan.cardDestination && (
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-subtle)', padding: '2px 8px', borderRadius: 10 }}>
+                                Card Preset: {pendingScan.cardDestination}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Quick stop chips */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, maxHeight: 96, overflowY: 'auto' }}>
+                            {displayStops.map(stop => {
+                              const boardingPointRef = selectedBoardingPoint || currentStopName || displayStops[0];
+                              const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+                              const chipFare = boardingPointRef && boardingPointRef !== stop
+                                ? getFareFromMatrix(boardingPointRef, stop, pType)
+                                : null;
+                              return (
+                                <button
+                                  key={stop}
+                                  type="button"
+                                  onClick={() => handleDestinationSelect(stop)}
+                                  style={{
+                                    padding: '5px 10px',
+                                    borderRadius: 16,
+                                    fontSize: '0.76rem',
+                                    fontWeight: selectedDestination === stop ? 700 : 500,
+                                    border: selectedDestination === stop ? '2px solid var(--color-primary)' : '1px solid var(--glass-border)',
+                                    background: selectedDestination === stop ? 'var(--color-primary-subtle)' : 'var(--bg-tertiary)',
+                                    color: selectedDestination === stop ? 'var(--color-primary)' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                >
+                                  <span>{selectedDestination === stop ? '✓ ' : ''}{stop}</span>
+                                  {chipFare !== null && (
+                                    <span style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      opacity: selectedDestination === stop ? 1 : 0.7,
+                                    }}>
+                                      · ₱{chipFare}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+
                           <select
                             value={selectedDestination}
                             onChange={e => handleDestinationSelect(e.target.value)}
@@ -2380,7 +2762,7 @@ const ScanPage: React.FC = () => {
                               cursor: 'pointer',
                             }}
                           >
-                            <option value="">-- Select destination --</option>
+                            <option value="">-- All Route Stops ({displayStops.length}) --</option>
                             {displayStops.map(stop => (
                               <option key={stop} value={stop}>
                                 {stop}
@@ -2668,6 +3050,19 @@ const ScanPage: React.FC = () => {
                         return (
                           <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Passenger Type</span>
+                                {pendingScan.passengerType && pendingScan.passengerType !== 'regular' && (
+                                  <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#16A34A', background: 'rgba(34, 197, 94, 0.12)', padding: '1px 6px', borderRadius: 6 }}>
+                                    20% Discount
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {passengerTypeLabel(pendingScan.passengerType || 'regular')}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Base Fare</span>
                               <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 ₱{pendingScan.fare.toFixed(2)}
@@ -2788,60 +3183,59 @@ const ScanPage: React.FC = () => {
                         style={{ marginBottom: 16 }}
                       >
                         <SoftCard variant="glass" style={{ marginBottom: 14 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <MapPin size={20} color="white" />
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(217,119,6,0.3)' }}>
+                                <AlightIcon size={20} color="white" />
+                              </div>
+                              <div>
+                                <h4 className="heading-small" style={{ margin: 0, color: 'var(--text-primary)' }}>Alighting Confirmation</h4>
+                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Review trip details before confirming</p>
+                              </div>
                             </div>
-                            <div>
-                              <h4 className="heading-small" style={{ margin: 0, color: 'var(--color-primary)' }}>Alighting Confirmation</h4>
-                              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Review trip details before confirming</p>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              color: 'var(--color-primary)',
+                              background: 'var(--color-primary-subtle)',
+                              padding: '3px 8px',
+                              borderRadius: 8,
+                            }}>
+                              {passengerTypeLabel(pendingAlighting.cardType || pendingAlighting.passengerType || 'regular')}
+                            </span>
+                          </div>
+
+                          {/* Journey Route Card */}
+                          <div style={{ marginBottom: 12, padding: '12px 14px', background: 'var(--bg-tertiary)', border: '1px solid var(--glass-border)', borderRadius: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Passenger Route</span>
+                              <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {pendingAlighting.cardUid || pendingAlighting.code}
+                              </span>
                             </div>
-                          </div>
-
-                          {/* Card ID */}
-                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Card ID</p>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                              {pendingAlighting.cardUid || pendingAlighting.code}
-                            </p>
-                          </div>
-
-                          {/* Route */}
-                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Route</p>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                              {pendingAlighting.route}
-                            </p>
-                          </div>
-
-                          {/* Destination */}
-                          <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Destination</p>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--color-primary)' }}>
-                              {pendingAlighting.destination}
-                            </p>
-                          </div>
-
-                          {/* Boarded information */}
-                          <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10 }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Boarded</p>
-                            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: '#10b981' }}>
-                              ✓ Passenger boarded on this trip
-                            </p>
-                          </div>
-
-                          {/* Boarding Point */}
-                          {pendingAlighting.boardingPoint && (
-                            <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 10 }}>
-                              <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Boarding Point</p>
-                              <div style={{ padding: '6px 10px', background: 'rgba(59, 130, 246, 0.15)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <CheckCircle size={14} color="#3b82f6" />
-                                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#3b82f6' }}>
-                                  {pendingAlighting.boardingPoint}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontSize: '0.66rem', color: 'var(--text-tertiary)', display: 'block', fontWeight: 600 }}>BOARDING STOP</span>
+                                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                                  {pendingAlighting.boardingPoint || 'Trip Origin'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <ChevronRight size={18} color="var(--text-tertiary)" />
+                              </div>
+                              <div style={{ flex: 1, textAlign: 'right' }}>
+                                <span style={{ fontSize: '0.66rem', color: 'var(--text-tertiary)', display: 'block', fontWeight: 600 }}>TICKETED STOP</span>
+                                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                  {pendingAlighting.destination || 'Open Stop'}
                                 </span>
                               </div>
                             </div>
-                          )}
+                            {pendingAlighting.route && (
+                              <p style={{ margin: '8px 0 0', fontSize: '0.72rem', color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-subtle)', paddingTop: 6 }}>
+                                Route: {pendingAlighting.route}
+                              </p>
+                            )}
+                          </div>
 
                           {/* Payment Method */}
                           <div style={{ marginBottom: 12, padding: '12px', background: 'var(--bg-tertiary)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid var(--glass-border)', borderRadius: 10 }}>
