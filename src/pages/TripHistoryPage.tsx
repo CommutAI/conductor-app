@@ -170,7 +170,7 @@ const TripHistoryPage: React.FC = () => {
       let query = supabase
         .from('trips')
         .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
-        .eq('conductor_id', profile.id)
+        .or(`conductor_id.eq.${profile.id},driver_id.eq.${profile.id}`)
         .order('started_at', { ascending: false });
 
       if (segment === 'today') {

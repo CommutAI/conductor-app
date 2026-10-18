@@ -60,7 +60,8 @@ export interface CachedTripState {
   currentTrip: {
     id: string;
     bus_id: string;
-    conductor_id: string;
+    conductor_id?: string;
+    driver_id?: string;
     started_at: string;
     ended_at: string | null;
     status: 'in_progress' | 'completed' | 'cancelled';

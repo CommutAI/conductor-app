@@ -31,7 +31,7 @@ interface Bus {
 interface Trip {
   id: string;
   bus_id: string;
-  conductor_id: string;
+  conductor_id?: string;
   driver_id?: string;
   started_at: string;
   ended_at: string | null;
@@ -146,7 +146,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { data: activeTrip } = await supabase
         .from('trips')
         .select('*')
-        .eq('conductor_id', profile.id)
+        .or(`conductor_id.eq.${profile.id},driver_id.eq.${profile.id}`)
         .eq('status', 'in_progress')
         .order('started_at', { ascending: false })
         .limit(1)
