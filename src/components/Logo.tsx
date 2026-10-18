@@ -1,5 +1,5 @@
 import React from 'react';
-import logoOnly from '../logo-only.png';
+import logoOnly from '/assets/logo.png';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';

@@ -1,7 +1,17 @@
 {
   "appId": "com.omanfortsco.conductor",
-  "appName": "CommutAI Conductor",
+  "appName": "Conductor App",
   "webDir": "build",
+  "icon": "public/assets/logo.png",
+  "splash": {
+    "backgroundColor": "#1a1f3c",
+    "image": "public/assets/logo.png",
+    "androidScaleType": "CENTER",
+    "androidSplashFullScreen": true,
+    "androidSplashImmersive": true,
+    "splashShowDuration": 2000,
+    "showSpinner": false
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,
