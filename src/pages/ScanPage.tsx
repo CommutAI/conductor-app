@@ -34,6 +34,7 @@ import AnimatedModal from '../components/ui/AnimatedModal';
 import QRCardCanvas from '../components/ui/QRCardCanvas';
 import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
 import type { BaggageSelection } from '../types';
+import fareMatrixData from '../data/fareMatrix.json';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -180,6 +181,26 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
 
   // Fallback to default fare
   return calculateFare(DEFAULT_FARE, type).finalFare;
+}
+
+/** Validate if a destination exists in the fare matrix */
+function isValidDestination(destination: string): boolean {
+  const allDestinations = new Set([
+    ...fareMatrixData.map(item => item.route_from),
+    ...fareMatrixData.map(item => item.route_to)
+  ]);
+  return allDestinations.has(destination);
+}
+
+/** Get fare from offline fare matrix */
+function getOfflineFare(from: string, to: string, type: FarePassengerType): number | null {
+  const fareEntry = fareMatrixData.find(
+    item => item.route_from === from && item.route_to === to
+  );
+  if (fareEntry) {
+    return type === 'regular' ? fareEntry.regular_fare : fareEntry.discounted_fare;
+  }
+  return null;
 }
 
 const ScanPage: React.FC = () => {
@@ -566,6 +587,14 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           return true;
         }
+        
+        // Validate destination exists in fare matrix
+        if (cachedTicket.destination && !isValidDestination(cachedTicket.destination)) {
+          setFailedMsg(`Invalid destination: ${cachedTicket.destination}`);
+          setScanState('failed');
+          return true;
+        }
+        
         setPendingScan({
           code: scannedCode,
           balance: cachedTicket.fare_amount,
@@ -595,6 +624,14 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           return true;
         }
+        
+        // Validate destination exists in fare matrix
+        if (cachedCard.destination && !isValidDestination(cachedCard.destination)) {
+          setFailedMsg(`Invalid destination: ${cachedCard.destination}`);
+          setScanState('failed');
+          return true;
+        }
+        
         setPendingScan({
           code: scannedCode,
           balance: cachedCard.balance,
@@ -741,6 +778,13 @@ const ScanPage: React.FC = () => {
             return;
           }
 
+          // Validate destination exists in fare matrix
+          if (ticket.destination && !isValidDestination(ticket.destination)) {
+            setFailedMsg(`Invalid destination: ${ticket.destination}`);
+            setScanState('failed');
+            return;
+          }
+
           const presetTicketDest = ticket.destination || '';
           setPendingScan({
             code: scannedCode,
@@ -823,6 +867,13 @@ const ScanPage: React.FC = () => {
           setLastDetectedCode(scannedCode);
           setCrossModeAction('prompt_alight');
           setFailedMsg('Already boarded on this trip');
+          setScanState('failed');
+          return;
+        }
+
+        // Validate destination exists in fare matrix
+        if (card.destination && !isValidDestination(card.destination)) {
+          setFailedMsg(`Invalid destination: ${card.destination}`);
           setScanState('failed');
           return;
         }

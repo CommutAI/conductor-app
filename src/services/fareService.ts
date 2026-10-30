@@ -203,6 +203,7 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 55, discountedFare: 45 },
     'Sankanan': { regularFare: 80, discountedFare: 70 },
     'Kalugmanan Manolo': { regularFare: 90, discountedFare: 80 },
+    'Agora Terminal': { regularFare: 34.75, discountedFare: 27.75 },
   },
   'Bae Upper Puerto': {
     'Mambatangan': { regularFare: 15, discountedFare: 15 },
@@ -216,6 +217,7 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 50, discountedFare: 40 },
     'Sankanan': { regularFare: 75, discountedFare: 65 },
     'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
   },
   'Mambatangan': {
     'Balubal': { regularFare: 15, discountedFare: 15 },
@@ -228,6 +230,7 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 48, discountedFare: 38 },
     'Sankanan': { regularFare: 75, discountedFare: 65 },
     'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+    'Agora Terminal': { regularFare: 50.25, discountedFare: 40.25 },
   },
   'Balubal': {
     'Maitum': { regularFare: 15, discountedFare: 15 },
@@ -239,8 +242,9 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 48, discountedFare: 38 },
     'Sankanan': { regularFare: 75, discountedFare: 65 },
     'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
+    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
   },
-  'Maitum': {
+  'Maitom': {
     'Alae Manolo': { regularFare: 15, discountedFare: 15 },
     'Lunocan': { regularFare: 25, discountedFare: 20 },
     'Cawayanon': { regularFare: 40, discountedFare: 30 },
@@ -249,6 +253,7 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 40, discountedFare: 30 },
     'Sankanan': { regularFare: 65, discountedFare: 55 },
     'Kalugmanan Manolo': { regularFare: 75, discountedFare: 65 },
+    'Agora Terminal': { regularFare: 59.00, discountedFare: 47.25 },
   },
   'Alae Manolo': {
     'Lunocan': { regularFare: 15, discountedFare: 15 },
@@ -258,14 +263,16 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 30, discountedFare: 20 },
     'Sankanan': { regularFare: 55, discountedFare: 45 },
     'Kalugmanan Manolo': { regularFare: 65, discountedFare: 55 },
+    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
   },
-  'Lunocan': {
+  'Lonocan': {
     'Cawayanon': { regularFare: 25, discountedFare: 15 },
     'San Miguel': { regularFare: 20, discountedFare: 15 },
     'Dicklum': { regularFare: 20, discountedFare: 20 },
     'Tankulan': { regularFare: 25, discountedFare: 20 },
     'Sankanan': { regularFare: 50, discountedFare: 40 },
     'Kalugmanan Manolo': { regularFare: 60, discountedFare: 50 },
+    'Agora Terminal': { regularFare: 65.50, discountedFare: 52.50 },
   },
   'Cawayanon': {
     'San Miguel': { regularFare: 20, discountedFare: 15 },
@@ -279,11 +286,13 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
     'Tankulan': { regularFare: 20, discountedFare: 15 },
     'Sankanan': { regularFare: 45, discountedFare: 35 },
     'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
+    'Agora Terminal': { regularFare: 74.50, discountedFare: 59.50 },
   },
   'Dicklum': {
     'Tankulan': { regularFare: 15, discountedFare: 15 },
     'Sankanan': { regularFare: 40, discountedFare: 30 },
     'Kalugmanan Manolo': { regularFare: 50, discountedFare: 40 },
+    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
   },
   'Tankulan': {
     'Sankanan': { regularFare: 25, discountedFare: 15 },
@@ -291,6 +300,24 @@ const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discount
   },
   'Sankanan': {
     'Kalugmanan Manolo': { regularFare: 20, discountedFare: 15 },
+  },
+  // New routes from database fare_matrix
+  'Agora Terminal': {
+    'Puerto': { regularFare: 34.75, discountedFare: 27.75 },
+    'Ba-e': { regularFare: 41.50, discountedFare: 33.00 },
+    'Mambatangan': { regularFare: 50.25, discountedFare: 40.25 },
+    'Maitom': { regularFare: 59.00, discountedFare: 47.25 },
+    'Ala-e': { regularFare: 63.50, discountedFare: 50.75 },
+    'Lonocan': { regularFare: 65.50, discountedFare: 52.50 },
+    'San Miguel': { regularFare: 74.50, discountedFare: 59.50 },
+    'Diclum': { regularFare: 83.25, discountedFare: 66.50 },
+    'Manolo Fortich': { regularFare: 85.50, discountedFare: 68.25 },
+  },
+  'Ala-e': {
+    'Agora Terminal': { regularFare: 63.50, discountedFare: 50.75 },
+  },
+  'Manolo Fortich': {
+    'Agora Terminal': { regularFare: 85.50, discountedFare: 68.25 },
   },
 };
 
