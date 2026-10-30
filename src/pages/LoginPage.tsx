@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { IonContent, IonPage } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Bus, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Bus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import Logo from '../components/Logo';
 import { ModernInput, PrimaryButton, AppToast } from '../components/ui';
@@ -14,7 +14,6 @@ const LoginPage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('danger');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const { signIn, profile } = useApp();
   const history = useHistory();
   const contentRef = useRef<HTMLIonContentElement>(null);
@@ -41,12 +40,9 @@ const LoginPage: React.FC = () => {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMsg(null);
 
     if (!email.trim() || !password.trim()) {
-      const msg = 'Please enter your email and password.';
-      setErrorMsg(msg);
-      showNotification(msg, 'warning');
+      showNotification('Please enter your email and password.', 'warning');
       return;
     }
 
@@ -58,14 +54,12 @@ const LoginPage: React.FC = () => {
 
       if (result.error) {
         const msg = typeof result.error === 'string' ? result.error : 'Login failed. Please check your credentials.';
-        setErrorMsg(msg);
         showNotification(msg, 'danger');
       }
       // On success, the useEffect above handles navigation
     } catch (err) {
       setLoading(false);
       const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setErrorMsg(msg);
       showNotification(msg, 'danger');
     }
   }
@@ -187,7 +181,7 @@ const LoginPage: React.FC = () => {
                 type="email"
                 icon={Mail}
                 value={email}
-                onChange={(e) => { setEmail(e.target.value); setErrorMsg(null); }}
+                onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 onFocus={handleInputFocus}
               />
@@ -196,33 +190,10 @@ const LoginPage: React.FC = () => {
                 type="password"
                 icon={Lock}
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrorMsg(null); }}
+                onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 onFocus={handleInputFocus}
               />
-
-              {/* Inline error message */}
-              {errorMsg && (
-                <motion.div
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 8,
-                    marginBottom: 16,
-                    padding: '10px 12px',
-                    background: 'rgba(239,68,68,0.08)',
-                    border: '1px solid rgba(239,68,68,0.25)',
-                    borderRadius: 10,
-                  }}
-                >
-                  <AlertCircle size={15} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: '0.82rem', color: '#ef4444', fontWeight: 500, lineHeight: 1.4 }}>
-                    {errorMsg}
-                  </span>
-                </motion.div>
-              )}
 
               <PrimaryButton type="submit" loading={loading} fullWidth style={{ marginTop: 4 }}>
                 {loading ? 'Signing in…' : 'Sign In'}

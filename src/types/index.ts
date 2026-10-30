@@ -15,7 +15,6 @@ export interface StaffProfile {
   role: 'conductor';
   is_active: boolean;
   bus_id: string | null;
-  emergency_phone?: string;
 }
 
 // ── Bus & Trip ───────────────────────────────────────────────────────────────
@@ -39,6 +38,7 @@ export interface Trip {
   current_lat?: number;
   current_lng?: number;
   gps_updated_at?: string;
+  updated_at?: string;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────

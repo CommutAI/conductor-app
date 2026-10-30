@@ -1554,7 +1554,6 @@ const ScanPage: React.FC = () => {
         .select('amount, baggage_category, baggage_weight, baggage_fee, channel')
         .eq('card_id', card.id)
         .eq('trip_id', currentTrip.id)
-        .eq('type', 'fare_validation')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -2762,9 +2761,9 @@ const ScanPage: React.FC = () => {
                               cursor: 'pointer',
                             }}
                           >
-                            <option value="">-- All Route Stops ({displayStops.length}) --</option>
+                            <option value="" style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>-- All Route Stops ({displayStops.length}) --</option>
                             {displayStops.map(stop => (
-                              <option key={stop} value={stop}>
+                              <option key={stop} value={stop} style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
                                 {stop}
                               </option>
                             ))}

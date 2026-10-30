@@ -8,16 +8,12 @@ import {
 import { useHistory } from 'react-router-dom';
 import {
   Mail, IdCard, Building2, Bell, Shield, HelpCircle,
-  LogOut, Moon, Sun, Info, ChevronRight, AlertCircle,
-  Stethoscope, Car, ShieldAlert, Wrench, ClipboardList, X,
+  LogOut, Moon, Sun, Info, ChevronRight, AlertCircle, X,
   BellRing, BellOff, Lock, Eye, EyeOff, KeyRound, MessageCircle,
-  Phone, Globe, FileText, Star, Code2, CheckCircle2,
+  Phone, Globe, FileText, Star, Code2, ShieldAlert,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
-import { smsService } from '../services/smsService';
-import { geocodingService } from '../services/geocodingService';
-import { gpsService } from '../services/gpsService';
 import ProfileAvatar from '../components/ProfileAvatar';
 import PageHeader from '../components/layout/PageHeader';
 import BottomNav from '../components/layout/BottomNav';
@@ -30,9 +26,6 @@ const ProfilePage: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
-  const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
-  const [selectedEmergencyType, setSelectedEmergencyType] = useState<'medical' | 'accident' | 'security' | 'mechanical' | 'other'>('other');
-  const [sendingEmergency, setSendingEmergency] = useState(false);
 
   // New modal states
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -59,168 +52,6 @@ const ProfilePage: React.FC = () => {
   function handleLogout() {
     signOut();
     showNotification('Signed out successfully', 'success');
-  }
-
-  async function sendEmergencyAlert(emergencyType?: 'medical' | 'accident' | 'security' | 'mechanical' | 'other') {
-    if (!profile) return;
-    const alertType = emergencyType ?? selectedEmergencyType;
-    
-    // Check if there's an active trip
-    if (!currentTrip?.id) {
-      showNotification('Please start a trip before sending emergency alerts.', 'warning');
-      return;
-    }
-
-    setSendingEmergency(true);
-    let gpsPosition = null;
-    let locationName = undefined;
-    let driverName = 'Unknown';
-
-    try {
-      // Step 1: Get GPS position using GPS service (tries Pi GPS first, then mobile)
-      gpsPosition = await gpsService.getCurrentPosition();
-      
-      if (!gpsPosition) {
-        showNotification('Unable to get GPS location. Sending alert with coordinates disabled.', 'warning');
-      } else {
-        console.log(`[Emergency Alert] GPS Position: ${gpsPosition.lat}, ${gpsPosition.lng} from ${gpsPosition.source}`);
-      }
-      
-      // Step 2: Fetch driver information in parallel with geocoding
-      const driverPromise = fetchDriverInfo();
-      const geocodingPromise = gpsPosition 
-        ? geocodingService.getLocationName(gpsPosition.lat, gpsPosition.lng)
-        : Promise.resolve(undefined);
-
-      const [driverData, geoResult] = await Promise.all([driverPromise, geocodingPromise]);
-      
-      if (driverData) driverName = driverData;
-      if (geoResult) locationName = geoResult;
-
-      // Step 3: Insert emergency alert to database with retry logic
-      const alertData = await insertEmergencyAlertWithRetry(gpsPosition, locationName, alertType);
-      
-      // Step 4: Queue SMS with comprehensive information
-      if (profile?.emergency_phone) {
-        const location = gpsPosition ? {
-          lat: gpsPosition.lat,
-          lng: gpsPosition.lng
-        } : undefined;
-
-        await smsService.queueEmergencySMS(
-          profile?.emergency_phone || '',
-          {
-            emergencyType: alertType,
-            location,
-            locationName,
-            tripId: currentTrip?.id || '',
-            busInfo: currentBus ? {
-              plateNumber: currentBus.plate_number,
-              route: currentBus.route
-            } : undefined,
-            driverName,
-            conductorName: profile?.full_name || 'Conductor'
-          }
-        );
-      }
-
-      const sourceText = gpsPosition?.source === 'pi_gps' ? 'Raspberry Pi GPS' : 'Mobile GPS';
-      showNotification(`Emergency alert sent! Location from ${sourceText}. Admin notified via SMS.`, 'success');
-      setShowEmergencyAlert(false);
-      setSelectedEmergencyType('other');
-      
-    } catch (error) {
-      console.error('Error sending emergency alert:', error);
-      
-      // Final fallback: send alert with minimal information
-      try {
-        await sendMinimalEmergencyAlert(driverName, alertType);
-        showNotification('Emergency alert sent with basic information.', 'success');
-        setShowEmergencyAlert(false);
-        setSelectedEmergencyType('other');
-      } catch (fallbackError) {
-        console.error('Error in fallback emergency alert:', fallbackError);
-        showNotification('Failed to send emergency alert. Please try again or call emergency services directly.', 'danger');
-      }
-    } finally {
-      setSendingEmergency(false);
-    }
-  }
-
-  // Helper function: Fetch driver information
-  async function fetchDriverInfo(): Promise<string | null> {
-    if (!currentBus?.assigned_driver_id) return null;
-    
-    try {
-      const { data: driver } = await supabase
-        .from('staff_users')
-        .select('full_name')
-        .eq('id', currentBus.assigned_driver_id)
-        .maybeSingle();
-      return driver?.full_name || null;
-    } catch (error) {
-      console.error('Error fetching driver info:', error);
-      return null;
-    }
-  }
-
-  // Helper function: Insert emergency alert with retry logic
-  async function insertEmergencyAlertWithRetry(gpsPosition: any, locationName: string | undefined, alertType: string, maxRetries = 2): Promise<any> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const { data: alert, error: insertError } = await supabase.from('emergency_alerts').insert({
-          conductor_id: profile?.id || '',
-          trip_id: currentTrip?.id || '',
-          lat: gpsPosition?.lat,
-          lng: gpsPosition?.lng,
-          location_name: locationName,
-          location_source: gpsPosition?.source || 'unknown',
-          location_accuracy: gpsPosition?.accuracy,
-          status: 'active',
-          type: alertType,
-          created_at: new Date().toISOString(),
-        }).select().single();
-
-        if (insertError) throw insertError;
-        return alert;
-      } catch (error) {
-        console.warn(`Database insert attempt ${attempt} failed:`, error);
-        if (attempt === maxRetries) throw error;
-        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
-      }
-    }
-    throw new Error('Failed to insert emergency alert');
-  }
-
-  // Helper function: Send minimal emergency alert as final fallback
-  async function sendMinimalEmergencyAlert(driverName: string, alertType: string): Promise<void> {
-    const { data: alert, error: dbError } = await supabase.from('emergency_alerts').insert({
-      conductor_id: profile?.id || '',
-      trip_id: currentTrip?.id || '',
-      status: 'active',
-      type: alertType,
-      location_source: 'fallback',
-      created_at: new Date().toISOString(),
-    }).select().single();
-
-    if (dbError) throw dbError;
-
-    if (profile?.emergency_phone) {
-      await smsService.queueEmergencySMS(
-        profile?.emergency_phone || '',
-        {
-          emergencyType: alertType,
-          location: undefined,
-          tripId: currentTrip?.id || '',
-          busInfo: currentBus ? {
-            plateNumber: currentBus.plate_number,
-            route: currentBus.route
-          } : undefined,
-          driverName,
-          conductorName: profile?.full_name || 'Conductor'
-        }
-      );
-    }
   }
 
   return (
@@ -351,29 +182,6 @@ const ProfilePage: React.FC = () => {
             </button>
           </div>
 
-          <button
-            type="button"
-            className="emergency-btn"
-            onClick={() => setShowEmergencyAlert(true)}
-          >
-            <div style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
-              background: 'rgba(239, 68, 68, 0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <AlertCircle size={22} color="#DC2626" />
-            </div>
-            <div style={{ textAlign: 'left' }}>
-              <span style={{ fontSize: '0.95rem', fontWeight: 800, display: 'block', color: '#DC2626' }}>EMERGENCY</span>
-              <span style={{ fontSize: '0.75rem', opacity: 0.9, display: 'block', color: 'var(--text-secondary)' }}>Send Alert to Admin</span>
-            </div>
-          </button>
-
           <div style={{
             background: 'var(--bg-elevated)',
             border: '1px solid var(--border-subtle)',
@@ -427,175 +235,6 @@ const ProfilePage: React.FC = () => {
           { text: 'Sign Out', handler: handleLogout },
         ]}
       />
-
-      <IonModal
-        isOpen={showEmergencyAlert}
-        onDidDismiss={() => setShowEmergencyAlert(false)}
-        breakpoints={[0, 1]}
-        initialBreakpoint={1}
-        style={{ '--height': 'auto', '--background': 'var(--bg-secondary)' }}
-      >
-        <div style={{ 
-          background: 'white', 
-          borderRadius: 16, 
-          padding: '20px 16px',
-          minHeight: '100%'
-        }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                background: 'rgba(239, 68, 68, 0.12)',
-                borderRadius: 10,
-                padding: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <AlertCircle size={20} color="#DC2626" />
-              </div>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1a1a1a' }}>
-                  Select Emergency Type
-                </h2>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>
-                  This will send your GPS location to the admin
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowEmergencyAlert(false)}
-              style={{
-                background: '#f5f5f5',
-                border: '2px solid #e0e0e0',
-                borderRadius: 8,
-                padding: 6,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <X size={18} color="#1a1a1a" />
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div style={{ height: 1, background: '#e0e0e0', margin: '16px 0' }} />
-
-          {/* Emergency Type Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              { type: 'medical',    label: 'Medical',    desc: 'Medical emergency on board',      icon: Stethoscope,  color: '#DC2626', bg: 'rgba(220,38,38,0.08)' },
-              { type: 'accident',   label: 'Accident',   desc: 'Vehicle or road accident',        icon: Car,          color: '#D97706', bg: 'rgba(217,119,6,0.08)' },
-              { type: 'security',   label: 'Security',   desc: 'Threat or suspicious activity',   icon: ShieldAlert,  color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
-              { type: 'mechanical', label: 'Mechanical', desc: 'Bus breakdown or malfunction',    icon: Wrench,       color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
-              { type: 'other',      label: 'Other',      desc: 'Other emergency situation',       icon: ClipboardList, color: '#059669', bg: 'rgba(5,150,105,0.08)' },
-            ].map(({ type, label, desc, icon: Icon, color, bg }) => {
-              const isSelected = selectedEmergencyType === type && sendingEmergency;
-              return (
-              <button
-                key={type}
-                type="button"
-                disabled={sendingEmergency}
-                onClick={() => {
-                  setSelectedEmergencyType(type as any);
-                  sendEmergencyAlert(type as any);
-                }}
-                style={{ 
-                  width: '100%',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 12,
-                  padding: '14px 16px',
-                  background: isSelected ? `${color}12` : '#f9f9f9',
-                  border: isSelected ? `2px solid ${color}` : `1px solid ${color}40`,
-                  borderRadius: 12,
-                  cursor: sendingEmergency ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.2s, border-color 0.2s',
-                  boxSizing: 'border-box',
-                  opacity: sendingEmergency && !isSelected ? 0.5 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!sendingEmergency) {
-                    e.currentTarget.style.background = '#f0f0f0';
-                    e.currentTarget.style.borderColor = color;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!sendingEmergency) {
-                    e.currentTarget.style.background = isSelected ? `${color}12` : '#f9f9f9';
-                    e.currentTarget.style.borderColor = isSelected ? color : `${color}40`;
-                  }
-                }}
-              >
-                <div style={{
-                  background: `${color}18`,
-                  borderRadius: 12,
-                  width: 44,
-                  height: 44,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  {isSelected
-                    ? <CheckCircle2 size={20} color={color} />
-                    : <Icon size={20} color={color} />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '0.95rem', color: '#1a1a1a' }}>
-                    {label}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: isSelected ? color : '#666', lineHeight: 1.3, fontWeight: isSelected ? 600 : 400 }}>
-                    {isSelected ? 'Sending alert…' : desc}
-                  </p>
-                </div>
-                {isSelected && (
-                  <div style={{ width: 20, height: 20, border: `2px solid ${color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                )}
-              </button>
-              );
-            })}
-          </div>
-
-          {/* Cancel */}
-          <button
-            type="button"
-            onClick={() => { if (!sendingEmergency) setShowEmergencyAlert(false); }}
-            disabled={sendingEmergency}
-            style={{ 
-              width: '100%',
-              marginTop: 14, 
-              justifyContent: 'center', 
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '16px',
-              background: '#f9f9f9',
-              border: '1px solid #e8e8e8',
-              borderRadius: 12,
-              cursor: 'pointer',
-              color: '#1a1a1a',
-              fontSize: '0.95rem',
-              transition: 'background 0.2s, border-color 0.2s',
-              boxSizing: 'border-box',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#f0f0f0';
-              e.currentTarget.style.borderColor = '#d0d0d0';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#f9f9f9';
-              e.currentTarget.style.borderColor = '#e8e8e8';
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      </IonModal>
 
       <AppToast
         isOpen={showToast}
