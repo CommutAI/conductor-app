@@ -207,7 +207,7 @@ function getOfflineFare(from: string, to: string, type: FarePassengerType): numb
     item => item.route_from === from && item.route_to === to
   );
   if (fareEntry) {
-    return type === 'regular' ? fareEntry.regular_fare : fareEntry.discounted_fare;
+    return type === 'regular' ? fareEntry.regular_fare ?? null : fareEntry.discounted_fare ?? null;
   }
   return null;
 }

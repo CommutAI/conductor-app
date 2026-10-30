@@ -6,6 +6,15 @@
 
 import { supabase } from '../supabaseClient';
 import { cache, CacheKeys, CacheTTL } from './cacheService';
+import fareMatrixData from '../data/fareMatrix.json';
+
+interface FareMatrixEntry {
+  route_from: string;
+  route_to: string;
+  km_distance: number;
+  regular_fare: number;
+  discounted_fare: number;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,264 +87,7 @@ export type ScanResult =
 export const DEFAULT_FARE = 12;
 
 // ── Fare Matrix ───────────────────────────────────────────────────────────────
-// Based on the provided fare matrix for Manolo Fortich → Cagayan de Oro route
-// Format: from_stop -> to_stop -> { regularFare, discountedFare }
-
-const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discountedFare: number }>> = {
-  'Gaisano CDO': {
-    'Agora': { regularFare: 15, discountedFare: 15 },
-    'Agora Terminal': { regularFare: 10.00, discountedFare: 8.00 },
-  },
-  'Agora': {
-    'Gusa': { regularFare: 15, discountedFare: 15 },
-    'Cugman': { regularFare: 20, discountedFare: 15 },
-    'Tablon Baloi': { regularFare: 25, discountedFare: 20 },
-    'Tablon': { regularFare: 25, discountedFare: 20 },
-    'Agusan': { regularFare: 30, discountedFare: 20 },
-    'Puerto': { regularFare: 30, discountedFare: 25 },
-    'Bae Upper Puerto': { regularFare: 45, discountedFare: 25 },
-    'Mambatangan': { regularFare: 45, discountedFare: 35 },
-    'Balubal': { regularFare: 45, discountedFare: 35 },
-    'Maitum': { regularFare: 50, discountedFare: 40 },
-    'Alae Manolo': { regularFare: 55, discountedFare: 45 },
-    'Lunocan': { regularFare: 65, discountedFare: 55 },
-    'Cawayanon': { regularFare: 80, discountedFare: 75 },
-    'San Miguel': { regularFare: 65, discountedFare: 55 },
-    'Dicklum': { regularFare: 75, discountedFare: 65 },
-    'Tankulan': { regularFare: 75, discountedFare: 65 },
-    'Sankanan': { regularFare: 100, discountedFare: 90 },
-    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
-  },
-  'Gusa': {
-    'Cugman': { regularFare: 15, discountedFare: 15 },
-    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 20, discountedFare: 15 },
-    'Puerto': { regularFare: 23, discountedFare: 20 },
-    'Bae Upper Puerto': { regularFare: 35, discountedFare: 30 },
-    'Mambatangan': { regularFare: 40, discountedFare: 35 },
-    'Balubal': { regularFare: 40, discountedFare: 35 },
-    'Maitum': { regularFare: 48, discountedFare: 40 },
-    'Alae Manolo': { regularFare: 52, discountedFare: 45 },
-    'Lunocan': { regularFare: 55, discountedFare: 55 },
-    'Cawayanon': { regularFare: 80, discountedFare: 75 },
-    'San Miguel': { regularFare: 65, discountedFare: 55 },
-    'Dicklum': { regularFare: 75, discountedFare: 65 },
-    'Tankulan': { regularFare: 75, discountedFare: 65 },
-    'Sankanan': { regularFare: 100, discountedFare: 90 },
-    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
-    'Agora Terminal': { regularFare: 15.00, discountedFare: 12.00 },
-  },
-  'Cugman': {
-    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 17, discountedFare: 15 },
-    'Puerto': { regularFare: 20, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 30, discountedFare: 25 },
-    'Mambatangan': { regularFare: 35, discountedFare: 30 },
-    'Balubal': { regularFare: 35, discountedFare: 30 },
-    'Maitum': { regularFare: 40, discountedFare: 35 },
-    'Alae Manolo': { regularFare: 50, discountedFare: 40 },
-    'Lunocan': { regularFare: 50, discountedFare: 50 },
-    'Cawayanon': { regularFare: 75, discountedFare: 75 },
-    'San Miguel': { regularFare: 60, discountedFare: 50 },
-    'Dicklum': { regularFare: 70, discountedFare: 60 },
-    'Tankulan': { regularFare: 70, discountedFare: 60 },
-    'Sankanan': { regularFare: 95, discountedFare: 85 },
-    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
-    'Agora Terminal': { regularFare: 12.00, discountedFare: 9.00 },
-  },
-  'Tablon Baloi': {
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 15, discountedFare: 15 },
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 25, discountedFare: 20 },
-    'Mambatangan': { regularFare: 30, discountedFare: 20 },
-    'Balubal': { regularFare: 30, discountedFare: 20 },
-    'Maitum': { regularFare: 35, discountedFare: 25 },
-    'Alae Manolo': { regularFare: 40, discountedFare: 30 },
-    'Lunocan': { regularFare: 50, discountedFare: 40 },
-    'Cawayanon': { regularFare: 75, discountedFare: 65 },
-    'San Miguel': { regularFare: 55, discountedFare: 45 },
-    'Dicklum': { regularFare: 60, discountedFare: 50 },
-    'Tankulan': { regularFare: 70, discountedFare: 50 },
-    'Sankanan': { regularFare: 95, discountedFare: 85 },
-    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
-    'Agora Terminal': { regularFare: 35.00, discountedFare: 28.00 },
-  },
-  'Tablon': {
-    'Agusan': { regularFare: 15, discountedFare: 15 },
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 24, discountedFare: 20 },
-    'Mambatangan': { regularFare: 30, discountedFare: 25 },
-    'Balubal': { regularFare: 30, discountedFare: 25 },
-    'Maitum': { regularFare: 35, discountedFare: 30 },
-    'Alae Manolo': { regularFare: 40, discountedFare: 35 },
-    'Lunocan': { regularFare: 45, discountedFare: 40 },
-    'Cawayanon': { regularFare: 75, discountedFare: 65 },
-    'San Miguel': { regularFare: 55, discountedFare: 45 },
-    'Dicklum': { regularFare: 60, discountedFare: 50 },
-    'Tankulan': { regularFare: 63, discountedFare: 50 },
-    'Sankanan': { regularFare: 90, discountedFare: 80 },
-    'Kalugmanan Manolo': { regularFare: 100, discountedFare: 90 },
-    'Agora Terminal': { regularFare: 35.00, discountedFare: 28.00 },
-  },
-  'Agusan': {
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
-    'Mambatangan': { regularFare: 25, discountedFare: 20 },
-    'Balubal': { regularFare: 25, discountedFare: 20 },
-    'Maitum': { regularFare: 30, discountedFare: 20 },
-    'Alae Manolo': { regularFare: 35, discountedFare: 25 },
-    'Lunocan': { regularFare: 40, discountedFare: 35 },
-    'Cawayanon': { regularFare: 60, discountedFare: 50 },
-    'San Miguel': { regularFare: 50, discountedFare: 40 },
-    'Dicklum': { regularFare: 55, discountedFare: 45 },
-    'Tankulan': { regularFare: 58, discountedFare: 45 },
-    'Sankanan': { regularFare: 85, discountedFare: 75 },
-    'Kalugmanan Manolo': { regularFare: 95, discountedFare: 85 },
-    'Agora Terminal': { regularFare: 25.00, discountedFare: 20.00 },
-  },
-  'Puerto': {
-    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
-    'Mambatangan': { regularFare: 20, discountedFare: 20 },
-    'Balubal': { regularFare: 20, discountedFare: 20 },
-    'Maitum': { regularFare: 25, discountedFare: 20 },
-    'Alae Manolo': { regularFare: 30, discountedFare: 25 },
-    'Lunocan': { regularFare: 40, discountedFare: 35 },
-    'Cawayanon': { regularFare: 60, discountedFare: 50 },
-    'San Miguel': { regularFare: 45, discountedFare: 35 },
-    'Dicklum': { regularFare: 55, discountedFare: 45 },
-    'Tankulan': { regularFare: 55, discountedFare: 45 },
-    'Sankanan': { regularFare: 80, discountedFare: 70 },
-    'Kalugmanan Manolo': { regularFare: 90, discountedFare: 80 },
-    'Agora Terminal': { regularFare: 34.75, discountedFare: 27.75 },
-  },
-  'Bae Upper Puerto': {
-    'Mambatangan': { regularFare: 15, discountedFare: 15 },
-    'Balubal': { regularFare: 15, discountedFare: 15 },
-    'Maitum': { regularFare: 20, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 25, discountedFare: 20 },
-    'Lunocan': { regularFare: 30, discountedFare: 25 },
-    'Cawayanon': { regularFare: 50, discountedFare: 40 },
-    'San Miguel': { regularFare: 40, discountedFare: 35 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 50, discountedFare: 40 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
-  },
-  'Mambatangan': {
-    'Balubal': { regularFare: 15, discountedFare: 15 },
-    'Maitum': { regularFare: 15, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
-    'Lunocan': { regularFare: 30, discountedFare: 20 },
-    'Cawayanon': { regularFare: 50, discountedFare:  40 },
-    'San Miguel': { regularFare: 35, discountedFare: 25 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 48, discountedFare: 38 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 50.25, discountedFare: 40.25 },
-  },
-  'Balubal': {
-    'Maitum': { regularFare: 15, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
-    'Lunocan': { regularFare: 30, discountedFare: 20 },
-    'Cawayanon': { regularFare: 50, discountedFare: 40 },
-    'San Miguel': { regularFare: 35, discountedFare: 30 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 48, discountedFare: 38 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
-  },
-  'Maitom': {
-    'Alae Manolo': { regularFare: 15, discountedFare: 15 },
-    'Lunocan': { regularFare: 25, discountedFare: 20 },
-    'Cawayanon': { regularFare: 40, discountedFare: 30 },
-    'San Miguel': { regularFare: 35, discountedFare: 25 },
-    'Dicklum': { regularFare: 35, discountedFare: 30 },
-    'Tankulan': { regularFare: 40, discountedFare: 30 },
-    'Sankanan': { regularFare: 65, discountedFare: 55 },
-    'Kalugmanan Manolo': { regularFare: 75, discountedFare: 65 },
-    'Agora Terminal': { regularFare: 59.00, discountedFare: 47.25 },
-  },
-  'Alae Manolo': {
-    'Lunocan': { regularFare: 15, discountedFare: 15 },
-    'Cawayanon': { regularFare: 30, discountedFare: 25 },
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 30, discountedFare: 20 },
-    'Tankulan': { regularFare: 30, discountedFare: 20 },
-    'Sankanan': { regularFare: 55, discountedFare: 45 },
-    'Kalugmanan Manolo': { regularFare: 65, discountedFare: 55 },
-    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
-  },
-  'Lonocan': {
-    'Cawayanon': { regularFare: 25, discountedFare: 15 },
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 20, discountedFare: 20 },
-    'Tankulan': { regularFare: 25, discountedFare: 20 },
-    'Sankanan': { regularFare: 50, discountedFare: 40 },
-    'Kalugmanan Manolo': { regularFare: 60, discountedFare: 50 },
-    'Agora Terminal': { regularFare: 65.50, discountedFare: 52.50 },
-  },
-  'Cawayanon': {
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 20, discountedFare: 15 },
-    'Tankulan': { regularFare: 20, discountedFare: 15 },
-    'Sankanan': { regularFare: 45, discountedFare: 35 },
-    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
-  },
-  'San Miguel': {
-    'Dicklum': { regularFare: 15, discountedFare: 15 },
-    'Tankulan': { regularFare: 20, discountedFare: 15 },
-    'Sankanan': { regularFare: 45, discountedFare: 35 },
-    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
-    'Agora Terminal': { regularFare: 74.50, discountedFare: 59.50 },
-  },
-  'Dicklum': {
-    'Tankulan': { regularFare: 15, discountedFare: 15 },
-    'Sankanan': { regularFare: 40, discountedFare: 30 },
-    'Kalugmanan Manolo': { regularFare: 50, discountedFare: 40 },
-    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
-  },
-  'Tankulan': {
-    'Sankanan': { regularFare: 25, discountedFare: 15 },
-    'Kalugmanan Manolo': { regularFare: 35, discountedFare: 25 },
-  },
-  'Sankanan': {
-    'Kalugmanan Manolo': { regularFare: 20, discountedFare: 15 },
-  },
-  // New routes from database fare_matrix
-  'Agora Terminal': {
-    'Puerto': { regularFare: 34.75, discountedFare: 27.75 },
-    'Ba-e': { regularFare: 41.50, discountedFare: 33.00 },
-    'Mambatangan': { regularFare: 50.25, discountedFare: 40.25 },
-    'Maitom': { regularFare: 59.00, discountedFare: 47.25 },
-    'Alae': { regularFare: 63.50, discountedFare: 50.75 },
-    'Lonocan': { regularFare: 65.50, discountedFare: 52.50 },
-    'San Miguel': { regularFare: 74.50, discountedFare: 59.50 },
-    'Diclum': { regularFare: 83.25, discountedFare: 66.50 },
-    'Tankulan': { regularFare: 85.50, discountedFare: 68.25 },
-    'Manolo Fortich Terminal': { regularFare: 85.50, discountedFare: 68.25 },
-    'Bae Upper Puerto': { regularFare: 41.50, discountedFare: 33.00 },
-    'Agusan': { regularFare: 25.00, discountedFare: 20.00 },
-    'Tablon': { regularFare: 35.00, discountedFare: 28.00 },
-    'Tablon Baloi': { regularFare: 35.00, discountedFare: 28.00 },
-    'Gusa': { regularFare: 15.00, discountedFare: 12.00 },
-    'Gaisano CDO': { regularFare: 10.00, discountedFare: 8.00 },
-  },
-  'Ala-e': {
-    'Agora Terminal': { regularFare: 63.50, discountedFare: 50.75 },
-  },
-  'Manolo Fortich': {
-    'Agora Terminal': { regularFare: 85.50, discountedFare: 68.25 },
-  },
-  'Manolo Fortich Terminal': {
-    'Agora Terminal': { regularFare: 85.50, discountedFare: 68.25 },
-  },
-};
+// Fare matrix is now loaded from fareMatrix.json
 
 /**
  * Get fare from matrix based on origin and destination stops
@@ -353,24 +105,22 @@ export function getFareFromMatrix(fromStop: string | undefined, toStop: string |
   const normalizedFrom = fromStop.trim();
   const normalizedTo = toStop.trim();
 
-  const fromRoutes = FARE_MATRIX[normalizedFrom];
-  if (!fromRoutes) {
-    console.warn(`[FareMatrix] No fare data found for origin: ${normalizedFrom}`);
-    return null;
-  }
+  // Search in fareMatrixData from JSON file
+  const fareEntry = fareMatrixData.find(
+    item => item.route_from === normalizedFrom && item.route_to === normalizedTo
+  );
 
-  const fareData = fromRoutes[normalizedTo];
-  if (!fareData) {
-    console.warn(`[FareMatrix] No fare data found for destination: ${normalizedTo} from ${normalizedFrom}`);
+  if (!fareEntry) {
+    console.warn(`[FareMatrix] No fare data found for route: ${normalizedFrom} -> ${normalizedTo}`);
     return null;
   }
 
   // Return discounted fare for student, senior_citizen, pwd
   if (passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd') {
-    return fareData.discountedFare;
+    return fareEntry.discounted_fare ?? null;
   }
 
-  return fareData.regularFare;
+  return fareEntry.regular_fare ?? null;
 }
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
