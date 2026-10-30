@@ -29,7 +29,7 @@
   },
   {
     "route_from": "Agora Terminal",
-    "route_to": "Ala-e",
+    "route_to": "Alae",
     "km_distance": 26,
     "regular_fare": 63.50,
     "discounted_fare": 50.75
@@ -57,10 +57,59 @@
   },
   {
     "route_from": "Agora Terminal",
-    "route_to": "Manolo Fortich",
-    "km_distance": 36,
+    "route_to": "Tankulan",
+    "km_distance": 38,
     "regular_fare": 85.50,
     "discounted_fare": 68.25
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 40,
+    "regular_fare": 85.50,
+    "discounted_fare": 68.25
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": 12,
+    "regular_fare": 41.50,
+    "discounted_fare": 33.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Agusan",
+    "km_distance": 8,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Tablon",
+    "km_distance": 15,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Tablon Baloi",
+    "km_distance": 15,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Gusa",
+    "km_distance": 5,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Gaisano CDO",
+    "km_distance": 3,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
   },
   {
     "route_from": "Puerto",
@@ -91,7 +140,7 @@
     "discounted_fare": 47.25
   },
   {
-    "route_from": "Ala-e",
+    "route_from": "Alae",
     "route_to": "Agora Terminal",
     "km_distance": 26,
     "regular_fare": 63.50,
@@ -119,10 +168,59 @@
     "discounted_fare": 66.50
   },
   {
-    "route_from": "Manolo Fortich",
+    "route_from": "Tankulan",
     "route_to": "Agora Terminal",
-    "km_distance": 36,
+    "km_distance": 38,
     "regular_fare": 85.50,
     "discounted_fare": 68.25
+  },
+  {
+    "route_from": "Manolo Fortich Terminal",
+    "route_to": "Agora Terminal",
+    "km_distance": 40,
+    "regular_fare": 85.50,
+    "discounted_fare": 68.25
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Agora Terminal",
+    "km_distance": 12,
+    "regular_fare": 41.50,
+    "discounted_fare": 33.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Agora Terminal",
+    "km_distance": 8,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Agora Terminal",
+    "km_distance": 15,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Agora Terminal",
+    "km_distance": 15,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Agora Terminal",
+    "km_distance": 5,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Agora Terminal",
+    "km_distance": 3,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
   }
 ]

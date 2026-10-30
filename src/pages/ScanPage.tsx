@@ -707,6 +707,22 @@ const ScanPage: React.FC = () => {
     refreshBoardingLocation();
   }, [scanState, refreshBoardingLocation]);
 
+  // Recalculate fare when destination or boarding point changes
+  useEffect(() => {
+    if (scanState !== 'pick_destination' || !pendingScan) return;
+
+    const fromStop = selectedBoardingPoint || currentStopName || undefined;
+    const toStop = selectedDestination || pendingScan.cardDestination || undefined;
+    const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+
+    if (fromStop && toStop) {
+      const mFare = getFareFromMatrix(fromStop, toStop, pType);
+      if (mFare !== null) {
+        setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+      }
+    }
+  }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan]);
+
   /** For onboarding: auto-confirm boarding with card destination or default */
   async function handleOnboardingPreScan(scannedCode: string) {
     try {
