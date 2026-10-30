@@ -950,5 +950,586 @@
     "km_distance": 2,
     "regular_fare": 10.00,
     "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 20,
+    "regular_fare": 100.00,
+    "discounted_fare": 80.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Tankulan",
+    "km_distance": 18,
+    "regular_fare": 90.00,
+    "discounted_fare": 72.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Diclum",
+    "km_distance": 16,
+    "regular_fare": 80.00,
+    "discounted_fare": 64.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "San Miguel",
+    "km_distance": 14,
+    "regular_fare": 70.00,
+    "discounted_fare": 56.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Lonocan",
+    "km_distance": 13,
+    "regular_fare": 65.00,
+    "discounted_fare": 52.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Alae",
+    "km_distance": 12,
+    "regular_fare": 60.00,
+    "discounted_fare": 48.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Maitom",
+    "km_distance": 10,
+    "regular_fare": 50.00,
+    "discounted_fare": 40.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Ba-e",
+    "km_distance": 9,
+    "regular_fare": 45.00,
+    "discounted_fare": 36.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Mambatangan",
+    "km_distance": 8,
+    "regular_fare": 40.00,
+    "discounted_fare": 32.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Puerto",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Gaisano CDO",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Gusa",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Agusan",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Tablon",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Tablon Baloi",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 14,
+    "regular_fare": 70.00,
+    "discounted_fare": 56.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Tankulan",
+    "km_distance": 12,
+    "regular_fare": 60.00,
+    "discounted_fare": 48.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Diclum",
+    "km_distance": 10,
+    "regular_fare": 50.00,
+    "discounted_fare": 40.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "San Miguel",
+    "km_distance": 8,
+    "regular_fare": 40.00,
+    "discounted_fare": 32.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Lonocan",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Alae",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Maitom",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Ba-e",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Mambatangan",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Gaisano CDO",
+    "route_to": "Puerto",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 13,
+    "regular_fare": 65.00,
+    "discounted_fare": 52.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Tankulan",
+    "km_distance": 11,
+    "regular_fare": 55.00,
+    "discounted_fare": 44.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Diclum",
+    "km_distance": 9,
+    "regular_fare": 45.00,
+    "discounted_fare": 36.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "San Miguel",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Lonocan",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Alae",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Maitom",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Ba-e",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Mambatangan",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 11,
+    "regular_fare": 55.00,
+    "discounted_fare": 44.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tankulan",
+    "km_distance": 9,
+    "regular_fare": 45.00,
+    "discounted_fare": 36.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Diclum",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "San Miguel",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Lonocan",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Alae",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Maitom",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 10,
+    "regular_fare": 50.00,
+    "discounted_fare": 40.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Tankulan",
+    "km_distance": 8,
+    "regular_fare": 40.00,
+    "discounted_fare": 32.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Diclum",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "San Miguel",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Lonocan",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Alae",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 10,
+    "regular_fare": 50.00,
+    "discounted_fare": 40.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Tankulan",
+    "km_distance": 8,
+    "regular_fare": 40.00,
+    "discounted_fare": 32.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Diclum",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "San Miguel",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Lonocan",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Alae",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 9,
+    "regular_fare": 45.00,
+    "discounted_fare": 36.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tankulan",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Diclum",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "San Miguel",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Lonocan",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Alae",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 8,
+    "regular_fare": 40.00,
+    "discounted_fare": 32.00
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tankulan",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Diclum",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "San Miguel",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Lonocan",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 7,
+    "regular_fare": 35.00,
+    "discounted_fare": 28.00
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Tankulan",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Diclum",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "San Miguel",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Ba-e",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 6,
+    "regular_fare": 30.00,
+    "discounted_fare": 24.00
+  },
+  {
+    "route_from": "Ba-e",
+    "route_to": "Tankulan",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Ba-e",
+    "route_to": "Diclum",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Maitom",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 5,
+    "regular_fare": 25.00,
+    "discounted_fare": 20.00
+  },
+  {
+    "route_from": "Maitom",
+    "route_to": "Tankulan",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Maitom",
+    "route_to": "Diclum",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "Alae",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 4,
+    "regular_fare": 20.00,
+    "discounted_fare": 16.00
+  },
+  {
+    "route_from": "Alae",
+    "route_to": "Tankulan",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Lonocan",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 3,
+    "regular_fare": 15.00,
+    "discounted_fare": 12.00
+  },
+  {
+    "route_from": "Lonocan",
+    "route_to": "Tankulan",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 2,
+    "regular_fare": 10.00,
+    "discounted_fare": 8.00
+  },
+  {
+    "route_from": "Diclum",
+    "route_to": "Manolo Fortich Terminal",
+    "km_distance": 1,
+    "regular_fare": 5.00,
+    "discounted_fare": 4.00
   }
 ]
