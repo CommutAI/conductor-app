@@ -33,6 +33,17 @@
     "sequence_order": 3
   },
   {
+    "id": "cugman-stop-id",
+    "stop_code": "STOP 03.5",
+    "name": "Cugman",
+    "location": "Cugman",
+    "latitude": 8.478,
+    "longitude": 124.705,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 3.5
+  },
+  {
     "id": "0039a0a3-aba8-44b9-a6cc-757712928ad4",
     "stop_code": "STOP 04",
     "name": "Tablon Baloi",
@@ -88,6 +99,39 @@
     "sequence_order": 8
   },
   {
+    "id": "mambatangan-stop-id",
+    "stop_code": "STOP 08.5",
+    "name": "Mambatangan",
+    "location": "Mambatangan",
+    "latitude": 8.43,
+    "longitude": 124.815,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 8.5
+  },
+  {
+    "id": "balubal-stop-id",
+    "stop_code": "STOP 08.6",
+    "name": "Balubal",
+    "location": "Balubal",
+    "latitude": 8.428,
+    "longitude": 124.818,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 8.6
+  },
+  {
+    "id": "maitum-stop-id",
+    "stop_code": "STOP 08.7",
+    "name": "Maitum",
+    "location": "Maitum",
+    "latitude": 8.426,
+    "longitude": 124.82,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 8.7
+  },
+  {
     "id": "31302b9c-309d-43f6-9ee0-42f337d39d63",
     "stop_code": "STOP 09",
     "name": "Alae",
@@ -108,6 +152,17 @@
     "stop_type": "regular",
     "status": "active",
     "sequence_order": 10
+  },
+  {
+    "id": "cawayanon-stop-id",
+    "stop_code": "STOP 10.5",
+    "name": "Cawayanon",
+    "location": "Cawayanon",
+    "latitude": 8.4,
+    "longitude": 124.828,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 10.5
   },
   {
     "id": "dc71eff3-a220-4545-9a3d-03b49411bdc2",
@@ -141,6 +196,28 @@
     "stop_type": "regular",
     "status": "active",
     "sequence_order": 13
+  },
+  {
+    "id": "sankanan-stop-id",
+    "stop_code": "STOP 13.5",
+    "name": "Sankanan",
+    "location": "Sankanan",
+    "latitude": 8.367,
+    "longitude": 124.866,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 13.5
+  },
+  {
+    "id": "kalugmanan-stop-id",
+    "stop_code": "STOP 13.6",
+    "name": "Kalugmanan Manolo",
+    "location": "Kalugmanan Manolo",
+    "latitude": 8.3665,
+    "longitude": 124.8655,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 13.6
   },
   {
     "id": "6096976e-40a1-4bfa-bb71-6d756780894a",

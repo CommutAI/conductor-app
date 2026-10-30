@@ -11,7 +11,7 @@ import fareMatrixData from '../data/fareMatrix.json';
 interface FareMatrixEntry {
   route_from: string;
   route_to: string;
-  km_distance: number;
+  km_distance: number | null;
   regular_fare: number;
   discounted_fare: number;
 }
@@ -90,6 +90,36 @@ export const DEFAULT_FARE = 12;
 // Fare matrix is now loaded from fareMatrix.json
 
 /**
+ * Normalize stop name to match fare matrix naming
+ * Handles name variations like "Agora" vs "Agora Terminal", "Alae" vs "Alae Manolo"
+ */
+function normalizeStopName(stopName: string): string {
+  const normalized = stopName.trim();
+
+  // Handle specific name mappings
+  const nameMappings: Record<string, string> = {
+    'Agora Terminal': 'Agora',
+    'Agora': 'Agora',
+    'Alae': 'Alae Manolo',
+    'Alae Manolo': 'Alae Manolo',
+  };
+
+  // Check if the name or a variation exists in mappings
+  if (nameMappings[normalized]) {
+    return nameMappings[normalized];
+  }
+
+  // Also check if the normalized name contains a mapped key
+  for (const [key, value] of Object.entries(nameMappings)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return value;
+    }
+  }
+
+  return normalized;
+}
+
+/**
  * Get fare from matrix based on origin and destination stops
  * @param fromStop - Origin stop name
  * @param toStop - Destination stop name
@@ -102,8 +132,8 @@ export function getFareFromMatrix(fromStop: string | undefined, toStop: string |
     return null;
   }
 
-  const normalizedFrom = fromStop.trim();
-  const normalizedTo = toStop.trim();
+  const normalizedFrom = normalizeStopName(fromStop);
+  const normalizedTo = normalizeStopName(toStop);
 
   // Search in fareMatrixData from JSON file
   const fareEntry = fareMatrixData.find(
@@ -111,7 +141,7 @@ export function getFareFromMatrix(fromStop: string | undefined, toStop: string |
   );
 
   if (!fareEntry) {
-    console.warn(`[FareMatrix] No fare data found for route: ${normalizedFrom} -> ${normalizedTo}`);
+    console.warn(`[FareMatrix] No fare data found for route: ${normalizedFrom} -> ${normalizedTo} (original: ${fromStop} -> ${toStop})`);
     return null;
   }
 

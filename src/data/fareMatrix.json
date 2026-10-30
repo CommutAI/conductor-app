@@ -1,1535 +1,2410 @@
 [
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Gaisano CDO",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Agora",
     "route_to": "Tankulan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Diclum",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
+    "route_from": "Agora",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
   },
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Agora",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 110,
+    "discounted_fare": 100
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 23,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 52,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Gusa",
     "route_to": "San Miguel",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Lonocan",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
+    "route_from": "Gusa",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Alae",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
+    "route_from": "Gusa",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 9,
-    "regularFare": 45.00,
-    "discounted_fare": 36.00
+    "route_from": "Gusa",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
   },
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Gusa",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 110,
+    "discounted_fare": 100
+  },
+  {
+    "route_from": "Cugman",
     "route_to": "Tablon Baloi",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Cugman",
     "route_to": "Tablon",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Cugman",
     "route_to": "Agusan",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Gusa",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
-  },
-  {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Gaisano CDO",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
-  },
-  {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Cugman",
     "route_to": "Puerto",
-    "km_distance": 15,
-    "regular_fare": 75.00,
-    "discounted_fare": 60.00
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Manolo Fortich Terminal",
+    "route_from": "Cugman",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Cugman",
     "route_to": "Mambatangan",
-    "km_distance": 16,
-    "regular_fare": 80.00,
-    "discounted_fare": 64.00
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Ba-e",
-    "km_distance": 17,
-    "regular_fare": 85.00,
-    "discounted_fare": 68.00
+    "route_from": "Cugman",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Maitom",
-    "km_distance": 18,
-    "regular_fare": 90.00,
-    "discounted_fare": 72.00
+    "route_from": "Cugman",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
   },
   {
-    "route_from": "Manolo Fortich Terminal",
-    "route_to": "Agora Terminal",
-    "km_distance": 20,
-    "regular_fare": 100.00,
-    "discounted_fare": 80.00
+    "route_from": "Cugman",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Diclum",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_from": "Cugman",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 50
   },
   {
-    "route_from": "Tankulan",
+    "route_from": "Cugman",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Cugman",
     "route_to": "San Miguel",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Lonocan",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
+    "route_from": "Cugman",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 60
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Alae",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
+    "route_from": "Cugman",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 60
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
+    "route_from": "Cugman",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Tablon Baloi",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
+    "route_from": "Cugman",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 105,
+    "discounted_fare": 95
   },
   {
-    "route_from": "Tankulan",
+    "route_from": "Tablon Baloi",
     "route_to": "Tablon",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Tankulan",
+    "route_from": "Tablon Baloi",
     "route_to": "Agusan",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Gusa",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Tankulan",
-    "route_to": "Gaisano CDO",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
-  },
-  {
-    "route_from": "Tankulan",
+    "route_from": "Tablon Baloi",
     "route_to": "Puerto",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Tankulan",
+    "route_from": "Tablon Baloi",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Tablon Baloi",
     "route_to": "Mambatangan",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Ba-e",
-    "km_distance": 15,
-    "regular_fare": 75.00,
-    "discounted_fare": 60.00
+    "route_from": "Tablon Baloi",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Maitom",
-    "km_distance": 16,
-    "regular_fare": 80.00,
-    "discounted_fare": 64.00
+    "route_from": "Tablon Baloi",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
   },
   {
-    "route_from": "Tankulan",
-    "route_to": "Agora Terminal",
-    "km_distance": 18,
-    "regular_fare": 90.00,
-    "discounted_fare": 72.00
+    "route_from": "Tablon Baloi",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
   },
   {
-    "route_from": "Diclum",
+    "route_from": "Tablon Baloi",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Tablon Baloi",
     "route_to": "San Miguel",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Lonocan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "route_from": "Tablon Baloi",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Alae",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
+    "route_from": "Tablon Baloi",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 50
   },
   {
-    "route_from": "Diclum",
+    "route_from": "Tablon Baloi",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 105,
+    "discounted_fare": 95
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon",
     "route_to": "Bae Upper Puerto",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
+    "km_distance": null,
+    "regular_fare": 24,
+    "discounted_fare": 20
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Tablon Baloi",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Diclum",
-    "route_to": "Tablon",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Diclum",
-    "route_to": "Agusan",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Diclum",
-    "route_to": "Gusa",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Diclum",
-    "route_to": "Gaisano CDO",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Diclum",
-    "route_to": "Puerto",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Diclum",
+    "route_from": "Tablon",
     "route_to": "Mambatangan",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Ba-e",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
+    "route_from": "Tablon",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Maitom",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
+    "route_from": "Tablon",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Agora Terminal",
-    "km_distance": 16,
-    "regular_fare": 80.00,
-    "discounted_fare": 64.00
+    "route_from": "Tablon",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Lonocan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_from": "Tablon",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 40
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Alae",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_from": "Tablon",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "San Miguel",
+    "route_from": "Tablon",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 63,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agusan",
     "route_to": "Bae Upper Puerto",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Tablon Baloi",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "San Miguel",
-    "route_to": "Tablon",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "San Miguel",
-    "route_to": "Agusan",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "San Miguel",
-    "route_to": "Gusa",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "San Miguel",
-    "route_to": "Gaisano CDO",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "San Miguel",
-    "route_to": "Puerto",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "San Miguel",
+    "route_from": "Agusan",
     "route_to": "Mambatangan",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Ba-e",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
+    "route_from": "Agusan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Maitom",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
+    "route_from": "Agusan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
   },
   {
-    "route_from": "San Miguel",
-    "route_to": "Agora Terminal",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
+    "route_from": "Agusan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
   },
   {
-    "route_from": "Lonocan",
-    "route_to": "Alae",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_from": "Agusan",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
   },
   {
-    "route_from": "Lonocan",
+    "route_from": "Agusan",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 58,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
+  },
+  {
+    "route_from": "Puerto",
     "route_to": "Bae Upper Puerto",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Tablon Baloi",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Tablon",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Agusan",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Gusa",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Gaisano CDO",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Puerto",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Mambatangan",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Ba-e",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Maitom",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Lonocan",
-    "route_to": "Agora Terminal",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Tablon Baloi",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Tablon",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Agusan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Gusa",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Gaisano CDO",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Puerto",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Mambatangan",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Ba-e",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Maitom",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Alae",
-    "route_to": "Agora Terminal",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Tablon Baloi",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Tablon",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Agusan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Gusa",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Gaisano CDO",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Puerto",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Mambatangan",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Ba-e",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Maitom",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Agora Terminal",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Tablon",
-    "km_distance": 0,
-    "regular_fare": 0.00,
-    "discounted_fare": 0.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Agusan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Gusa",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Gaisano CDO",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Puerto",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Mambatangan",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Ba-e",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Maitom",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Agora Terminal",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Agusan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Gusa",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Gaisano CDO",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Puerto",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Mambatangan",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Ba-e",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Maitom",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Agora Terminal",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Gusa",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Gaisano CDO",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Puerto",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Mambatangan",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Ba-e",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Maitom",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Agora Terminal",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Gaisano CDO",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Puerto",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Mambatangan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Ba-e",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Maitom",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Agora Terminal",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Mambatangan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Ba-e",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Maitom",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Agora Terminal",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
   },
   {
     "route_from": "Puerto",
     "route_to": "Mambatangan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
   },
   {
     "route_from": "Puerto",
-    "route_to": "Ba-e",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
   },
   {
     "route_from": "Puerto",
-    "route_to": "Maitom",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
   },
   {
     "route_from": "Puerto",
-    "route_to": "Agora Terminal",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 70
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
   },
   {
     "route_from": "Mambatangan",
-    "route_to": "Ba-e",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
     "route_from": "Mambatangan",
-    "route_to": "Maitom",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
     "route_from": "Mambatangan",
-    "route_to": "Agora Terminal",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Ba-e",
-    "route_to": "Maitom",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Ba-e",
-    "route_to": "Agora Terminal",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Maitom",
-    "route_to": "Agora Terminal",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 20,
-    "regular_fare": 100.00,
-    "discounted_fare": 80.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Tankulan",
-    "km_distance": 18,
-    "regular_fare": 90.00,
-    "discounted_fare": 72.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Diclum",
-    "km_distance": 16,
-    "regular_fare": 80.00,
-    "discounted_fare": 64.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "San Miguel",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Lonocan",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Alae",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Maitom",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Ba-e",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Mambatangan",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Puerto",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Gaisano CDO",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Gusa",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Agusan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Tablon",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Tablon Baloi",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Agora Terminal",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 14,
-    "regular_fare": 70.00,
-    "discounted_fare": 56.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Tankulan",
-    "km_distance": 12,
-    "regular_fare": 60.00,
-    "discounted_fare": 48.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Diclum",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "San Miguel",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Lonocan",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Alae",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Maitom",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Ba-e",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Mambatangan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Gaisano CDO",
-    "route_to": "Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 13,
-    "regular_fare": 65.00,
-    "discounted_fare": 52.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Tankulan",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Diclum",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "San Miguel",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Lonocan",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Alae",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Maitom",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Ba-e",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Gusa",
-    "route_to": "Mambatangan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 11,
-    "regular_fare": 55.00,
-    "discounted_fare": 44.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Tankulan",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Diclum",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "San Miguel",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Lonocan",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Alae",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Agusan",
-    "route_to": "Maitom",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Tankulan",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Diclum",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "San Miguel",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Lonocan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Alae",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Tablon",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 10,
-    "regular_fare": 50.00,
-    "discounted_fare": 40.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Tankulan",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Diclum",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "San Miguel",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Lonocan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Alae",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Tablon Baloi",
-    "route_to": "Bae Upper Puerto",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 9,
-    "regular_fare": 45.00,
-    "discounted_fare": 36.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "Tankulan",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "Diclum",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "San Miguel",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "Lonocan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Puerto",
-    "route_to": "Alae",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 8,
-    "regular_fare": 40.00,
-    "discounted_fare": 32.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Tankulan",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Diclum",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "San Miguel",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
-  },
-  {
-    "route_from": "Bae Upper Puerto",
-    "route_to": "Lonocan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
   },
   {
     "route_from": "Mambatangan",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 7,
-    "regular_fare": 35.00,
-    "discounted_fare": 28.00
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
   },
   {
     "route_from": "Mambatangan",
-    "route_to": "Tankulan",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
-  },
-  {
-    "route_from": "Mambatangan",
-    "route_to": "Diclum",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
   },
   {
     "route_from": "Mambatangan",
     "route_to": "San Miguel",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
   },
   {
-    "route_from": "Ba-e",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 6,
-    "regular_fare": 30.00,
-    "discounted_fare": 24.00
+    "route_from": "Mambatangan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
   },
   {
-    "route_from": "Ba-e",
+    "route_from": "Mambatangan",
     "route_to": "Tankulan",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 38
   },
   {
-    "route_from": "Ba-e",
-    "route_to": "Diclum",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_from": "Mambatangan",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "Maitom",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 5,
-    "regular_fare": 25.00,
-    "discounted_fare": 20.00
+    "route_from": "Mambatangan",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
   },
   {
-    "route_from": "Maitom",
+    "route_from": "Balubal",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Balubal",
     "route_to": "Tankulan",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 38
   },
   {
-    "route_from": "Maitom",
-    "route_to": "Diclum",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_from": "Balubal",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
   },
   {
-    "route_from": "Alae",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 4,
-    "regular_fare": 20.00,
-    "discounted_fare": 16.00
+    "route_from": "Balubal",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
   },
   {
-    "route_from": "Alae",
+    "route_from": "Maitum",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Maitum",
     "route_to": "Tankulan",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
   },
   {
-    "route_from": "Lonocan",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 3,
-    "regular_fare": 15.00,
-    "discounted_fare": 12.00
+    "route_from": "Maitum",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
   },
   {
-    "route_from": "Lonocan",
+    "route_from": "Maitum",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Alae Manolo",
     "route_to": "Tankulan",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
   },
   {
     "route_from": "San Miguel",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 2,
-    "regular_fare": 10.00,
-    "discounted_fare": 8.00
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
   },
   {
-    "route_from": "Diclum",
-    "route_to": "Manolo Fortich Terminal",
-    "km_distance": 1,
-    "regular_fare": 5.00,
-    "discounted_fare": 4.00
+    "route_from": "San Miguel",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Kalugmanan Manolo",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agora",
+    "route_to": "Gaisano CDO",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cugman",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cugman",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 23,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 24,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 52,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 60
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 60
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 63,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 58,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 38
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 38
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 15,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 70
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30
+  },
+  {
+    "route_from": "Sankanan",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 15
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 110,
+    "discounted_fare": 100
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 110,
+    "discounted_fare": 100
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 105,
+    "discounted_fare": 95
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 105,
+    "discounted_fare": 95
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 100,
+    "discounted_fare": 90
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 25
+  },
+  {
+    "route_from": "Kalugmanan Manolo",
+    "route_to": "Sankanan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15
   }
 ]
