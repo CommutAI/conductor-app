@@ -1,0 +1,156 @@
+[
+  {
+    "id": "7d8b2bc6-53bb-4035-ba01-59a92f3f4765",
+    "stop_code": "STOP 01",
+    "name": "Manolo Fortich Terminal",
+    "location": "Manolo Fortich Terminal",
+    "latitude": 8.36630887,
+    "longitude": 124.86500796,
+    "stop_type": "terminal",
+    "status": "active",
+    "sequence_order": 1
+  },
+  {
+    "id": "10457107-a489-4bd9-99c1-c20c8ae4523f",
+    "stop_code": "STOP 02",
+    "name": "Gaisano CDO",
+    "location": "Gaisano CDO",
+    "latitude": 8.4867,
+    "longitude": 124.65,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 2
+  },
+  {
+    "id": "411b6572-5349-4c2d-8d13-24091a4f8292",
+    "stop_code": "STOP 03",
+    "name": "Gusa",
+    "location": "Gusa",
+    "latitude": 8.4757,
+    "longitude": 124.6823,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 3
+  },
+  {
+    "id": "0039a0a3-aba8-44b9-a6cc-757712928ad4",
+    "stop_code": "STOP 04",
+    "name": "Tablon Baloi",
+    "location": "Tablon Baloi",
+    "latitude": 8.4819,
+    "longitude": 124.7286,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 4
+  },
+  {
+    "id": "2ab4274e-6443-4107-8ea3-0aeb60face33",
+    "stop_code": "STOP 05",
+    "name": "Tablon",
+    "location": "Tablon",
+    "latitude": 8.4819,
+    "longitude": 124.7286,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 5
+  },
+  {
+    "id": "f7400d1a-4541-4b08-8ab2-1ae6084942a1",
+    "stop_code": "STOP 06",
+    "name": "Agusan",
+    "location": "Agusan",
+    "latitude": 8.4886,
+    "longitude": 124.7382,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 6
+  },
+  {
+    "id": "54611b8f-e1b1-44e5-b829-bc41f12664c9",
+    "stop_code": "STOP 07",
+    "name": "Puerto",
+    "location": "Puerto",
+    "latitude": 8.501,
+    "longitude": 124.7505,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 7
+  },
+  {
+    "id": "2ecca771-2690-4890-902f-ff36c63a282b",
+    "stop_code": "STOP 08",
+    "name": "Bae Upper Puerto",
+    "location": "Bae Upper Puerto",
+    "latitude": 8.4264,
+    "longitude": 124.8092,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 8
+  },
+  {
+    "id": "31302b9c-309d-43f6-9ee0-42f337d39d63",
+    "stop_code": "STOP 09",
+    "name": "Alae",
+    "location": "Alae",
+    "latitude": 8.4244,
+    "longitude": 124.8128,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 9
+  },
+  {
+    "id": "a773871b-29d7-453b-9412-11d429c62d8d",
+    "stop_code": "STOP 10",
+    "name": "Lunocan",
+    "location": "Lunocan",
+    "latitude": 8.4143,
+    "longitude": 124.8231,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 10
+  },
+  {
+    "id": "dc71eff3-a220-4545-9a3d-03b49411bdc2",
+    "stop_code": "STOP 11",
+    "name": "San Miguel",
+    "location": "San Miguel",
+    "latitude": 8.389,
+    "longitude": 124.8332,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 11
+  },
+  {
+    "id": "72f8289b-0de7-4761-9cb3-4bc57c0ad930",
+    "stop_code": "STOP 12",
+    "name": "Dicklum",
+    "location": "Dicklum",
+    "latitude": 8.374,
+    "longitude": 124.848,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 12
+  },
+  {
+    "id": "723bcee7-a6d6-42ef-813b-08536d8c3296",
+    "stop_code": "STOP 13",
+    "name": "Tankulan",
+    "location": "Tankulan",
+    "latitude": 8.3688,
+    "longitude": 124.8641,
+    "stop_type": "regular",
+    "status": "active",
+    "sequence_order": 13
+  },
+  {
+    "id": "6096976e-40a1-4bfa-bb71-6d756780894a",
+    "stop_code": "STOP 14",
+    "name": "Agora Terminal",
+    "location": "Agora Terminal",
+    "latitude": 8.48907482,
+    "longitude": 124.65762898,
+    "stop_type": "terminal",
+    "status": "active",
+    "sequence_order": 14
+  }
+]

@@ -35,6 +35,7 @@ import QRCardCanvas from '../components/ui/QRCardCanvas';
 import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
 import type { BaggageSelection } from '../types';
 import fareMatrixData from '../data/fareMatrix.json';
+import busStopsData from '../data/busStops.json';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -192,13 +193,12 @@ function isValidDestination(destination: string): boolean {
   return allDestinations.has(destination);
 }
 
-/** Get all unique destinations from fare matrix */
+/** Get all unique destinations from bus stops */
 function getAvailableDestinations(): string[] {
-  const allDestinations = new Set([
-    ...fareMatrixData.map(item => item.route_from),
-    ...fareMatrixData.map(item => item.route_to)
-  ]);
-  return Array.from(allDestinations).sort();
+  return busStopsData
+    .filter(stop => stop.status === 'active')
+    .map(stop => stop.name)
+    .sort();
 }
 
 /** Get fare from offline fare matrix */
