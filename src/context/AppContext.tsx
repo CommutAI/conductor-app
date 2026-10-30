@@ -11,7 +11,7 @@ interface StaffProfile {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'conductor' | 'cs_desk';
+  role: 'conductor';
   is_active: boolean;
   bus_id: string | null;
 }
@@ -30,11 +30,15 @@ interface Bus {
 interface Trip {
   id: string;
   bus_id: string;
-  conductor_id: string;
+  conductor_id?: string;
   driver_id?: string;
   started_at: string;
   ended_at: string | null;
   status: 'in_progress' | 'completed' | 'cancelled';
+  current_lat?: number;
+  current_lng?: number;
+  gps_updated_at?: string;
+  updated_at?: string;
 }
 
 interface AppContextType {
@@ -62,6 +66,7 @@ interface AppContextType {
   setFareCollected: (n: number) => void;
   incrementValidated: (fare: number) => void;
   clearTrip: () => void;
+  refreshTrip: () => Promise<void>;
 
   // Theme
   theme: Theme;
@@ -104,8 +109,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const restoredOfflineOnlyRef = useRef(false);
 
   const validateTripWithDatabase = useCallback(async (showLoading = false) => {
-    if (!profile || !navigator.onLine) return;
+    if (!profile || !navigator.onLine) {
+      console.log('[AppContext] validateTripWithDatabase skipped - profile:', !!profile, 'online:', navigator.onLine);
+      return;
+    }
 
+    console.log('[AppContext] validateTripWithDatabase called for profile:', profile.id);
     if (showLoading) {
       setIsRestoringTrip(true);
     }
@@ -142,7 +151,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         _setFareCollected(0);
       }
 
-      const { data: activeTrip } = await supabase
+      console.log('[AppContext] Searching for active trip with conductor_id:', profile.id);
+
+      // Debug: Fetch all in_progress trips to see what's in the database
+      const { data: allTrips, error: allTripsError } = await supabase
+        .from('trips')
+        .select('id, conductor_id, driver_id, status, started_at')
+        .eq('status', 'in_progress')
+        .order('started_at', { ascending: false });
+
+      if (allTripsError) {
+        console.error('[AppContext] Error fetching all trips:', allTripsError);
+      } else {
+        console.log('[AppContext] All in_progress trips in DB:', allTrips);
+        if (allTrips && allTrips.length > 0) {
+          allTrips.forEach(trip => {
+            console.log(`[AppContext] Trip ${trip.id}: conductor_id=${trip.conductor_id}, driver_id=${trip.driver_id}`);
+          });
+        }
+      }
+
+      const { data: activeTrip, error: tripError } = await supabase
         .from('trips')
         .select('*')
         .eq('conductor_id', profile.id)
@@ -151,17 +180,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .limit(1)
         .maybeSingle();
 
+      if (tripError) {
+        console.error('[AppContext] Error fetching active trip:', tripError);
+      }
+
       if (activeTrip) {
         console.log('[AppContext] Found active trip in DB, restoring:', activeTrip.id);
+        console.log('[AppContext] Trip bus_id:', activeTrip.bus_id);
 
-        const { data: bus } = await supabase
+        const { data: bus, error: busError } = await supabase
           .from('buses')
           .select('*')
           .eq('id', activeTrip.bus_id)
           .maybeSingle();
 
+        if (busError) {
+          console.error('[AppContext] Error fetching bus:', busError);
+        }
+
         _setCurrentTrip(activeTrip);
-        if (bus) _setCurrentBus(bus);
+        if (bus) {
+          console.log('[AppContext] Bus loaded:', bus.plate_number);
+          _setCurrentBus(bus);
+        } else {
+          console.log('[AppContext] Bus not found for bus_id:', activeTrip.bus_id);
+        }
 
         const cached = StorageService.loadTripState();
         const preserveCounts =
@@ -203,7 +246,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Network-aware profile fetch with retry logic
     let retryCount = 0;
     const maxRetries = 2;
-    
+
+    console.log('[AppContext] fetchProfile called with userId:', userId);
+
+    // Check auth.uid() to compare with staff_users.id
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    console.log('[AppContext] Supabase auth.uid():', authUser?.id);
+    console.log('[AppContext] Staff userId param:', userId);
+    console.log('[AppContext] IDs match:', authUser?.id === userId);
+
     while (retryCount <= maxRetries) {
       try {
         const { data, error } = await supabase
@@ -214,7 +265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (error || !data) {
           console.error('[AppContext] Profile fetch error:', error);
-          
+
           // Retry transient failures while online (not when genuinely offline)
           if (error && navigator.onLine && retryCount < maxRetries) {
             retryCount++;
@@ -222,10 +273,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
             continue;
           }
-          
+
           return null;
         }
         console.log('[AppContext] Profile fetched:', data);
+        console.log('[AppContext] Profile ID:', data.id);
+        console.log('[AppContext] Profile bus_id:', data.bus_id);
         return data as StaffProfile;
       } catch (err) {
         console.error('[AppContext] Profile fetch exception:', err);
@@ -462,6 +515,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     StorageService.clearTripState();
   }
 
+  async function refreshTrip() {
+    console.log('[AppContext] Manual trip refresh requested');
+    await validateTripWithDatabase(true);
+  }
+
   // ── Theme Functions ─────────────────────────────────────────────────────────
   const setTheme = (t: Theme) => setThemeState(t);
   const toggleTheme = () => setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
@@ -492,6 +550,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setFareCollected,
         incrementValidated,
         clearTrip,
+        refreshTrip,
         // Theme
         theme,
         isDark: theme === 'dark',

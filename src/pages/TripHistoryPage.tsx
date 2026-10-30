@@ -16,7 +16,7 @@ import {
   IonButton,
   IonTitle,
 } from '@ionic/react';
-import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Navigation, Clock, User, CreditCard, Banknote, WifiOff } from 'lucide-react';
+import { Calendar, Users, Wallet, AlertTriangle, Bus, X, MapPin, Navigation, Clock, User, CreditCard, Banknote, Smartphone, WifiOff } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -720,9 +720,15 @@ const TripHistoryPage: React.FC = () => {
                             </p>
                           )}
                           <p style={{ margin: '4px 0 0', fontSize: '0.65rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
-                            {(passenger.payment_method === 'card' || passenger.payment_method === 'qr_card')
-                              ? <><CreditCard size={11} /> QR Card</>
-                              : <><Banknote size={11} /> Cash</>}
+                            {passenger.payment_method === 'gcash' ? (
+                              <span style={{ color: '#007DFE', display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700 }}>
+                                <Smartphone size={11} /> GCash
+                              </span>
+                            ) : (passenger.payment_method === 'card' || passenger.payment_method === 'qr_card') ? (
+                              <><CreditCard size={11} /> QR Card</>
+                            ) : (
+                              <><Banknote size={11} /> Cash</>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -742,9 +748,15 @@ const TripHistoryPage: React.FC = () => {
                         }}>
                           <div>
                             <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              {(tx.payment_method === 'card' || tx.payment_method === 'qr_card' || tx.channel === 'qr_card')
-                                ? <><CreditCard size={14} /> QR Card</>
-                                : <><Banknote size={14} /> Cash</>}
+                              {(tx.payment_method === 'gcash' || tx.channel === 'gcash') ? (
+                                <span style={{ color: '#007DFE', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                                  <Smartphone size={14} /> GCash
+                                </span>
+                              ) : (tx.payment_method === 'card' || tx.payment_method === 'qr_card' || tx.channel === 'qr_card') ? (
+                                <><CreditCard size={14} /> QR Card</>
+                              ) : (
+                                <><Banknote size={14} /> Cash</>
+                              )}
                             </p>
                             <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
                               {new Date(tx.created_at).toLocaleString()}

@@ -2,24 +2,31 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   IonPage,
   IonContent,
-  IonSpinner,
   IonToast,
-  IonFab,
-  IonFabButton,
   IonRefresher,
   IonRefresherContent,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  ScanLine, Wallet, AlertTriangle,
-  CheckCircle, Bus, Play,
+  Bus,
+  ScanLine,
+  Users,
+  Wallet,
+  Gauge,
+  Radio,
+  Clock,
+  ChevronRight,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
+  History,
+  User,
+  Calendar,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
-import { StorageService } from '../services/storageService';
-import { getLocationAndDecode } from '../services/geoService';
 import { realtimeService } from '../services/realtimeService';
 import { isLikelyNetworkError } from '../utils/networkUtils';
 import ProfileAvatar from '../components/ProfileAvatar';
@@ -28,86 +35,51 @@ import PageHeader from '../components/layout/PageHeader';
 import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, DashboardCard,
-  LoadingSkeleton, TripTimeline,
+  LoadingSkeleton, AnimatedIllustration, PrimaryButton,
 } from '../components/ui';
 import '../styles/modern-transport.css';
 
 // Types
 
-interface DestinationAlert {
-  id: string;
-  passengerName: string;
-  destination: string;
-  distance: string;
-  status: string;
-  message: string;
-  color: string;
-  timestamp: string;
-}
-
-interface TripStats {
-  passengerCount: number;
-  irregularities: any[];
-  capacityPercent: number;
-}
-
 // Constants
 
 const GPS_UPDATE_INTERVAL = 30000; // 30 seconds
 const DATA_REFRESH_INTERVAL = 30000; // 30 seconds
-const PROXIMITY_THRESHOLD_KM = 0.5;
-const MAX_DESTINATION_ALERTS = 5;
-
-// Common starting points for offline trip start
-const COMMON_STARTING_POINTS = [
-  'Main Terminal',
-  'Central Station',
-  'Bus Depot',
-  'City Center',
-  'Mall/Shopping Center',
-  'Hospital',
-  'School/University',
-  'Airport',
-  'Train Station',
-  'Industrial Area',
-  'Residential Area',
-  'Other',
-];
 
 // Component
 
 const HomePage: React.FC = () => {
   // State
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastColor, setToastColor] = useState<'success' | 'danger' | 'warning'>('success');
-  const [tripStats, setTripStats] = useState<TripStats>({
-    passengerCount: 0,
-    irregularities: [],
-    capacityPercent: 0,
-  });
   const [loading, setLoading] = useState(true);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<'active' | 'inactive' | 'searching'>('searching');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [destinationAlerts, setDestinationAlerts] = useState<DestinationAlert[]>([]);
-  const [notifiedPassengers, setNotifiedPassengers] = useState<Set<string>>(new Set());
+  const [gpsSpeed, setGpsSpeed] = useState<number>(0);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number>(0);
+  const [gpsLastUpdate, setGpsLastUpdate] = useState<string>('');
+  const [aiPassengerCount, setAiPassengerCount] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showStartingPointModal, setShowStartingPointModal] = useState(false);
-  const [selectedStartingPoint, setSelectedStartingPoint] = useState<string>('');
-  const [customStartingPoint, setCustomStartingPoint] = useState<string>('');
 
   // Context
-  const { profile, currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, loading: authLoading } = useApp();
+  const {
+    profile, currentTrip, currentBus, validatedCount, currentPassengersCount,
+    fareCollected, isRestoringTrip, setCurrentTrip, setCurrentBus,
+    setValidatedCount, setCurrentPassengersCount, setFareCollected,
+    refreshTrip,
+    loading: authLoading,
+  } = useApp();
   const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
+
+
 
   // Refs
   const gpsTrackerRef = useRef<any>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastGpsUpdateRef = useRef<number>(0);
-  const proximityCheckRef = useRef<NodeJS.Timeout | null>(null);
   const realtimeCleanupRef = useRef<(() => void) | null>(null);
   const networkStateRef = useRef<boolean>(isOnline);
   const prevSyncInProgressRef = useRef(false);
@@ -116,7 +88,20 @@ const HomePage: React.FC = () => {
   // Computed Values
   const isLoading = authLoading || isRestoringTrip || !initialLoadDone;
 
-  const currentDate = useMemo(() => new Date(), []);
+  // Live Actual Time Clock
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const liveActualTime = useMemo(() => {
+    return currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [currentDate]);
+
   const greeting = useMemo(() => {
     const hour = currentDate.getHours();
     if (hour < 12) return 'Good Morning';
@@ -124,22 +109,47 @@ const HomePage: React.FC = () => {
     return 'Good Evening';
   }, [currentDate]);
 
-  const routeStops = useMemo(() => {
-    if (!currentBus?.route) return [];
-    return currentBus.route.split(/[→\-–>↔]/).map((s) => s.trim()).filter(Boolean);
-  }, [currentBus?.route]);
+  const formattedDate = useMemo(() => {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    }).format(currentDate);
+  }, [currentDate]);
 
-  const timelineStops = useMemo(() => {
-    if (routeStops.length >= 2) {
-      return routeStops.map((name, i) => ({
-        id: String(i),
-        name,
-        status: (i === 0 ? 'completed' : i === 1 ? 'current' : 'upcoming') as 'completed' | 'current' | 'upcoming',
-        eta: i > 1 ? `~${i * 8} min` : undefined,
-      }));
+  const seatCapacity = currentBus?.seat_capacity || 50;
+  const occupancyPercent = Math.min(Math.round((validatedCount / seatCapacity) * 100), 100);
+  const remainingSeats = Math.max(0, seatCapacity - validatedCount);
+
+  const occupancyStatus = useMemo(() => {
+    if (validatedCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
+    if (validatedCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
+    return { label: 'Seats Available', variant: 'success' as const };
+  }, [validatedCount, seatCapacity]);
+
+  const tripStartTime = useMemo(() => {
+    if (!currentTrip?.started_at) return null;
+    try {
+      return new Date(currentTrip.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return null;
     }
-    return [{ id: '0', name: currentBus?.route || 'Unknown Route', status: 'current' as const }];
-  }, [routeStops, currentBus?.route]);
+  }, [currentTrip?.started_at]);
+
+  const tripDuration = useMemo(() => {
+    if (!currentTrip?.started_at) return null;
+    try {
+      const startMs = new Date(currentTrip.started_at).getTime();
+      if (isNaN(startMs)) return null;
+      const diffMins = Math.max(0, Math.floor((currentDate.getTime() - startMs) / 60000));
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      if (hours > 0) return `${hours}h ${mins}m elapsed`;
+      return `${mins}m elapsed`;
+    } catch {
+      return null;
+    }
+  }, [currentTrip?.started_at, currentDate]);
 
   // Handlers
 
@@ -230,12 +240,6 @@ const HomePage: React.FC = () => {
     // ── OFFLINE: Use cached/local state only ──────────────────────────────
     if (!isOnline) {
       console.log('[HomePage] Offline - using local state for stats');
-      // Use currentPassengersCount for passengers currently on board
-      setTripStats({
-        passengerCount: currentPassengersCount,
-        irregularities: [],
-        capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
-      });
       return;
     }
 
@@ -250,11 +254,6 @@ const HomePage: React.FC = () => {
 
       if (tripError && isLikelyNetworkError(tripError)) {
         console.log('[HomePage] Network error checking trip status, using local state');
-        setTripStats({
-          passengerCount: currentPassengersCount,
-          irregularities: [],
-          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
-        });
         return;
       }
 
@@ -268,29 +267,11 @@ const HomePage: React.FC = () => {
         return;
       }
 
-      // Load current passenger count - only count passengers who have NOT alighted yet
-      const { count: dbCurrentPassengerCount, error: passengerError } = await supabase
-        .from('boarded_passengers')
-        .select('id', { count: 'exact', head: true })
-        .eq('trip_id', currentTrip.id)
-        .is('alighted_at', null);
-
       // Load total validated count - count all fare validations for this trip
       const { count: totalValidatedCount, error: validatedError } = await supabase
         .from('transactions')
         .select('id', { count: 'exact', head: true })
-        .eq('trip_id', currentTrip.id)
-        .eq('type', 'fare_validation');
-
-      if (passengerError && isLikelyNetworkError(passengerError)) {
-        console.log('[HomePage] Network error loading passenger count, using local state');
-        setTripStats({
-          passengerCount: currentPassengersCount,
-          irregularities: [],
-          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
-        });
-        return;
-      }
+        .eq('trip_id', currentTrip.id);
 
       // Update validatedCount from database for total validated passengers
       if (!validatedError && totalValidatedCount !== null) {
@@ -301,66 +282,39 @@ const HomePage: React.FC = () => {
       const { data: transactions, error: txError } = await supabase
         .from('transactions')
         .select('amount')
-        .eq('trip_id', currentTrip.id)
-        .eq('type', 'fare_validation');
+        .eq('trip_id', currentTrip.id);
 
-      if (txError && isLikelyNetworkError(txError)) {
-        console.log('[HomePage] Network error loading transactions, using local state');
-        setTripStats({
-          passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
-          irregularities: [],
-          capacityPercent: currentBus ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100 : 0,
-        });
-        return;
+      if (!txError && transactions) {
+        const totalFare = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+        setFareCollected(totalFare);
       }
 
-      const totalFare = transactions?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
-
-      // Load irregularities
-      const { data: irregularities, error: irregularityError } = await supabase
-        .from('fare_irregularities')
-        .select('*')
-        .eq('trip_id', currentTrip.id)
-        .order('detected_at', { ascending: false })
-        .limit(10);
-
-      if (irregularityError && isLikelyNetworkError(irregularityError)) {
-        console.log('[HomePage] Network error loading irregularities, using local state');
-        setTripStats({
-          passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
-          irregularities: [],
-          capacityPercent: currentBus
-            ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100
-            : 0,
-        });
-        setCurrentPassengersCount(dbCurrentPassengerCount ?? currentPassengersCount);
-        setFareCollected(Math.max(fareCollected, totalFare));
-        return;
+      // Load current GPS location from trip
+      if (currentTrip.current_lat && currentTrip.current_lng) {
+        setCurrentLocation({ lat: currentTrip.current_lat, lng: currentTrip.current_lng });
+        setGpsLastUpdate(currentTrip.gps_updated_at || currentTrip.updated_at || '');
+        setGpsStatus('active');
       }
 
-      setTripStats({
-        passengerCount: dbCurrentPassengerCount ?? currentPassengersCount,
-        irregularities: irregularities || [],
-        capacityPercent: currentBus
-          ? ((dbCurrentPassengerCount ?? currentPassengersCount) / currentBus.seat_capacity) * 100
-          : 0,
-      });
+      // Load latest AI passenger count from database
+      const { data: latestCount } = await supabase
+        .from('passenger_counts')
+        .select('count, ai_count')
+        .eq('trip_id', currentTrip.id)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      setCurrentPassengersCount(dbCurrentPassengerCount ?? currentPassengersCount);
-      setFareCollected(Math.max(fareCollected, totalFare));
+      if (latestCount) {
+        setAiPassengerCount(latestCount.ai_count || latestCount.count || 0);
+      }
     } catch (err) {
+      console.error('[HomePage] Error loading data:', err);
       if (isLikelyNetworkError(err)) {
-        console.log('[HomePage] Network error in loadData, using local state');
-        setTripStats({
-          passengerCount: currentPassengersCount,
-          irregularities: [],
-          capacityPercent: currentBus ? (currentPassengersCount / currentBus.seat_capacity) * 100 : 0,
-        });
-      } else {
-        console.error('[HomePage] Error loading data:', err);
+        console.log('[HomePage] Network error, using local state');
       }
     }
-  }, [currentTrip, currentBus, setValidatedCount, setCurrentTrip, setCurrentBus, setCurrentPassengersCount, setFareCollected, isOnline, currentPassengersCount, fareCollected]);
+  }, [currentTrip, isOnline, currentBus, currentPassengersCount, setValidatedCount, setFareCollected, setCurrentTrip, setCurrentBus]);
 
   // Effects
 
@@ -446,10 +400,50 @@ const HomePage: React.FC = () => {
           })
         : () => {}; // No-op cleanup if there is no active trip yet
 
+      // Subscribe to GPS location updates from driver (read-only for conductor)
+      // GPS data is stored in the trips table
+      const gpsCleanup = currentTrip
+        ? realtimeService.subscribeToGpsLocations(currentTrip.id, {
+            onInsert: (trip) => {
+              console.log('[Realtime] New GPS location from trip:', trip);
+              if (trip.current_lat && trip.current_lng) {
+                setCurrentLocation({ lat: trip.current_lat, lng: trip.current_lng });
+                setGpsLastUpdate(trip.gps_updated_at || trip.updated_at || '');
+                setGpsStatus('active');
+              }
+            },
+            onUpdate: (trip) => {
+              console.log('[Realtime] GPS location updated from trip:', trip);
+              if (trip.current_lat && trip.current_lng) {
+                setCurrentLocation({ lat: trip.current_lat, lng: trip.current_lng });
+                setGpsLastUpdate(trip.gps_updated_at || trip.updated_at || '');
+                setGpsStatus('active');
+              }
+            },
+          })
+        : () => {};
+
+      // Subscribe to AI passenger count updates from camera (read-only for conductor)
+      // Passenger count data is stored in the passenger_counts table
+      const aiCountCleanup = currentTrip
+        ? realtimeService.subscribeToAiPassengerCounts(currentTrip.id, {
+            onInsert: (count) => {
+              console.log('[Realtime] New AI passenger count:', count);
+              setAiPassengerCount(count.ai_count || count.count || 0);
+            },
+            onUpdate: (count) => {
+              console.log('[Realtime] AI passenger count updated:', count);
+              setAiPassengerCount(count.ai_count || count.count || 0);
+            },
+          })
+        : () => {};
+
       realtimeCleanupRef.current = () => {
         console.log('[HomePage] Cleaning up realtime subscriptions');
         tripCleanup();
         passengerCleanup();
+        gpsCleanup();
+        aiCountCleanup();
       };
       
       networkStateRef.current = true; // Track that we have subscriptions set up
@@ -458,10 +452,9 @@ const HomePage: React.FC = () => {
     return () => {
       if (dataInterval) clearInterval(dataInterval);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
-      if (proximityCheckRef.current) clearTimeout(proximityCheckRef.current);
       if (realtimeCleanupRef.current) realtimeCleanupRef.current();
     };
-  }, [currentTrip?.id, authLoading, initialLoadDone, loadData, profile?.id, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, showNotification, history]);
+  }, [currentTrip?.id, currentBus?.id, authLoading, initialLoadDone, loadData, profile?.id, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, showNotification, history]);
 
   // Refresh data when component mounts (handles navigation back from scan page)
   useEffect(() => {
@@ -559,292 +552,27 @@ const HomePage: React.FC = () => {
   }, [currentTrip, history, showNotification]);
 
   const handleRefresh = useCallback(async (event: CustomEvent) => {
-    if (!currentTrip) {
-      event.detail.complete();
-      return;
-    }
-
     setIsRefreshing(true);
     try {
-      await loadData();
-      showNotification('Data refreshed', 'success');
+      // If no active trip, try to fetch from database
+      if (!currentTrip) {
+        console.log('[HomePage] No active trip, refreshing trip from database');
+        await refreshTrip();
+        showNotification('Trip status refreshed', 'success');
+      } else {
+        await loadData();
+        showNotification('Data refreshed', 'success');
+      }
     } catch (err) {
       showNotification('Failed to refresh data', 'danger');
     } finally {
       setIsRefreshing(false);
       event.detail.complete();
     }
-  }, [currentTrip, showNotification, loadData]);
+  }, [currentTrip, showNotification, loadData, refreshTrip]);
 
-  const confirmOfflineTripStart = useCallback(async () => {
-    const finalStartingPoint = selectedStartingPoint === 'Other' 
-      ? customStartingPoint.trim() 
-      : selectedStartingPoint.trim();
-
-    if (!finalStartingPoint) {
-      showNotification('Please select or enter a starting point', 'warning');
-      return;
-    }
-
-    setStarting(true);
-    setShowStartingPointModal(false);
-    showNotification('Starting trip offline...', 'warning');
-
-    try {
-      const bus = currentBus;
-      if (!bus) {
-        throw new Error('Bus information not available');
-      }
-
-      if (!profile) {
-        throw new Error('Profile information not available');
-      }
-
-      const localTrip = {
-        id: crypto.randomUUID(),
-        bus_id: bus.id,
-        conductor_id: profile.id,
-        started_at: new Date().toISOString(),
-        ended_at: null,
-        status: 'in_progress' as const,
-        starting_point: finalStartingPoint,
-      };
-
-      console.log('[HomePage] Trip started offline (local):', localTrip.id, 'from:', finalStartingPoint);
-      setCurrentTrip(localTrip);
-      setValidatedCount(0);
-      setFareCollected(0);
-      setStarting(false);
-      setSelectedStartingPoint('');
-      setCustomStartingPoint('');
-      showNotification('Trip started offline — will sync when online', 'warning');
-    } catch (err) {
-      console.error('[HomePage] Error starting offline trip:', err);
-      showNotification('Failed to start trip offline', 'danger');
-      setStarting(false);
-    }
-  }, [selectedStartingPoint, customStartingPoint, currentBus, profile, setCurrentTrip, setValidatedCount, setFareCollected, showNotification]);
-
-  const startTrip = useCallback(async () => {
-    console.log('[HomePage] Profile data:', profile);
-    console.log('[HomePage] Bus ID check:', profile?.bus_id);
-    
-    if (!profile?.bus_id) {
-      const msg = 'No bus assigned to your account. Please contact administrator.';
-      setError(msg);
-      showNotification(msg, 'warning');
-      return;
-    }
-
-    // Check if current time is within allowed hours (4 AM - 10 PM)
-    const now = new Date();
-    const currentHour = now.getHours();
-    const isAllowedTime = currentHour >= 4 && currentHour < 22; // 4 AM to 10 PM (22:00)
-    
-    if (!isAllowedTime) {
-      const msg = 'Trips can only be started between 4:00 AM and 10:00 PM.';
-      setError(msg);
-      showNotification(msg, 'warning');
-      return;
-    }
-
-    setError(null);
-    
-    // ── OFFLINE: Show starting point selection modal ─────────────────────
-    if (!isOnline) {
-      const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
-      if (!cachedBusRaw) {
-        const msg = 'Bus info not cached. Connect once while online before starting offline.';
-        setError(msg);
-        showNotification(msg, 'warning');
-        return;
-      }
-
-      let bus;
-      try {
-        bus = JSON.parse(cachedBusRaw);
-      } catch {
-        const msg = 'Cached bus data is invalid. Connect while online and try again.';
-        setError(msg);
-        showNotification(msg, 'danger');
-        return;
-      }
-
-      // Show starting point selection modal for offline
-      setCurrentBus(bus);
-      setShowStartingPointModal(true);
-      return;
-    }
-
-    setStarting(true);
-    showNotification('Starting trip...', 'warning');
-
-    try {
-      console.log('[HomePage] Starting trip for conductor:', profile.id, 'bus:', profile.bus_id);
-
-      let bus;
-      const { data: busData, error: busErr } = await supabase
-        .from('buses')
-        .select('*')
-        .eq('id', profile.bus_id)
-        .eq('status', 'active')
-        .single();
-
-      if (busErr || !busData) {
-        if (busErr && isLikelyNetworkError(busErr)) {
-          // Fall back to cached bus data on network error
-          const cachedBusRaw = localStorage.getItem(`cached_bus_${profile.bus_id}`);
-          if (cachedBusRaw) {
-            try {
-              bus = JSON.parse(cachedBusRaw);
-              console.log('[HomePage] Network error loading bus, using cached data');
-            } catch (parseErr) {
-              console.error('[HomePage] Error parsing cached bus:', parseErr);
-            }
-          }
-        }
-        
-        if (!bus) {
-          const msg = busErr?.message || 'Failed to load assigned bus';
-          console.error('[HomePage] Bus load error:', busErr);
-          setError(msg);
-          showNotification(msg, 'danger');
-          setStarting(false);
-          return;
-        }
-      } else {
-        bus = busData;
-        // Cache the bus data for offline use
-        localStorage.setItem(`cached_bus_${profile.bus_id}`, JSON.stringify(bus));
-      }
-
-      // Get current GPS location for starting point
-      let startingPoint = bus.route; // Default to route name if GPS fails
-      try {
-        const locationResult = await getLocationAndDecode();
-        if (locationResult.success && locationResult.locationName) {
-          startingPoint = locationResult.locationName;
-        }
-      } catch (err) {
-        console.log('[HomePage] GPS location not available, using route as starting point');
-      }
-
-      // Guard: check if this conductor already has an active trip in the DB.
-      // This prevents a second device from creating a duplicate trip before
-      // the realtime INSERT event arrives.
-      const { data: existingTrip } = await supabase
-        .from('trips')
-        .select('id, bus_id, started_at, status')
-        .eq('conductor_id', profile.id)
-        .eq('status', 'in_progress')
-        .maybeSingle();
-
-      if (existingTrip) {
-        console.log('[HomePage] Active trip already exists in DB, adopting it:', existingTrip);
-        setCurrentTrip(existingTrip as any);
-        setCurrentBus(bus);
-        setValidatedCount(0);
-        setFareCollected(0);
-        setStarting(false);
-        showNotification('Trip already in progress — synced from another device', 'warning');
-        loadData();
-        return;
-      }
-
-      const { data: trip, error: tripErr } = await supabase
-        .from('trips')
-        .insert({
-          bus_id: bus.id,
-          conductor_id: profile.id,
-          started_at: new Date().toISOString(),
-          status: 'in_progress',
-          starting_point: startingPoint,
-        })
-        .select()
-        .single();
-
-      if (tripErr || !trip) {
-        const msg = tripErr?.message || 'Failed to create trip';
-        console.error('[HomePage] Trip creation error:', tripErr);
-        setError(msg);
-        showNotification(msg, 'danger');
-        setStarting(false);
-        return;
-      }
-
-      console.log('[HomePage] Trip started successfully:', trip);
-      setCurrentTrip(trip);
-      setCurrentBus(bus);
-      setValidatedCount(0);
-      setFareCollected(0);
-      setStarting(false);
-      showNotification('Trip started successfully!', 'success');
-      
-      // Start data loading after trip is created
-      loadData();
-    } catch (err) {
-      console.error('[HomePage] Error starting trip:', err);
-      const msg = 'An unexpected error occurred';
-      setError(msg);
-      showNotification(msg, 'danger');
-      setStarting(false);
-    }
-  }, [profile, setCurrentTrip, setCurrentBus, setValidatedCount, setFareCollected, showNotification, isOnline, loadData]);
-
-  const endTrip = useCallback(async () => {
-    if (!currentTrip || !currentBus) return;
-
-    try {
-      let endPoint: string | undefined;
-      try {
-        const locationResult = await getLocationAndDecode();
-        if (locationResult.success && locationResult.locationName) {
-          endPoint = locationResult.locationName;
-        }
-      } catch (_) { /* GPS optional */ }
-
-      const endedAt = new Date().toISOString();
-      const completedTrip = {
-        ...currentTrip,
-        status: 'completed' as const,
-        ended_at: endedAt,
-      };
-
-      if (!isOnline || !navigator.onLine) {
-        StorageService.saveTripState({
-          currentTrip: completedTrip,
-          currentBus,
-          validatedCount,
-          currentPassengersCount,
-          fareCollected,
-          pendingTripEndSync: true,
-          endPoint,
-        });
-        StorageService.archiveCompletedTrip();
-        setCurrentTrip(completedTrip);
-        showNotification('Trip ended offline — will sync when online', 'warning');
-        history.push('/trip-summary');
-        return;
-      }
-
-      const { error } = await supabase
-        .from('trips')
-        .update({
-          ended_at: endedAt,
-          status: 'completed',
-          ...(endPoint ? { end_point: endPoint } : {}),
-        })
-        .eq('id', currentTrip.id);
-
-      if (error) throw error;
-
-      setCurrentTrip(completedTrip);
-      history.push('/trip-summary');
-    } catch (err) {
-      console.error('[HomePage] Error ending trip:', err);
-      showNotification('Failed to end trip', 'danger');
-    }
-  }, [currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected, isOnline, history, showNotification, setCurrentTrip]);
+  // Note: Trip start/end is driver-only functionality
+  // Conductor waits for driver to start the trip before scanning passengers
 
   // Render
 
@@ -871,7 +599,39 @@ const HomePage: React.FC = () => {
           label: hasActiveTrip ? (isOnline ? 'Trip Active' : 'Offline Mode') : 'Ready',
           variant: hasActiveTrip ? (isOnline ? 'success' : 'danger') : 'primary',
         }}
-        rightAction={<ProfileAvatar name={profile?.full_name || 'User'} size="sm" />}
+        rightAction={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* GPS Status in Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              borderRadius: 20,
+              background: gpsStatus === 'active' ? 'rgba(16, 185, 129, 0.15)' : gpsStatus === 'inactive' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+              border: `1px solid ${gpsStatus === 'active' ? 'rgba(16, 185, 129, 0.3)' : gpsStatus === 'inactive' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+            }}>
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: gpsStatus === 'active' ? '#10b981' : gpsStatus === 'inactive' ? '#ef4444' : '#f59e0b',
+                boxShadow: gpsStatus === 'active' ? '0 0 6px #10b981' : 'none',
+                animation: gpsStatus === 'searching' ? 'pulse 1.5s infinite' : 'none',
+              }} />
+              <span style={{ fontSize: '0.7rem', fontWeight: 600, color: gpsStatus === 'active' ? '#10b981' : gpsStatus === 'inactive' ? '#ef4444' : '#f59e0b' }}>
+                {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'inactive' ? 'No GPS' : 'GPS...'}
+              </span>
+            </div>
+            <div
+              onClick={() => history.push('/profile')}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title="View Profile"
+            >
+              <ProfileAvatar name={profile?.full_name || 'User'} size="sm" />
+            </div>
+          </div>
+        }
       />
       <OfflineBanner />
 
@@ -886,8 +646,34 @@ const HomePage: React.FC = () => {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            style={{ marginBottom: 20 }}
+            style={{ marginBottom: 18 }}
           >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: 'rgba(255, 255, 255, 0.75)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}>
+                <Calendar size={13} />
+                {formattedDate}
+              </span>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 10,
+                background: hasActiveTrip ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.15)',
+                color: hasActiveTrip ? '#4ade80' : 'rgba(255, 255, 255, 0.9)',
+                border: `1px solid ${hasActiveTrip ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+              }}>
+                {hasActiveTrip ? 'Shift Active' : 'Shift Standby'}
+              </span>
+            </div>
             <h1 style={{
               margin: 0,
               fontSize: '1.75rem',
@@ -900,368 +686,736 @@ const HomePage: React.FC = () => {
             </h1>
             <p style={{
               margin: 0,
-              fontSize: '0.95rem',
+              fontSize: '0.9rem',
               color: 'rgba(255, 255, 255, 0.85)',
               fontWeight: 500
             }}>
-              {hasActiveTrip ? 'Your trip is in progress' : 'Ready to start your shift'}
+              {hasActiveTrip
+                ? `In Transit • Bus #${currentBus?.plate_number || ''}`
+                : 'Ready for departure • Awaiting driver'}
             </p>
           </motion.div>
 
           {!hasActiveTrip ? (
-            /* No Active Trip - Show Start Trip Button */
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden' }}>
-                {/* Decorative Elements */}
-                <div style={{
-                  position: 'absolute',
-                  top: -50,
-                  right: -50,
-                  width: 200,
-                  height: 200,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%',
-                  filter: 'blur(40px)'
-                }} />
-                <div style={{
-                  position: 'absolute',
-                  bottom: -30,
-                  left: -30,
-                  width: 150,
-                  height: 150,
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: '50%',
-                  filter: 'blur(30px)'
-                }} />
-                
-                <div style={{ padding: '32px 24px', position: 'relative', zIndex: 1 }}>
-                  {/* Animated Icon */}
-                  <motion.div
-                    initial={{ scale: 0, rotate: -180 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ 
-                      type: 'spring', 
-                      stiffness: 200, 
-                      damping: 15, 
-                      delay: 0.2 
-                    }}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.25)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '50%',
-                      width: 72,
-                      height: 72,
-                      display: 'flex',
+            /* No Active Trip - Polished Waiting for Driver View */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Hero Waiting Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+              >
+                <SoftCard variant="hero" padding="none" style={{ overflow: 'hidden', position: 'relative' }}>
+                  {/* Decorative Ambient Background Elements */}
+                  <div style={{
+                    position: 'absolute',
+                    top: -40,
+                    right: -40,
+                    width: 180,
+                    height: 180,
+                    background: 'rgba(255, 255, 255, 0.12)',
+                    borderRadius: '50%',
+                    filter: 'blur(35px)',
+                    pointerEvents: 'none',
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: -30,
+                    left: -30,
+                    width: 140,
+                    height: 140,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: '50%',
+                    filter: 'blur(25px)',
+                    pointerEvents: 'none',
+                  }} />
+
+                  <div style={{ padding: '24px 20px', position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                    {/* Animated Waiting Illustration */}
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+                      <AnimatedIllustration type="waiting" size={68} />
+                    </div>
+
+                    {/* Status Pill */}
+                    <div style={{
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: '0 auto 20px',
-                      border: '2px solid rgba(255, 255, 255, 0.3)',
-                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
-                    }}
-                  >
-                    <Play size={32} color="white" />
-                  </motion.div>
-                  
-                  <h2 style={{ 
-                    margin: '0 0 8px', 
-                    fontSize: '1.75rem', 
-                    fontWeight: 800, 
-                    color: 'white',
-                    textAlign: 'center',
-                    letterSpacing: '-0.5px'
-                  }}>
-                    Ready to Start Your Trip
-                  </h2>
-                  
-                  <p style={{ 
-                    margin: '0 0 28px', 
-                    fontSize: '1rem', 
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    textAlign: 'center',
-                    lineHeight: 1.5,
-                    fontWeight: 400
-                  }}>
-                    {profile?.bus_id 
-                      ? 'Your assigned bus is ready. Start your trip when you are prepared.'
-                      : 'No bus assigned. Please contact your administrator.'}
-                  </p>
-                  
-                  {/* Bus Info Card */}
-                  {profile?.bus_id && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                      className="glass-chip"
-                      style={{
-                        padding: '16px',
-                        marginBottom: 24,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12
-                      }}
-                    >
+                      gap: 6,
+                      padding: '4px 12px',
+                      borderRadius: 20,
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      marginBottom: 12,
+                    }}>
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        borderRadius: 10,
-                        padding: 10,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <Bus size={24} color="white" />
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#fde047',
+                        boxShadow: '0 0 8px #fde047',
+                        animation: 'pulse 1.5s infinite',
+                      }} />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.5px' }}>
+                        AWAITING DEPARTURE
+                      </span>
+                    </div>
+
+                    <h2 style={{
+                      margin: '0 0 6px',
+                      fontSize: '1.4rem',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      letterSpacing: '-0.4px',
+                    }}>
+                      Waiting for Driver
+                    </h2>
+
+                    <p style={{
+                      margin: '0 auto 16px',
+                      fontSize: '0.88rem',
+                      color: 'rgba(255, 255, 255, 0.92)',
+                      lineHeight: 1.45,
+                      fontWeight: 400,
+                      maxWidth: 320,
+                    }}>
+                      {profile?.bus_id
+                        ? 'The driver will start the trip from the terminal console. Scanner and trip metrics will activate automatically.'
+                        : 'No bus assigned to your account. Please contact your dispatch administrator.'}
+                    </p>
+
+                    {/* Bus Info Glass Chip inside Hero */}
+                    {profile?.bus_id && (
+                      <div
+                        className="glass-chip"
+                        style={{
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          textAlign: 'left',
+                          background: 'rgba(255, 255, 255, 0.18)',
+                          backdropFilter: 'blur(12px)',
+                          borderRadius: 14,
+                        }}
+                      >
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.25)',
+                          borderRadius: 10,
+                          padding: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff',
+                        }}>
+                          <Bus size={22} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{
+                            margin: '0 0 2px',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.6px',
+                          }}>
+                            Assigned Bus
+                          </p>
+                          <p style={{
+                            margin: 0,
+                            color: '#ffffff',
+                            fontSize: '1rem',
+                            fontWeight: 800,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            Bus #{currentBus?.plate_number || 'Loading...'}
+                          </p>
+                        </div>
+                        <div style={{
+                          padding: '4px 8px',
+                          borderRadius: 8,
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          color: '#ffffff',
+                        }}>
+                          {currentBus?.seat_capacity ? `${currentBus.seat_capacity} Seats` : 'Assigned'}
+                        </div>
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ 
-                          margin: '0 0 2px', 
-                          color: 'rgba(255, 255, 255, 0.7)', 
-                          fontSize: '0.75rem', 
-                          fontWeight: 600,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
-                        }}>
-                          Assigned Bus
-                        </p>
-                        <p style={{ 
-                          margin: 0, 
-                          color: 'white', 
-                          fontSize: '1rem', 
-                          fontWeight: 700 
-                        }}>
-                          Bus #{currentBus?.plate_number || 'Loading...'}
-                        </p>
-                      </div>                    </motion.div>
-                  )}
-                  
-                  <motion.button
-                    type="button"
-                    onClick={startTrip}
-                    disabled={starting || !profile?.bus_id}
-                    style={{
-                      width: '100%',
-                      background: starting || !profile?.bus_id 
-                        ? 'rgba(255, 255, 255, 0.3)' 
-                        : 'white',
-                      border: 'none',
-                      borderRadius: 14,
-                      padding: '16px 24px',
-                      cursor: starting || !profile?.bus_id ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 12,
-                      color: starting || !profile?.bus_id ? 'rgba(255, 255, 255, 0.5)' : '#F97316',
-                      fontWeight: 700,
-                      fontSize: '1.1rem',
-                      boxShadow: starting || !profile?.bus_id 
-                        ? 'none' 
-                        : '0 8px 24px rgba(0, 0, 0, 0.2)',
-                      opacity: starting || !profile?.bus_id ? 0.6 : 1,
-                      transition: 'all 0.3s ease'
-                    }}
-                    whileHover={starting || !profile?.bus_id ? {} : { 
-                      scale: 1.02,
-                      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.25)'
-                    }}
-                    whileTap={starting || !profile?.bus_id ? {} : { scale: 0.98 }}
-                  >
-                    {starting ? <IonSpinner name="crescent" /> : <Play size={24} />}
-                    {starting ? 'Starting Trip...' : 'Start Trip'}
-                  </motion.button>
-                  
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      style={{ 
-                        marginTop: 20, 
-                        padding: '14px 16px', 
-                        background: 'rgba(239, 68, 68, 0.2)', 
-                        backdropFilter: 'blur(10px)',
-                        borderRadius: 10, 
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: '#fca5a5',
-                        fontSize: '0.9rem',
-                        fontWeight: 500,
-                        textAlign: 'center'
+                    )}
+
+                    {/* Manual Refresh Button */}
+                    <PrimaryButton
+                      onClick={async () => {
+                        setIsRefreshing(true);
+                        try {
+                          await refreshTrip();
+                          showNotification('Trip status refreshed', 'success');
+                        } catch (err) {
+                          showNotification('Failed to refresh trip', 'danger');
+                        } finally {
+                          setIsRefreshing(false);
+                        }
+                      }}
+                      disabled={isRefreshing}
+                      style={{
+                        width: '100%',
+                        marginTop: 8,
                       }}
                     >
-                      {error}
-                    </motion.div>
-                  )}
-                </div>
-              </SoftCard>
-            </motion.div>
-          ) : (
-            /* Active Trip - Show Trip Progress */
-            <>
-              {/* Summary Cards */}
+                      {isRefreshing ? 'Refreshing...' : 'Check for Active Trip'}
+                    </PrimaryButton>
+                  </div>
+                </SoftCard>
+              </motion.div>
+
+              {/* Conductor Pre-Shift Readiness Card */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
-                style={{ marginBottom: 24 }}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-                  <DashboardCard
-                    icon={ScanLine}
-                    label="Passengers"
-                    value={tripStats.passengerCount.toString()}
-                    trend={undefined}
-                    iconColor="#10b981"
-                    iconBg="rgba(16, 185, 129, 0.1)"
-                  />
-                  <DashboardCard
-                    icon={Wallet}
-                    label="Fare Collected"
-                    value={`₱${fareCollected.toFixed(0)}`}
-                    trend={undefined}
-                    iconColor="#3b82f6"
-                    iconBg="rgba(59, 130, 246, 0.1)"
-                  />
-                  <DashboardCard
-                    icon={Bus}
-                    label="Capacity"
-                    value={`${tripStats.capacityPercent.toFixed(0)}%`}
-                    trend={undefined}
-                    iconColor="#f59e0b"
-                    iconBg="rgba(245, 158, 11, 0.1)"
-                  />
-                  <DashboardCard
-                    icon={AlertTriangle}
-                    label="Irregularities"
-                    value={tripStats.irregularities.length.toString()}
-                    trend={undefined}
-                    iconColor={tripStats.irregularities.length > 0 ? '#ef4444' : '#10b981'}
-                    iconBg={tripStats.irregularities.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)'}
-                  />
-                </div>
+                <SoftCard padding="md">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                    <ShieldCheck size={18} color="var(--color-primary)" />
+                    <h3 style={{
+                      margin: 0,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: 'var(--text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.8px',
+                    }}>
+                      Pre-Shift Readiness
+                    </h3>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Ticket Scanner (QR & NFC Barcode)
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>Ready</span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Offline Fare Matrix & Cache
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>Cached</span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg-secondary)',
+                    }}>
+                      <CheckCircle2 size={16} color={isOnline ? '#10b981' : '#f59e0b'} />
+                      <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Real-time Fleet Dispatch Link
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: isOnline ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                        {isOnline ? 'Connected' : 'Offline Ready'}
+                      </span>
+                    </div>
+                  </div>
+                </SoftCard>
               </motion.div>
 
-              {/* Trip Progress */}
+              {/* Quick Navigation Cards */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
-                style={{ marginBottom: 24 }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
               >
-                <SoftCard variant="hero">
-                  <TripTimeline
-                    stops={timelineStops}
-                    currentStop={routeStops.length >= 2 ? routeStops[0] : undefined}
-                    nextStop={routeStops[1]}
-                    eta={routeStops[1] ? '~8 min' : undefined}
-                    progress={tripStats.capacityPercent}
-                    onEndTrip={endTrip}
-                  />
+                <div
+                  onClick={() => history.push('/history')}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 14,
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'rgba(249, 115, 22, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-primary)',
+                    marginBottom: 8,
+                  }}>
+                    <History size={16} />
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Trip History
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Past shifts & sales
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => history.push('/profile')}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 14,
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#3b82f6',
+                    marginBottom: 8,
+                  }}>
+                    <User size={16} />
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Profile & Staff
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Account settings
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          ) : (
+            /* Active Trip - Full Conductor Dashboard */
+            <>
+              {/* Live Trip Status Bar */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  marginBottom: 16,
+                  padding: '12px 16px',
+                  borderRadius: 16,
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: '#10b981',
+                    boxShadow: '0 0 10px #10b981',
+                    animation: 'pulse 1.8s infinite',
+                  }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.5px' }}>
+                    TRIP IN PROGRESS
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {/* Actual Current Time Clock */}
+                  <span style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: 'rgba(255, 255, 255, 0.16)',
+                    padding: '3px 9px',
+                    borderRadius: 12,
+                    backdropFilter: 'blur(8px)',
+                  }}>
+                    <Clock size={13} color="#ffffff" />
+                    {liveActualTime}
+                  </span>
+
+                  {/* Trip Start Reference & Elapsed Duration */}
+                  {tripStartTime && (
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      color: 'rgba(255, 255, 255, 0.85)',
+                      background: 'rgba(0, 0, 0, 0.22)',
+                      padding: '3px 8px',
+                      borderRadius: 10,
+                    }}>
+                      Started {tripStartTime}{tripDuration ? ` · ${tripDuration}` : ''}
+                    </span>
+                  )}
+
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: 12,
+                    background: 'rgba(249, 115, 22, 0.25)',
+                    color: '#ffedd5',
+                    border: '1px solid rgba(249, 115, 22, 0.4)',
+                  }}>
+                    Bus #{currentBus?.plate_number || '---'}
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* Passenger Occupancy & Capacity Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+                style={{ marginBottom: 16 }}
+              >
+                <SoftCard
+                  style={{
+                    padding: '20px',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(20px)',
+                    border: '1px solid var(--border-subtle)',
+                    boxShadow: 'var(--shadow-md)',
+                  }}
+                >
+                  {/* Card Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                    <div>
+                      <p style={{
+                        margin: 0,
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                      }}>
+                        Passenger Occupancy
+                      </p>
+                      <h3 style={{
+                        margin: '2px 0 0',
+                        fontSize: '1.05rem',
+                        fontWeight: 800,
+                        color: 'var(--text-primary)',
+                      }}>
+                        {currentBus?.route || 'Active Route'}
+                      </h3>
+                    </div>
+                    <StatusBadge variant={occupancyStatus.variant} dot={true}>
+                      {occupancyStatus.label}
+                    </StatusBadge>
+                  </div>
+
+                  {/* Gauge and Breakdown Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                    {/* Radial Progress Ring */}
+                    <div style={{ position: 'relative', width: 110, height: 110, flexShrink: 0 }}>
+                      <svg width="110" height="110" viewBox="0 0 110 110">
+                        <circle
+                          cx="55"
+                          cy="55"
+                          r="44"
+                          fill="none"
+                          stroke="var(--bg-secondary)"
+                          strokeWidth="8"
+                        />
+                        <motion.circle
+                          cx="55"
+                          cy="55"
+                          r="44"
+                          fill="none"
+                          stroke={occupancyPercent >= 100 ? '#ef4444' : occupancyPercent >= 80 ? '#f59e0b' : '#10b981'}
+                          strokeWidth="8"
+                          strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 44}`}
+                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1))}`}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 44 }}
+                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1)) }}
+                          transition={{ duration: 1, ease: 'easeOut' }}
+                          transform="rotate(-90 55 55)"
+                        />
+                      </svg>
+                      <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <span style={{
+                          fontSize: '1.35rem',
+                          fontWeight: 900,
+                          color: 'var(--text-primary)',
+                          lineHeight: 1,
+                        }}>
+                          {occupancyPercent}%
+                        </span>
+                        <span style={{
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                          color: 'var(--text-tertiary)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          marginTop: 3,
+                        }}>
+                          Capacity
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Labeled Metrics Stack */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            Validated Onboard
+                          </div>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-primary)' }}>
+                            {validatedCount} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)' }}>passengers</span>
+                          </div>
+                        </div>
+                        <div style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          background: 'rgba(249, 115, 22, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--color-primary)',
+                        }}>
+                          <Users size={16} />
+                        </div>
+                      </div>
+
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            Available Seats
+                          </div>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: remainingSeats > 0 ? '#10b981' : '#ef4444' }}>
+                            {remainingSeats} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)' }}>/ {seatCapacity}</span>
+                          </div>
+                        </div>
+                        <div style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          background: remainingSeats > 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: remainingSeats > 0 ? '#10b981' : '#ef4444',
+                        }}>
+                          <Gauge size={16} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Camera Cross-verification Pill */}
+                  {aiPassengerCount > 0 && (
+                    <div style={{
+                      marginTop: 14,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Sparkles size={14} color="#3b82f6" />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          AI Camera Count:
+                        </span>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#3b82f6' }}>
+                          {aiPassengerCount}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        color: aiPassengerCount === validatedCount ? '#10b981' : '#f59e0b',
+                      }}>
+                        {aiPassengerCount === validatedCount ? 'Count Matched' : `${Math.abs(aiPassengerCount - validatedCount)} discrepancy`}
+                      </span>
+                    </div>
+                  )}
                 </SoftCard>
               </motion.div>
 
+              {/* Financial & Validations KPI Row */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <DashboardCard
+                  icon={Wallet}
+                  label="Fare Collected"
+                  value={`₱${fareCollected.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                  trend="Live Trip Total"
+                  iconColor="#10b981"
+                  iconBg="rgba(16, 185, 129, 0.12)"
+                  delay={0.1}
+                />
+                <DashboardCard
+                  icon={ScanLine}
+                  label="Tickets Validated"
+                  value={validatedCount.toString()}
+                  trend="Scanned Entries"
+                  iconColor="#3b82f6"
+                  iconBg="rgba(59, 130, 246, 0.12)"
+                  delay={0.2}
+                />
+              </motion.div>
 
-
-              {/* Recent Activity */}
+              {/* Secondary Action: Passenger Manifest */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.4 }}
-                style={{ marginBottom: 24 }}
+                style={{ marginBottom: 16 }}
               >
-                {loading ? (
-                  <LoadingSkeleton variant="list" count={3} />
-                ) : (
-                  <SoftCard>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                      <h3 style={{ 
-                        margin: 0, 
-                        fontSize: '1rem', 
-                        fontWeight: 700, 
-                        color: 'var(--color-text-primary)' 
-                      }}>
-                        Recent Activity
-                      </h3>
-                      {tripStats.irregularities.length > 0 && (
-                        <StatusBadge variant="warning">{tripStats.irregularities.length} alerts</StatusBadge>
-                      )}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => history.push('/passengers')}
+                  style={{
+                    width: '100%',
+                    padding: '13px 18px',
+                    borderRadius: 16,
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(16px)',
+                    color: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-xs)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#3b82f6',
+                    }}>
+                      <Users size={18} />
                     </div>
-
-                    {tripStats.irregularities.length > 0 ? (
-                      tripStats.irregularities.slice(0, 3).map((item) => (
-                        <div key={item.id} className="transport-list-item" style={{ 
-                          background: 'var(--color-warning-subtle)',
-                          marginBottom: 8,
-                          padding: '12px 16px'
-                        }}>
-                          <AlertTriangle size={18} color="#A16207" />
-                          <div style={{ flex: 1 }}>
-                            <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>
-                              {item.type?.replace('_', ' ')}
-                            </p>
-                            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-                              {new Date(item.detected_at).toLocaleTimeString()}
-                            </p>
-                          </div>
-                          <StatusBadge variant={item.resolved ? 'success' : 'danger'}>
-                            {item.resolved ? 'Resolved' : 'Pending'}
-                          </StatusBadge>
-                        </div>
-                      ))
-                    ) : (
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center', 
-                        padding: '24px 16px',
-                        gap: 10
-                      }}>
-                        <div style={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: '50%',
-                          background: 'rgba(16, 185, 129, 0.12)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginBottom: 4
-                        }}>
-                          <CheckCircle size={28} color="#10b981" />
-                        </div>
-                        <p style={{ 
-                          margin: 0, 
-                          fontWeight: 700, 
-                          fontSize: '1rem', 
-                          color: 'var(--text-primary)' 
-                        }}>
-                          All Clear!
-                        </p>
-                        <p style={{ 
-                          margin: 0, 
-                          fontSize: '0.85rem', 
-                          color: 'var(--text-secondary)',
-                          textAlign: 'center'
-                        }}>
-                          No irregularities detected on this trip
-                        </p>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Passenger Manifest & Drops
                       </div>
-                    )}
-                  </SoftCard>
-                )}
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        Onboard passenger list
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: currentPassengersCount > 0 ? '#10b981' : 'var(--text-secondary)',
+                      background: currentPassengersCount > 0 ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-secondary)',
+                      padding: '4px 10px',
+                      borderRadius: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}>
+                      {currentPassengersCount > 0 && (
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                      )}
+                      {currentPassengersCount} Onboard
+                    </span>
+                    <ChevronRight size={18} color="var(--text-tertiary)" />
+                  </div>
+                </motion.button>
+              </motion.div>
+
+              {/* Live Telemetry & GPS Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.45 }}
+                style={{ marginBottom: 20 }}
+              >
               </motion.div>
             </>
           )}
         </div>
       </IonContent>
-
-      {hasActiveTrip && (
-        <IonFab slot="fixed" vertical="bottom" horizontal="end">
-          <IonFabButton className="fab-scan" onClick={() => history.push('/scan')}>
-            <ScanLine size={28} color="white" />
-          </IonFabButton>
-        </IonFab>
-      )}
 
       <BottomNav />
 
@@ -1273,154 +1427,6 @@ const HomePage: React.FC = () => {
         color={toastColor}
         position="top"
       />
-
-      {/* Starting Point Selection Modal for Offline Mode */}
-      {showStartingPointModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: 16
-        }}>
-          <div style={{
-            background: 'var(--color-card-bg)',
-            borderRadius: 16,
-            padding: 24,
-            width: '100%',
-            maxWidth: 400,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
-          }}>
-            <h3 style={{
-              margin: '0 0 16px',
-              fontSize: '1.25rem',
-              fontWeight: 700,
-              color: 'var(--color-text-primary)'
-            }}>
-              Select Starting Point
-            </h3>
-            <p style={{
-              margin: '0 0 20px',
-              fontSize: '0.9rem',
-              color: 'var(--color-text-secondary)'
-            }}>
-              Since you're offline, please select your starting point for this trip:
-            </p>
-            
-            <div style={{ marginBottom: 20 }}>
-              <label style={{
-                display: 'block',
-                marginBottom: 8,
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                color: 'var(--color-text-primary)'
-              }}>
-                Starting Point
-              </label>
-              <select
-                value={selectedStartingPoint}
-                onChange={(e) => setSelectedStartingPoint(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: 8,
-                  border: '1px solid var(--color-border)',
-                  background: 'var(--color-input-bg)',
-                  color: 'var(--color-text-primary)',
-                  fontSize: '1rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="">-- Select a location --</option>
-                {COMMON_STARTING_POINTS.map((point) => (
-                  <option key={point} value={point}>
-                    {point}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedStartingPoint === 'Other' && (
-              <div style={{ marginBottom: 20 }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: 8,
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: 'var(--color-text-primary)'
-                }}>
-                  Specify Location
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter starting point..."
-                  value={selectedStartingPoint === 'Other' ? '' : selectedStartingPoint}
-                  onChange={(e) => setSelectedStartingPoint(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: 8,
-                    border: '1px solid var(--color-border)',
-                    background: 'var(--color-input-bg)',
-                    color: 'var(--color-text-primary)',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-            )}
-
-            <div style={{
-              display: 'flex',
-              gap: 12,
-              marginTop: 24
-            }}>
-              <button
-                onClick={() => {
-                  setShowStartingPointModal(false);
-                  setSelectedStartingPoint('');
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px 24px',
-                  borderRadius: 8,
-                  border: '1px solid var(--color-border)',
-                  background: 'transparent',
-                  color: 'var(--color-text-primary)',
-                  fontSize: '1rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmOfflineTripStart}
-                disabled={!selectedStartingPoint.trim() || starting}
-                style={{
-                  flex: 1,
-                  padding: '12px 24px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'var(--color-primary)',
-                  color: 'white',
-                  fontSize: '1rem',
-                  fontWeight: 600,
-                  cursor: !selectedStartingPoint.trim() || starting ? 'not-allowed' : 'pointer',
-                  opacity: !selectedStartingPoint.trim() || starting ? 0.6 : 1
-                }}
-              >
-                {starting ? 'Starting...' : 'Start Trip'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </IonPage>
   );
 };

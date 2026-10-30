@@ -12,7 +12,7 @@ export interface StaffProfile {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'conductor' | 'cs_desk';
+  role: 'conductor';
   is_active: boolean;
   bus_id: string | null;
 }
@@ -30,13 +30,15 @@ export interface Bus {
 export interface Trip {
   id: string;
   bus_id: string;
-  conductor_id: string;
+  conductor_id?: string;
+  driver_id?: string;
   started_at: string;
   ended_at: string | null;
   status: 'in_progress' | 'completed' | 'cancelled';
   current_lat?: number;
   current_lng?: number;
   gps_updated_at?: string;
+  updated_at?: string;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────

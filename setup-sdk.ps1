@@ -13,11 +13,11 @@ Write-Host "Java version:"
 
 Write-Host "`nAccepting all licenses..."
 $yes = "y`ny`ny`ny`ny`ny`ny`ny`ny`ny`ny`ny`ny`ny`ny`n"
-echo $yes | & $sdkManager --sdk_root="$androidHome" --licenses 2>&1 | Select-Object -Last 3
+Write-Output $yes | & $sdkManager --sdk_root="$androidHome" --licenses 2>&1 | Select-Object -Last 3
 
 Write-Host "`nInstalling SDK platform-tools, build-tools, and platform..."
 Write-Host "(This downloads ~250 MB total — be patient, it may take 5-10 minutes)"
-echo $yes | & $sdkManager --sdk_root="$androidHome" --verbose "platform-tools" "build-tools;36.0.0" "platforms;android-36" 2>&1
+Write-Output $yes | & $sdkManager --sdk_root="$androidHome" --verbose "platform-tools" "build-tools;36.0.0" "platforms;android-36" 2>&1
 
 Write-Host "`n`nSetup complete! Checking results..."
 Write-Host "adb.exe exists: $(Test-Path `"$androidHome\platform-tools\adb.exe`")"

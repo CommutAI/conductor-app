@@ -185,16 +185,16 @@ class RealtimeService {
   }
 
   /**
-   * Subscribe to trips for a specific conductor
+   * Subscribe to trips for a specific conductor or driver
    */
-  subscribeToTrips(conductorId: string, callbacks: {
+  subscribeToTrips(staffId: string, callbacks: {
     onInsert?: (trip: any) => void;
     onUpdate?: (trip: any, oldTrip: any) => void;
     onDelete?: (trip: any) => void;
   }): () => void {
     return this.subscribe({
       table: 'trips',
-      filter: `conductor_id=eq.${conductorId}`,
+      filter: `conductor_id=eq.${staffId},driver_id=eq.${staffId}`,
       onInsert: callbacks.onInsert,
       onUpdate: callbacks.onUpdate,
       onDelete: callbacks.onDelete,
@@ -224,15 +224,47 @@ class RealtimeService {
   }
 
   /**
-   * Subscribe to emergency alerts for a specific conductor
+   * Subscribe to emergency alerts for a specific conductor or driver
    */
-  subscribeToEmergencyAlerts(conductorId: string, callbacks: {
+  subscribeToEmergencyAlerts(staffId: string, callbacks: {
     onInsert?: (alert: any) => void;
     onUpdate?: (alert: any, oldAlert: any) => void;
   }): () => void {
     return this.subscribe({
       table: 'emergency_alerts',
-      filter: `conductor_id=eq.${conductorId}`,
+      filter: `conductor_id=eq.${staffId}`,
+      onInsert: callbacks.onInsert,
+      onUpdate: callbacks.onUpdate,
+    });
+  }
+
+  /**
+   * Subscribe to GPS location updates for a specific trip
+   * GPS data is stored in the trips table (current_lat, current_lng, gps_updated_at)
+   */
+  subscribeToGpsLocations(tripId: string, callbacks: {
+    onInsert?: (location: any) => void;
+    onUpdate?: (location: any, oldLocation: any) => void;
+  }): () => void {
+    return this.subscribe({
+      table: 'trips',
+      filter: `id=eq.${tripId}`,
+      onInsert: callbacks.onInsert,
+      onUpdate: callbacks.onUpdate,
+    });
+  }
+
+  /**
+   * Subscribe to AI passenger count updates for a specific trip
+   * Passenger count data is stored in the passenger_counts table
+   */
+  subscribeToAiPassengerCounts(tripId: string, callbacks: {
+    onInsert?: (count: any) => void;
+    onUpdate?: (count: any, oldCount: any) => void;
+  }): () => void {
+    return this.subscribe({
+      table: 'passenger_counts',
+      filter: `trip_id=eq.${tripId}`,
       onInsert: callbacks.onInsert,
       onUpdate: callbacks.onUpdate,
     });

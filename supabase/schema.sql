@@ -211,7 +211,7 @@ END $$;
 CREATE TABLE IF NOT EXISTS trips (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   bus_id          UUID        NOT NULL REFERENCES buses (id),
-  conductor_id    UUID        NOT NULL REFERENCES staff_users (id),
+  conductor_id    UUID        REFERENCES staff_users (id),
   driver_id       UUID        REFERENCES staff_users (id),
   started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at        TIMESTAMPTZ,
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS trips (
   end_point       TEXT
 );
 
--- Add starting_point and end_point columns if they don't exist
+-- Add missing columns to trips table if they don't exist
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -246,7 +246,119 @@ BEGIN
   ) THEN
     ALTER TABLE trips ADD COLUMN driver_id UUID REFERENCES staff_users (id);
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'route_id'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN route_id UUID REFERENCES routes (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'trip_number'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN trip_number INTEGER;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'operator_id'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN operator_id UUID REFERENCES staff_users (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'shift_id'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN shift_id UUID REFERENCES operator_shifts (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'current_stop_id'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN current_stop_id UUID REFERENCES bus_stops (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'total_passengers'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN total_passengers INTEGER DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'total_fares'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN total_fares NUMERIC(10,2) DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'incidents'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN incidents INTEGER DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'notes'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN notes TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'trips' AND column_name = 'updated_at'
+  ) THEN
+    ALTER TABLE trips ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  END IF;
 END $$;
+
+-- Make conductor_id nullable to allow auto-assignment via trigger
+DO $$
+BEGIN
+  -- Check if conductor_id is currently NOT NULL and make it nullable
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'trips'
+      AND column_name = 'conductor_id'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE trips ALTER COLUMN conductor_id DROP NOT NULL;
+  END IF;
+END $$;
+
+-- Trigger to auto-assign conductor and driver from bus assignment when trip is created
+CREATE OR REPLACE FUNCTION auto_assign_staff_from_bus()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Auto-assign conductor from bus's assigned_conductor_id if not provided
+  IF NEW.conductor_id IS NULL THEN
+    SELECT assigned_conductor_id INTO NEW.conductor_id
+    FROM buses
+    WHERE id = NEW.bus_id;
+  END IF;
+
+  -- Auto-assign driver from bus's assigned_driver_id if not provided
+  IF NEW.driver_id IS NULL THEN
+    SELECT assigned_driver_id INTO NEW.driver_id
+    FROM buses
+    WHERE id = NEW.bus_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_auto_assign_staff_from_bus ON trips;
+CREATE TRIGGER trigger_auto_assign_staff_from_bus
+  BEFORE INSERT ON trips
+  FOR EACH ROW EXECUTE FUNCTION auto_assign_staff_from_bus();
 
 -- ── 4. QR Cards ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS qr_cards (
@@ -362,19 +474,54 @@ BEGIN
   ) THEN
     ALTER TABLE transactions ADD COLUMN baggage_category TEXT;
   END IF;
-  
+
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'transactions' AND column_name = 'baggage_weight'
   ) THEN
     ALTER TABLE transactions ADD COLUMN baggage_weight NUMERIC(10,2);
   END IF;
-  
+
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'transactions' AND column_name = 'baggage_fee'
   ) THEN
     ALTER TABLE transactions ADD COLUMN baggage_fee NUMERIC(10,2);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'from_stop_id'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN from_stop_id UUID REFERENCES bus_stops (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'to_stop_id'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN to_stop_id UUID REFERENCES bus_stops (id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'fare_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN fare_amount NUMERIC(10,2);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'discount_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'final_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN final_amount NUMERIC(10,2) NOT NULL;
   END IF;
 END $$;
 
@@ -536,6 +683,27 @@ BEGIN
   ) THEN
     ALTER TABLE emergency_alerts ADD COLUMN location_name TEXT;
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'emergency_alerts' AND column_name = 'resolved'
+  ) THEN
+    ALTER TABLE emergency_alerts ADD COLUMN resolved BOOLEAN DEFAULT FALSE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'emergency_alerts' AND column_name = 'resolved_by'
+  ) THEN
+    ALTER TABLE emergency_alerts ADD COLUMN resolved_by UUID REFERENCES staff_users (id) ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'emergency_alerts' AND column_name = 'acknowledged_by'
+  ) THEN
+    ALTER TABLE emergency_alerts ADD COLUMN acknowledged_by UUID REFERENCES staff_users (id);
+  END IF;
 END $$;
 
 -- ── 12. Baggage Fee Matrix ──────────────────────────────────────────────────────
@@ -642,6 +810,7 @@ DO $$ BEGIN
 END $$;
 
 -- Conductors and drivers can read/write their own trips; admins see all
+-- Updated: Allow inserting trips if user is assigned to the bus (trigger will auto-assign staff)
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
@@ -649,8 +818,30 @@ DO $$ BEGIN
   ) THEN
     CREATE POLICY "trips_conductor_rw"
       ON trips FOR ALL
-      USING (conductor_id = auth.uid() OR driver_id = auth.uid() OR current_user_role() = 'admin')
-      WITH CHECK (conductor_id = auth.uid() OR driver_id = auth.uid());
+      USING (
+        conductor_id = auth.uid()
+        OR driver_id = auth.uid()
+        OR current_user_role() = 'admin'
+        OR (
+          bus_id IN (
+            SELECT id FROM buses
+            WHERE assigned_conductor_id = auth.uid()
+               OR assigned_driver_id = auth.uid()
+          )
+        )
+      )
+      WITH CHECK (
+        conductor_id = auth.uid()
+        OR driver_id = auth.uid()
+        OR current_user_role() = 'admin'
+        OR (
+          bus_id IN (
+            SELECT id FROM buses
+            WHERE assigned_conductor_id = auth.uid()
+               OR assigned_driver_id = auth.uid()
+          )
+        )
+      );
   END IF;
 END $$;
 

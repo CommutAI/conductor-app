@@ -3,9 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 // Replace these with your actual Supabase project credentials.
 // In Vite, env vars must be prefixed with VITE_ and accessed via import.meta.env
 const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || 'https://eiajnmocwxarymfdabjv.supabase.co';
+  import.meta.env.VITE_SUPABASE_URL || 'https://iyacktzzktwrpeibcena.supabase.co';
 const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpYWpubW9jd3hhcnltZmRhYmp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDgyNTMsImV4cCI6MjA5OTQ4NDI1M30.ly_kuqsvnG4XesDpEHXYZFSq_ovI6ZSqFvScaH0GGTI';
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5YWNrdHp6a3R3cnBlaWJjZW5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwNzAxMzMsImV4cCI6MjEwNjY0NjEzM30.nnUW_wjKE9t6V_ZNNR1u_HqcqQletGEsJ4A2kcBLxl0';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -35,7 +35,7 @@ export type Database = {
           id: string;
           full_name: string;
           email: string;
-          role: 'admin' | 'conductor' | 'cs_desk';
+          role: 'conductor';
           is_active: boolean;
           created_at: string;
         };
@@ -53,14 +53,16 @@ export type Database = {
         Row: {
           id: string;
           bus_id: string;
-          conductor_id: string;
+          conductor_id?: string;
+          driver_id?: string;
           started_at: string;
           ended_at: string | null;
           status: 'in_progress' | 'completed' | 'cancelled';
         };
         Insert: {
           bus_id: string;
-          conductor_id: string;
+          conductor_id?: string;
+          driver_id?: string;
           started_at: string;
           status: 'in_progress' | 'completed' | 'cancelled';
         };
