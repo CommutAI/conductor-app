@@ -1,0 +1,128 @@
+[
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Puerto",
+    "km_distance": 13,
+    "regular_fare": 34.75,
+    "discounted_fare": 27.75
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Ba-e",
+    "km_distance": 16,
+    "regular_fare": 41.50,
+    "discounted_fare": 33.00
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Mambatangan",
+    "km_distance": 20,
+    "regular_fare": 50.25,
+    "discounted_fare": 40.25
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Maitom",
+    "km_distance": 24,
+    "regular_fare": 59.00,
+    "discounted_fare": 47.25
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Ala-e",
+    "km_distance": 26,
+    "regular_fare": 63.50,
+    "discounted_fare": 50.75
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Lonocan",
+    "km_distance": 27,
+    "regular_fare": 65.50,
+    "discounted_fare": 52.50
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "San Miguel",
+    "km_distance": 31,
+    "regular_fare": 74.50,
+    "discounted_fare": 59.50
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Diclum",
+    "km_distance": 35,
+    "regular_fare": 83.25,
+    "discounted_fare": 66.50
+  },
+  {
+    "route_from": "Agora Terminal",
+    "route_to": "Manolo Fortich",
+    "km_distance": 36,
+    "regular_fare": 85.50,
+    "discounted_fare": 68.25
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Agora Terminal",
+    "km_distance": 13,
+    "regular_fare": 34.75,
+    "discounted_fare": 27.75
+  },
+  {
+    "route_from": "Ba-e",
+    "route_to": "Agora Terminal",
+    "km_distance": 16,
+    "regular_fare": 41.50,
+    "discounted_fare": 33.00
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Agora Terminal",
+    "km_distance": 20,
+    "regular_fare": 50.25,
+    "discounted_fare": 40.25
+  },
+  {
+    "route_from": "Maitom",
+    "route_to": "Agora Terminal",
+    "km_distance": 24,
+    "regular_fare": 59.00,
+    "discounted_fare": 47.25
+  },
+  {
+    "route_from": "Ala-e",
+    "route_to": "Agora Terminal",
+    "km_distance": 26,
+    "regular_fare": 63.50,
+    "discounted_fare": 50.75
+  },
+  {
+    "route_from": "Lonocan",
+    "route_to": "Agora Terminal",
+    "km_distance": 27,
+    "regular_fare": 65.50,
+    "discounted_fare": 52.50
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Agora Terminal",
+    "km_distance": 31,
+    "regular_fare": 74.50,
+    "discounted_fare": 59.50
+  },
+  {
+    "route_from": "Diclum",
+    "route_to": "Agora Terminal",
+    "km_distance": 35,
+    "regular_fare": 83.25,
+    "discounted_fare": 66.50
+  },
+  {
+    "route_from": "Manolo Fortich",
+    "route_to": "Agora Terminal",
+    "km_distance": 36,
+    "regular_fare": 85.50,
+    "discounted_fare": 68.25
+  }
+]
