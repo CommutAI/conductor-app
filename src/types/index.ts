@@ -97,6 +97,18 @@ export interface Transaction {
   channel: string;
   staff_id: string | null;
   created_at: string;
+  fare_amount?: number;
+  discount_amount?: number;
+  final_amount?: number;
+  payment_method?: string;
+  status?: string;
+  recorded_at?: string;
+  passenger_name?: string;
+  from_stop_id?: string;
+  to_stop_id?: string;
+  baggage_category?: string;
+  baggage_weight?: number;
+  baggage_fee?: number;
 }
 
 // ── Boarded Passengers ──────────────────────────────────────────────────────

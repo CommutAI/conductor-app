@@ -451,7 +451,15 @@ CREATE TABLE IF NOT EXISTS transactions (
   baggage_category TEXT,
   baggage_weight   NUMERIC(10,2),
   baggage_fee      NUMERIC(10,2),
-  payment_method   TEXT
+  payment_method   TEXT,
+  fare_amount      NUMERIC(10,2),
+  discount_amount  NUMERIC(10,2)    DEFAULT 0,
+  final_amount     NUMERIC(10,2),
+  status           TEXT             DEFAULT 'completed',
+  recorded_at      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  passenger_name   TEXT,
+  from_stop_id     UUID             REFERENCES bus_stops (id),
+  to_stop_id       UUID             REFERENCES bus_stops (id)
 );
 
 -- Add payment_method column if it doesn't exist
@@ -462,6 +470,94 @@ BEGIN
     WHERE table_name = 'transactions' AND column_name = 'payment_method'
   ) THEN
     ALTER TABLE transactions ADD COLUMN payment_method TEXT;
+  END IF;
+END $$;
+
+-- Add fare_amount column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'fare_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN fare_amount NUMERIC(10,2);
+  END IF;
+END $$;
+
+-- Add discount_amount column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'discount_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN discount_amount NUMERIC(10,2) DEFAULT 0;
+  END IF;
+END $$;
+
+-- Add final_amount column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'final_amount'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN final_amount NUMERIC(10,2);
+  END IF;
+END $$;
+
+-- Add status column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'status'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN status TEXT DEFAULT 'completed';
+  END IF;
+END $$;
+
+-- Add recorded_at column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'recorded_at'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  END IF;
+END $$;
+
+-- Add passenger_name column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'passenger_name'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN passenger_name TEXT;
+  END IF;
+END $$;
+
+-- Add from_stop_id column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'from_stop_id'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN from_stop_id UUID REFERENCES bus_stops (id);
+  END IF;
+END $$;
+
+-- Add to_stop_id column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions' AND column_name = 'to_stop_id'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN to_stop_id UUID REFERENCES bus_stops (id);
   END IF;
 END $$;
 
