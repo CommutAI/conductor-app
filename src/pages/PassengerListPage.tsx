@@ -245,16 +245,36 @@ const PassengerListPage: React.FC = () => {
       }
 
       // Step 1: Fetch the boarding transaction to get the fare amount
-      const { data: boardingTx, error: txError } = await supabase
-        .from('transactions')
-        .select('id, amount, card_id, temp_ticket_id, baggage_fee')
-        .eq('trip_id', currentTrip.id)
-        .eq('card_id', passengerToCancel.card_id)
-        .eq('temp_ticket_id', passengerToCancel.temp_ticket_id)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      let boardingTx;
+      let txError;
+
+      if (passengerToCancel.card_id) {
+        // For QR cards, lookup by card_id
+        const result = await supabase
+          .from('transactions')
+          .select('id, amount, card_id, temp_ticket_id, baggage_fee')
+          .eq('trip_id', currentTrip.id)
+          .eq('card_id', passengerToCancel.card_id)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        boardingTx = result.data;
+        txError = result.error;
+      } else if (passengerToCancel.temp_ticket_id) {
+        // For temporary tickets, lookup by temp_ticket_id
+        const result = await supabase
+          .from('transactions')
+          .select('id, amount, card_id, temp_ticket_id, baggage_fee')
+          .eq('trip_id', currentTrip.id)
+          .eq('temp_ticket_id', passengerToCancel.temp_ticket_id)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        boardingTx = result.data;
+        txError = result.error;
+      }
 
       if (txError || !boardingTx) {
         throw new Error('Could not find boarding transaction for refund');
