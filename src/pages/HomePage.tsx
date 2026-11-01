@@ -118,14 +118,14 @@ const HomePage: React.FC = () => {
   }, [currentDate]);
 
   const seatCapacity = currentBus?.seat_capacity || 50;
-  const occupancyPercent = Math.min(Math.round((validatedCount / seatCapacity) * 100), 100);
-  const remainingSeats = Math.max(0, seatCapacity - validatedCount);
+  const occupancyPercent = Math.min(Math.round((currentPassengersCount / seatCapacity) * 100), 100);
+  const remainingSeats = Math.max(0, seatCapacity - currentPassengersCount);
 
   const occupancyStatus = useMemo(() => {
-    if (validatedCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
-    if (validatedCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
+    if (currentPassengersCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
+    if (currentPassengersCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
     return { label: 'Seats Available', variant: 'success' as const };
-  }, [validatedCount, seatCapacity]);
+  }, [currentPassengersCount, seatCapacity]);
 
   const tripStartTime = useMemo(() => {
     if (!currentTrip?.started_at) return null;
@@ -287,6 +287,17 @@ const HomePage: React.FC = () => {
       if (!txError && transactions) {
         const totalFare = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
         setFareCollected(totalFare);
+      }
+
+      // Load actual current onboard count from boarded_passengers table
+      const { count: onboardCount, error: onboardError } = await supabase
+        .from('boarded_passengers')
+        .select('id', { count: 'exact', head: true })
+        .eq('trip_id', currentTrip.id)
+        .is('alighted_at', null);
+
+      if (!onboardError && onboardCount !== null) {
+        setCurrentPassengersCount(onboardCount);
       }
 
       // Load current GPS location from trip
@@ -1166,9 +1177,9 @@ const HomePage: React.FC = () => {
                           strokeWidth="8"
                           strokeLinecap="round"
                           strokeDasharray={`${2 * Math.PI * 44}`}
-                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1))}`}
+                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(currentPassengersCount / seatCapacity, 1))}`}
                           initial={{ strokeDashoffset: 2 * Math.PI * 44 }}
-                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1)) }}
+                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(currentPassengersCount / seatCapacity, 1)) }}
                           transition={{ duration: 1, ease: 'easeOut' }}
                           transform="rotate(-90 55 55)"
                         />

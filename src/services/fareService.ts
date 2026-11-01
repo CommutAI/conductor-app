@@ -6,6 +6,7 @@
 
 import { supabase } from '../supabaseClient';
 import { cache, CacheKeys, CacheTTL } from './cacheService';
+import { smsService } from './smsService';
 import fareMatrixData from '../data/fareMatrix.json';
 
 interface FareMatrixEntry {
@@ -254,6 +255,24 @@ export async function processScan(
   boardingStop?: string,
 ): Promise<ScanResult> {
   console.log('[FareService] processScan called with boardingStop:', boardingStop, 'currentDestination:', currentDestination);
+
+  // ── Entry Point Validations ──────────────────────────────────────────────────
+  if (!scannedUid || scannedUid.trim().length === 0) {
+    return { status: 'qr_fake', reason: 'No QR code provided' };
+  }
+
+  if (!tripId || tripId.trim().length === 0) {
+    return { status: 'error', message: 'No active trip. Please start a trip first.' };
+  }
+
+  if (!conductorId || conductorId.trim().length === 0) {
+    return { status: 'error', message: 'Conductor not authenticated. Please log in again.' };
+  }
+
+  if (!['onboarding', 'alighting'].includes(scanType)) {
+    return { status: 'error', message: 'Invalid scan type' };
+  }
+
   const normalizedUid = normalizeQrCode(scannedUid);
 
   // Check cache for QR card first
@@ -266,7 +285,7 @@ export async function processScan(
   // Check for QR card from database
   const { data: card } = await supabase
     .from('qr_cards')
-    .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid')
+    .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid, owner_name, contact_number')
     .eq('card_uid', normalizedUid)
     .maybeSingle();
 
@@ -275,7 +294,9 @@ export async function processScan(
     const cardData = {
       ...card,
       balance: Number(card.balance),
-      passenger_type: card.passenger_type as PassengerType
+      passenger_type: card.passenger_type as PassengerType,
+      owner_name: card.owner_name,
+      contact_number: card.contact_number,
     };
     cache.set(CacheKeys.card(normalizedUid), cardData, CacheTTL.MEDIUM);
     return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
@@ -318,17 +339,22 @@ async function processQRCard(
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
-  // Check for fake QR
+  // ── Basic QR Format Validation ───────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 8) {
     return { status: 'qr_fake', reason: 'Invalid QR format' };
   }
 
-  // Check route restrictions
+  // ── Card Status Validation ──────────────────────────────────────────────────
+  if (card.status !== 'active') {
+    return { status: 'qr_inactive' };
+  }
+
+  // ── Route Restriction Validation ─────────────────────────────────────────────
   if (card.allowed_routes && card.allowed_routes.length > 0 && busRoute) {
     const hasRouteRestriction = card.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
     if (hasRouteRestriction) {
       const normalizedBusRoute = normalizeRoute(busRoute);
-      
+
       const isAllowed = card.allowed_routes.some((allowedRoute: string) => {
         const normalizedAllowed = normalizeRoute(allowedRoute);
         const busWords = normalizedBusRoute.split(' ');
@@ -337,14 +363,60 @@ async function processQRCard(
         const similarity = matchCount / Math.max(busWords.length, allowedWords.length);
         return similarity >= 0.5;
       });
-      
+
       if (!isAllowed) {
         return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
       }
     }
   }
 
-  // Find the most recent active (not yet alighted) boarding for this card on this trip
+  // ── Trip Status Validation ───────────────────────────────────────────────────
+  const { data: trip } = await supabase
+    .from('trips')
+    .select('status, ended_at')
+    .eq('id', tripId)
+    .single();
+
+  if (!trip) {
+    return { status: 'error', message: 'Trip not found' };
+  }
+
+  if (trip.status !== 'in_progress') {
+    return { status: 'error', message: `Trip is ${trip.status}. Cannot process scan.` };
+  }
+
+  // ── Onboarding Validations ───────────────────────────────────────────────────
+  if (scanType === 'onboarding') {
+    // Validate boarding stop is provided
+    if (!boardingStop) {
+      return { status: 'error', message: 'Boarding location is required. Please select your current stop.' };
+    }
+
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Destination is required. Please select passenger destination.' };
+    }
+
+    // Validate payment method
+    if (!['card', 'qr_card', 'cash', 'gcash'].includes(paymentMethod)) {
+      return { status: 'error', message: 'Invalid payment method selected.' };
+    }
+
+    // Validate baggage fee matches category
+    if (baggageCategory && baggageFee === undefined) {
+      return { status: 'error', message: 'Baggage fee required when baggage category is selected.' };
+    }
+  }
+
+  // ── Alighting Validations ────────────────────────────────────────────────────
+  if (scanType === 'alighting') {
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Alighting location is required.' };
+    }
+  }
+
+  // ── Find Boarded Passenger ─────────────────────────────────────────────────
   const boardedPassengerResult = await supabase
     .from('boarded_passengers')
     .select('id, alighted_at, boarding_stop')
@@ -371,38 +443,39 @@ async function processQRCard(
 
   const boardedData = boardedPassenger.data;
 
-  let destinationMismatchOccurred = false;
+  // ── Duplicate Scan Validation (Onboarding) ─────────────────────────────────
   if (scanType === 'onboarding') {
-    // Duplicate check: is the card currently on board (boarded but not yet alighted)?
     if (boardedData) {
       return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
     }
-  } else if (scanType === 'alighting') {
+  }
+
+  // ── Boarded Check Validation (Alighting) ────────────────────────────────────
+  if (scanType === 'alighting') {
     if (!boardedData) {
       return { status: 'error', message: 'Passenger not boarded on this trip' };
     }
-    if (currentDestination && card.destination) {
-      const normalizedCardDest = card.destination.toLowerCase().trim();
-      const normalizedCurrentDest = currentDestination.toLowerCase().trim();
-      const isDestinationMatch = normalizedCardDest === normalizedCurrentDest || 
-                                 normalizedCardDest.includes(normalizedCurrentDest) ||
-                                 normalizedCurrentDest.includes(normalizedCardDest);
-      
-      if (!isDestinationMatch) {
-        destinationMismatchOccurred = true;
-        await supabase.from('fare_irregularities').insert({
-          trip_id: tripId,
-          type: 'other',
-          description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
-          detected_at: new Date().toISOString(),
-        });
-        console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
-      }
-    }
   }
 
-  if (card.status !== 'active') {
-    return { status: 'qr_inactive' };
+  // ── Destination Mismatch Validation (Alighting) ──────────────────────────────
+  let destinationMismatchOccurred = false;
+  if (scanType === 'alighting' && currentDestination && card.destination) {
+    const normalizedCardDest = card.destination.toLowerCase().trim();
+    const normalizedCurrentDest = currentDestination.toLowerCase().trim();
+    const isDestinationMatch = normalizedCardDest === normalizedCurrentDest ||
+                               normalizedCardDest.includes(normalizedCurrentDest) ||
+                               normalizedCurrentDest.includes(normalizedCardDest);
+
+    if (!isDestinationMatch) {
+      destinationMismatchOccurred = true;
+      await supabase.from('fare_irregularities').insert({
+        trip_id: tripId,
+        type: 'other',
+        description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
+        detected_at: new Date().toISOString(),
+      });
+      console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
+    }
   }
 
   // Calculate fare using matrix if boarding stop and destination are provided
@@ -445,8 +518,14 @@ async function processQRCard(
       card_id: card.id,
       trip_id: tripId,
       type: 'fare_validation',
+      transaction_type: 'fare_validation',
+      fare_amount: fare,
+      discount_amount: card.passenger_type === 'student' || card.passenger_type === 'senior_citizen' || card.passenger_type === 'pwd' ? fare * 0.20 : 0,
       amount: totalFare,
+      final_amount: totalFare,
       channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
+      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : paymentMethod === 'card' ? 'qr_card' : 'qr_card',
+      status: 'completed',
       staff_id: conductorId,
       baggage_category: baggageCategory || null,
       baggage_weight: baggageWeight || null,
@@ -491,6 +570,26 @@ async function processQRCard(
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
 
+    // Queue SMS notification if card has contact number
+    if (card.contact_number) {
+      try {
+        await smsService.queueAlightingSMS(card.contact_number, {
+          passengerName: card.owner_name || 'Passenger',
+          tripSummary: {
+            route: 'CommutAI Route',
+            boardingPoint: boardedData.boarding_stop || 'Unknown',
+            destination: currentDestination || card.destination || 'Unknown',
+            fare: 0, // Fare already paid at boarding
+          },
+          tripId: tripId,
+        });
+        console.log('[FareService] Alighting SMS queued for', card.contact_number);
+      } catch (smsError) {
+        console.error('[FareService] Failed to queue alighting SMS:', smsError);
+        // Don't fail the alighting if SMS fails
+      }
+    }
+
     return {
       status: 'qr_pass',
       newBalance: card.balance,
@@ -521,12 +620,63 @@ async function processTemporaryTicket(
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'cash',
   boardingStop?: string,
 ): Promise<ScanResult> {
-  // Check for fake QR
+  // ── Basic Ticket Format Validation ────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 4) {
     return { status: 'qr_fake', reason: 'Invalid ticket format' };
   }
 
-  // Find the most recent active (not yet alighted) boarding for this ticket on this trip
+  // ── Ticket Status Validation ──────────────────────────────────────────────────
+  if (ticket.status !== 'issued') {
+    return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
+  }
+
+  // ── Trip Status Validation ───────────────────────────────────────────────────
+  const { data: trip } = await supabase
+    .from('trips')
+    .select('status, ended_at')
+    .eq('id', tripId)
+    .single();
+
+  if (!trip) {
+    return { status: 'error', message: 'Trip not found' };
+  }
+
+  if (trip.status !== 'in_progress') {
+    return { status: 'error', message: `Trip is ${trip.status}. Cannot process scan.` };
+  }
+
+  // ── Onboarding Validations ───────────────────────────────────────────────────
+  if (scanType === 'onboarding') {
+    // Validate boarding stop is provided
+    if (!boardingStop) {
+      return { status: 'error', message: 'Boarding location is required. Please select your current stop.' };
+    }
+
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Destination is required. Please select passenger destination.' };
+    }
+
+    // Validate payment method
+    if (!['cash', 'gcash'].includes(paymentMethod)) {
+      return { status: 'error', message: 'Invalid payment method for temporary ticket. Only cash or GCash allowed.' };
+    }
+
+    // Validate baggage fee matches category
+    if (baggageCategory && baggageFee === undefined) {
+      return { status: 'error', message: 'Baggage fee required when baggage category is selected.' };
+    }
+  }
+
+  // ── Alighting Validations ────────────────────────────────────────────────────
+  if (scanType === 'alighting') {
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Alighting location is required.' };
+    }
+  }
+
+  // ── Find Boarded Passenger ─────────────────────────────────────────────────
   const boardedPassengerResult = await supabase
     .from('boarded_passengers')
     .select('id, alighted_at, boarding_stop')
@@ -539,13 +689,10 @@ async function processTemporaryTicket(
 
   const boardedData = boardedPassengerResult.data;
 
+  // ── Duplicate Scan Validation (Onboarding) ─────────────────────────────────
   if (scanType === 'onboarding') {
     if (boardedData) {
       return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
-    }
-
-    if (ticket.status !== 'issued') {
-      return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
     }
 
     const { error: updateErr } = await supabase
@@ -560,7 +707,7 @@ async function processTemporaryTicket(
     if (updateErr) {
       return { status: 'error', message: `Failed to validate ticket: ${updateErr.message}` };
     }
-    
+
     // Invalidate cache for this ticket after validation
     cache.delete(CacheKeys.ticket(ticket.ticket_uid));
     console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
@@ -569,12 +716,19 @@ async function processTemporaryTicket(
     const totalFare = baseFare + (baggageFee || 0);
 
     const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
+    const txPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'cash';
     const { error: txErr } = await supabase.from('transactions').insert({
       temp_ticket_id: ticket.id,
       trip_id: tripId,
       type: 'fare_validation',
+      transaction_type: 'fare_validation',
+      fare_amount: baseFare,
+      discount_amount: 0,
       amount: totalFare,
+      final_amount: totalFare,
       channel: txChannel,
+      payment_method: txPaymentMethod,
+      status: 'completed',
       staff_id: conductorId,
       baggage_category: baggageCategory || null,
       baggage_weight: baggageWeight || null,
@@ -619,6 +773,9 @@ async function processTemporaryTicket(
     if (alightErr) {
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
+
+    // Note: Temporary tickets don't have contact numbers, so no SMS is sent
+    // To enable SMS for temporary tickets, add contact_number field to temporary_tickets table
 
     return {
       status: 'ticket_validated',

@@ -67,11 +67,14 @@ class SMSService {
         .insert({
           phone_number: request.phone_number,
           message: request.message,
-          type: request.type,
+          sms_type: request.type,
           priority: request.priority || 5,
           related_id: request.related_id,
           trip_id: request.trip_id,
-          status: 'pending'
+          status: 'pending',
+          retry_count: 0,
+          max_retries: 3,
+          created_at: new Date().toISOString(),
         })
         .select('id')
         .single();
@@ -142,8 +145,8 @@ class SMSService {
     phoneNumber: string,
     data: AlightingSMSData
   ): Promise<{ success: boolean; error?: string; smsId?: string }> {
-    const message = `Happy boarding! Thanks for riding with us, ${data.passengerName}. Trip: ${data.tripSummary.route}, From: ${data.tripSummary.boardingPoint}, To: ${data.tripSummary.destination}, Fare: ₱${data.tripSummary.fare.toFixed(2)}. Come ride again!`;
-    
+    const message = `Thanks for riding, ${data.passengerName}! From ${data.tripSummary.boardingPoint} to ${data.tripSummary.destination}, Fare: PHP${data.tripSummary.fare.toFixed(2)}. Ride again!`;
+
     return this.queueSMS({
       phone_number: phoneNumber,
       message,
