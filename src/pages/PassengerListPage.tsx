@@ -8,7 +8,7 @@ import {
 import {
   Users, ArrowUp, ArrowDown, CreditCard, Ticket,
   Search, LogOut as AlightIcon, CheckCircle, Navigation,
-  Smartphone, Banknote, Clock, MapPin, X, AlertTriangle
+  Smartphone, Banknote, Clock, MapPin, X, AlertTriangle, RotateCcw
 } from 'lucide-react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -91,6 +91,11 @@ const PassengerListPage: React.FC = () => {
   // Manual alighting modal
   const [passengerToAlight, setPassengerToAlight] = useState<BoardedPassengerItem | null>(null);
   const [alightingInProgress, setAlightingInProgress] = useState(false);
+
+  // Cancel boarding modal
+  const [passengerToCancel, setPassengerToCancel] = useState<BoardedPassengerItem | null>(null);
+  const [cancellingInProgress, setCancellingInProgress] = useState(false);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const { currentTrip, currentBus, isRestoringTrip, decrementCurrentPassengers } = useApp();
@@ -224,62 +229,108 @@ const PassengerListPage: React.FC = () => {
 
   async function handleConfirmManualAlighting() {
     if (!passengerToAlight || !currentTrip) return;
-    setAlightingInProgress(true);
+    // Instead of processing directly, redirect to scan page for alighting
+    // This ensures GPS validation and fare anomaly detection at actual location
+    setPassengerToAlight(null);
+    history.push('/scan', { mode: 'alighting' });
+  }
+
+  async function handleConfirmCancelBoarding() {
+    if (!passengerToCancel || !currentTrip) return;
+    setCancellingInProgress(true);
     try {
-      if (isOnline) {
-        const res = await alightBoardedPassenger(
-          passengerToAlight.id,
-          currentTrip.id,
-          passengerToAlight.destination_stop || undefined
-        );
-        if (!res.success) {
-          throw new Error(res.message || 'Failed to record alighting');
+      if (!isOnline) {
+        alert('Cancel boarding requires internet connection for refund processing');
+        return;
+      }
+
+      // Step 1: Fetch the boarding transaction to get the fare amount
+      const { data: boardingTx, error: txError } = await supabase
+        .from('transactions')
+        .select('id, amount, card_id, temp_ticket_id, baggage_fee')
+        .eq('trip_id', currentTrip.id)
+        .eq('card_id', passengerToCancel.card_id)
+        .eq('temp_ticket_id', passengerToCancel.temp_ticket_id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (txError || !boardingTx) {
+        throw new Error('Could not find boarding transaction for refund');
+      }
+
+      const refundAmount = boardingTx.amount; // Full refund including baggage fee
+
+      // Step 2: Refund the fare to the card balance (for QR cards only)
+      if (passengerToCancel.card_id) {
+        const { data: card, error: cardError } = await supabase
+          .from('qr_cards')
+          .select('id, balance')
+          .eq('id', passengerToCancel.card_id)
+          .single();
+
+        if (cardError || !card) {
+          throw new Error('Could not find card for refund');
         }
-      } else {
-        // Offline alighting
-        StorageService.markLocalAlighted(
-          currentTrip.id,
-          passengerToAlight.card_id ? passengerToAlight.card_uid : undefined,
-          passengerToAlight.temp_ticket_id ? passengerToAlight.card_uid : undefined
-        );
-        offlineQueueService.addScan({
-          type: 'alighting',
-          cardUid: passengerToAlight.card_id ? passengerToAlight.card_uid : undefined,
-          ticketUid: passengerToAlight.temp_ticket_id ? passengerToAlight.card_uid : undefined,
-          cardId: passengerToAlight.card_id || undefined,
-          tempTicketId: passengerToAlight.temp_ticket_id || undefined,
-          tripId: currentTrip.id,
-          destination: passengerToAlight.destination_stop || undefined,
-          boardingPoint: passengerToAlight.boarding_stop || undefined,
+
+        const { error: updateError } = await supabase
+          .from('qr_cards')
+          .update({ balance: card.balance + refundAmount })
+          .eq('id', card.id);
+
+        if (updateError) {
+          throw new Error(`Failed to refund: ${updateError.message}`);
+        }
+      }
+
+      // Step 3: Record the refund transaction
+      const { error: refundTxError } = await supabase
+        .from('transactions')
+        .insert({
+          card_id: passengerToCancel.card_id,
+          temp_ticket_id: passengerToCancel.temp_ticket_id,
+          trip_id: currentTrip.id,
+          amount: -refundAmount, // Negative amount for refund
+          channel: 'refund',
+          status: 'completed',
+          created_at: new Date().toISOString(),
         });
-        bumpPending(offlineQueueService.getPendingCount());
+
+      if (refundTxError) {
+        throw new Error(`Failed to record refund transaction: ${refundTxError.message}`);
+      }
+
+      // Step 4: Remove passenger from boarded_passengers
+      const { error: deleteError } = await supabase
+        .from('boarded_passengers')
+        .delete()
+        .eq('id', passengerToCancel.id);
+
+      if (deleteError) {
+        throw new Error(`Failed to remove passenger: ${deleteError.message}`);
       }
 
       decrementCurrentPassengers();
 
-      // Update local items state
-      setPassengersList(prev => prev.map(item => {
-        if (item.id === passengerToAlight.id) {
-          return { ...item, alighted_at: new Date().toISOString() };
-        }
-        return item;
-      }));
+      // Update local items state - remove the cancelled passenger
+      setPassengersList(prev => prev.filter(item => item.id !== passengerToCancel.id));
 
       // Update stats count
       setStats(prev => prev ? {
         ...prev,
-        totalAlighted: prev.totalAlighted + 1,
+        totalBoarded: Math.max(0, prev.totalBoarded - 1),
         currentOnboard: Math.max(0, prev.currentOnboard - 1),
       } : null);
 
-      setToastMessage(`Passenger ${passengerToAlight.card_uid} alighted successfully`);
+      setToastMessage(`Boarding cancelled. Refunded PHP${refundAmount.toFixed(2)} to ${passengerToCancel.card_uid}`);
       setTimeout(() => setToastMessage(null), 3000);
-      setPassengerToAlight(null);
+      setPassengerToCancel(null);
     } catch (err: any) {
-      console.error('[PassengerListPage] Manual alighting error:', err);
-      alert(`Error alighting passenger: ${err?.message || 'Unknown error'}`);
+      console.error('[PassengerListPage] Cancel boarding error:', err);
+      alert(`Error cancelling boarding: ${err?.message || 'Unknown error'}`);
     } finally {
-      setAlightingInProgress(false);
+      setCancellingInProgress(false);
     }
   }
 
@@ -572,34 +623,57 @@ const PassengerListPage: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* Footer with timestamp and Alight Action */}
+                              {/* Footer with timestamp and Actions */}
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: '0.72rem' }}>
                                   <Clock size={12} />
                                   <span>{formatRelativeTime(passenger.boarded_at)}</span>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setPassengerToAlight(passenger)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 5,
-                                    padding: '6px 14px',
-                                    borderRadius: 18,
-                                    border: '1.5px solid rgba(217, 119, 6, 0.4)',
-                                    background: 'rgba(217, 119, 6, 0.1)',
-                                    color: '#D97706',
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <AlightIcon size={13} />
-                                  Alight
-                                </button>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPassengerToCancel(passenger)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '6px 14px',
+                                      borderRadius: 18,
+                                      border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                                      background: 'rgba(239, 68, 68, 0.1)',
+                                      color: '#EF4444',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                  >
+                                    <RotateCcw size={13} />
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPassengerToAlight(passenger)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '6px 14px',
+                                      borderRadius: 18,
+                                      border: '1.5px solid rgba(217, 119, 6, 0.4)',
+                                      background: 'rgba(217, 119, 6, 0.1)',
+                                      color: '#D97706',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                  >
+                                    <AlightIcon size={13} />
+                                    Alight
+                                  </button>
+                                </div>
                               </div>
                             </SoftCard>
                           </motion.div>
@@ -734,10 +808,10 @@ const PassengerListPage: React.FC = () => {
                 <AlightIcon size={26} color="#D97706" />
               </div>
               <h4 style={{ margin: '0 0 4px', fontSize: '1.1rem', fontWeight: 800 }}>
-                Confirm Alighting
+                Scan to Alight
               </h4>
               <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Mark this passenger as alighted from the bus?
+                Redirect to scan page to verify passenger's QR card for alighting with GPS validation.
               </p>
             </div>
 
@@ -779,7 +853,6 @@ const PassengerListPage: React.FC = () => {
                 onClick={() => setPassengerToAlight(null)}
                 variant="ghost"
                 style={{ flex: 1 }}
-                disabled={alightingInProgress}
               >
                 Cancel
               </PrimaryButton>
@@ -790,10 +863,114 @@ const PassengerListPage: React.FC = () => {
                   background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                   color: '#ffffff',
                 }}
-                disabled={alightingInProgress}
-                icon={<CheckCircle size={17} />}
+                icon={<AlightIcon size={17} />}
               >
-                {alightingInProgress ? 'Recording…' : 'Confirm Alight'}
+                Go to Scan
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+      </AnimatedModal>
+
+      {/* ── Cancel Boarding Confirmation Modal ──────────────────────── */}
+      <AnimatedModal
+        isOpen={!!passengerToCancel}
+        onClose={() => setPassengerToCancel(null)}
+        title="Cancel Boarding"
+        variant="center"
+      >
+        {passengerToCancel && (
+          <div style={{ padding: '6px 4px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                background: 'rgba(239, 68, 68, 0.14)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 10px',
+              }}>
+                <RotateCcw size={26} color="#EF4444" />
+              </div>
+              <h4 style={{ margin: '0 0 4px', fontSize: '1.1rem', fontWeight: 800 }}>
+                Cancel Boarding
+              </h4>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Remove this passenger and refund their fare?
+              </p>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-tertiary)',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid var(--glass-border)',
+              marginBottom: 18,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Card / Ticket</span>
+                <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {passengerToCancel.card_uid}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Passenger Type</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  {passengerTypeLabel(passengerToCancel.passenger_type)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Boarding Stop</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                  {passengerToCancel.boarding_stop || 'Trip Origin'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Destination Stop</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  {passengerToCancel.destination_stop || 'Open Stop'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              marginBottom: 18,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <AlertTriangle size={16} color="#EF4444" />
+              <span style={{ fontSize: '0.78rem', color: '#B91C1C', fontWeight: 600 }}>
+                Passenger will be removed from onboard list and fare will be refunded to their card balance.
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <PrimaryButton
+                onClick={() => setPassengerToCancel(null)}
+                variant="ghost"
+                style={{ flex: 1 }}
+                disabled={cancellingInProgress}
+              >
+                Keep Boarding
+              </PrimaryButton>
+              <PrimaryButton
+                onClick={handleConfirmCancelBoarding}
+                style={{
+                  flex: 1.5,
+                  background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+                  color: '#ffffff',
+                }}
+                disabled={cancellingInProgress}
+                icon={<RotateCcw size={17} />}
+              >
+                {cancellingInProgress ? 'Cancelling…' : 'Cancel & Refund'}
               </PrimaryButton>
             </div>
           </div>

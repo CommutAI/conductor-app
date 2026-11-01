@@ -2,10 +2,10 @@
   "appId": "com.omanfortsco.conductor",
   "appName": "Conductor App",
   "webDir": "build",
-  "icon": "public/assets/logo.png",
+  "icon": "public/assets/conductor.png",
   "splash": {
     "backgroundColor": "#1a1f3c",
-    "image": "public/assets/logo.png",
+    "image": "public/assets/conductor.png",
     "androidScaleType": "CENTER",
     "androidSplashFullScreen": true,
     "androidSplashImmersive": true,

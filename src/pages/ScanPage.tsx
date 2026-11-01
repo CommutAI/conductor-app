@@ -149,6 +149,9 @@ type PendingScan = {
   boardingPoint?: string; // boarding point selected during offline onboarding
 };
 
+// Service fee for temporary tickets
+const TEMPORARY_TICKET_SERVICE_FEE = 2.00;
+
 // Common boarding points for offline onboarding
 const COMMON_BOARDING_POINTS = [
   'Main Terminal',
@@ -169,19 +172,19 @@ const COMMON_BOARDING_POINTS = [
 
 const DEFAULT_FARE = 12;
 
-function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string | undefined, toStop?: string | undefined): number {
+function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string | undefined, toStop?: string | undefined, isTicket: boolean = false): number {
   const type = passengerType || 'regular';
 
   // Use fare matrix if both stops are provided
   if (fromStop && toStop) {
     const matrixFare = getFareFromMatrix(fromStop, toStop, type);
     if (matrixFare !== null) {
-      return matrixFare;
+      return matrixFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
     }
   }
 
   // Fallback to default fare
-  return calculateFare(DEFAULT_FARE, type).finalFare;
+  return calculateFare(DEFAULT_FARE, type).finalFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
 }
 
 /** Validate if a destination exists in the fare matrix */
@@ -278,18 +281,11 @@ const ScanPage: React.FC = () => {
   const offlineQueueCleanupRef = useRef<(() => void) | null>(null);
 
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
-  const displayStops = routeStops.length >= 2 ? routeStops : [
-    'Agora Terminal',
-    'Puerto',
-    'Ba-e',
-    'Mambatangan',
-    'Maitom',
-    'Ala-e',
-    'Lonocan',
-    'San Miguel',
-    'Diclum',
-    'Manolo Fortich',
-  ];
+  // Use database stops with GPS coordinates for manual selection
+  const displayStops = busStopsData
+    .filter(stop => stop.status === 'active')
+    .sort((a, b) => a.sequence_order - b.sequence_order)
+    .map(stop => stop.name);
 
   useEffect(() => {
     if (!isRestoringTrip && (!currentTrip || !currentBus)) {
@@ -572,7 +568,7 @@ const ScanPage: React.FC = () => {
     const passengerType = detectedType.passengerType;
     const fromStop = selectedBoardingPoint || currentStopName || undefined;
     const toStop = selectedDestination || undefined;
-    const estimatedFare = estimateOfflineFare(passengerType as FarePassengerType, fromStop, toStop);
+    const estimatedFare = estimateOfflineFare(passengerType as FarePassengerType, fromStop, toStop, detectedType.isTicket);
 
     const cardUidNorm = detectedType.isTicket ? undefined : normalizedCode.toUpperCase();
     const ticketUidNorm = detectedType.isTicket ? normalizedCode.toUpperCase() : undefined;
@@ -608,7 +604,7 @@ const ScanPage: React.FC = () => {
           code: scannedCode,
           balance: cachedTicket.fare_amount,
           cardDestination: cachedTicket.destination || undefined,
-          fare: cachedTicket.fare_amount,
+          fare: cachedTicket.fare_amount + TEMPORARY_TICKET_SERVICE_FEE,
           passengerType: cachedTicket.passenger_type || passengerType,
           cardUid: cachedTicket.ticket_uid.toUpperCase(),
           isTicket: true,
@@ -619,7 +615,7 @@ const ScanPage: React.FC = () => {
         setPendingScan({
           code: scannedCode,
           balance: estimatedFare,
-          fare: estimatedFare,
+          fare: estimatedFare + TEMPORARY_TICKET_SERVICE_FEE,
           passengerType,
           cardUid: normalizedCode.toUpperCase(),
           isTicket: true,
@@ -815,7 +811,7 @@ const ScanPage: React.FC = () => {
             code: scannedCode,
             balance: ticket.fare_amount,
             cardDestination: ticket.destination || undefined,
-            fare: ticket.fare_amount,
+            fare: ticket.fare_amount + TEMPORARY_TICKET_SERVICE_FEE,
             passengerType: detectedType.passengerType,
             cardUid: (ticket.ticket_uid || scannedCode).toUpperCase(),
             isTicket: true,
@@ -1044,7 +1040,8 @@ const ScanPage: React.FC = () => {
 
       // Use matrix fare if available, otherwise use pending scan fare
       const finalFare = matrixFare !== null ? matrixFare : (pendingScan?.fare || 0);
-      const totalFare = finalFare + (baggageSelection?.fee || 0);
+      const serviceFee = pendingScan?.isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0;
+      const totalFare = finalFare + serviceFee + (baggageSelection?.fee || 0);
 
       console.log('Fare calculation - From:', fromStop, 'To:', toStop, 'Matrix Fare:', matrixFare, 'Final Fare:', finalFare);
 
@@ -1699,6 +1696,28 @@ const ScanPage: React.FC = () => {
             nearestStop: gps.nearestStopName,
           });
 
+          // If GPS mismatch, recalculate fare from actual boarding to actual alighting location
+          if (gps.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
+            const actualBoardingStop = actualBoardedPassenger.boarding_stop;
+            const actualAlightingStop = gps.nearestStopName;
+            const passengerType = (card.passenger_type || 'regular') as FarePassengerType;
+
+            // Calculate original fare (boarding stop to destination)
+            const originalFare = getFareFromMatrix(actualBoardingStop, storedDestination, passengerType) || 0;
+
+            // Calculate actual fare (boarding stop to actual alighting location)
+            const actualFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType) || 0;
+
+            const fareDifference = actualFare - originalFare;
+
+            setGpsResult(prev => prev ? {
+              ...prev,
+              message: fareDifference > 0
+                ? `Fare anomaly: Paid PHP${originalFare.toFixed(2)} for ${storedDestination}, but alighted at ${actualAlightingStop} (PHP${actualFare.toFixed(2)}). Additional fare: PHP${fareDifference.toFixed(2)}`
+                : `Location mismatch: Alighted at ${actualAlightingStop} instead of ${storedDestination}. Fare: PHP${actualFare.toFixed(2)}`,
+            } : null);
+          }
+
           // GPS result is displayed in the trip summary card, no modal needed here
         } catch {
           // GPS errors never block the scan
@@ -1708,15 +1727,27 @@ const ScanPage: React.FC = () => {
       }
 
       // Step 4 — Show confirmation with trip summary before processing
-      // transaction.amount = totalFare (base + baggage) as stored by fareService
-      const txAmount = boardingTransaction?.amount || 12;
-      const baggageFee = boardingTransaction?.baggage_fee || 0;
-      const baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
-      const totalFare = txAmount;               // amount IS already the total — no re-addition needed
-      
       // Use prefix detection as primary source for QR cards since database may have incorrect values
       const passengerType = detectedType.passengerType;
       console.log('Alighting card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
+
+      // transaction.amount = totalFare (base + baggage) as stored by fareService
+      const txAmount = boardingTransaction?.amount || 12;
+      const baggageFee = boardingTransaction?.baggage_fee || 0;
+      let baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
+      let totalFare = txAmount;               // amount IS already the total — no re-addition needed
+
+      // Adjust fare if GPS mismatch detected
+      if (gpsResult && gpsResult.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
+        const actualBoardingStop = actualBoardedPassenger.boarding_stop;
+        const actualAlightingStop = gpsResult.nearestStop;
+        const adjustedBaseFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType);
+
+        if (adjustedBaseFare !== null && adjustedBaseFare > baseFare) {
+          baseFare = adjustedBaseFare;
+          totalFare = baseFare + baggageFee;
+        }
+      }
       
       setPendingAlighting({
         code: scannedCode,
@@ -1911,6 +1942,23 @@ const ScanPage: React.FC = () => {
 
     setScanState('processing');
 
+    // Check GPS location mismatch - recalculate fare if location doesn't match destination
+    let adjustedFare = pendingAlighting.fare;
+    if (gpsResult && gpsResult.status === 'mismatch' && pendingAlighting.boardingPoint) {
+      const actualBoardingStop = pendingAlighting.boardingPoint;
+      const actualAlightingStop = gpsResult.nearestStop;
+      const passengerType = pendingAlighting.passengerType || 'regular';
+
+      // Calculate fare for actual route (boarding to actual alighting location)
+      const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+
+      if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
+        // Charge additional fare for the longer route
+        adjustedFare = actualRouteFare;
+        console.log(`[Alighting] Fare adjustment: PHP${pendingAlighting.fare} -> PHP${adjustedFare} (alighted at ${actualAlightingStop} instead of ${pendingAlighting.destination})`);
+      }
+    }
+
     try {
       console.log('[confirmAlighting] Processing alighting with data:', {
         code: pendingAlighting.code,
@@ -1948,7 +1996,7 @@ const ScanPage: React.FC = () => {
           boardingPoint: pendingAlighting.boardingPoint,
           tripId: currentTrip.id,
           destination: pendingAlighting.destination,
-          fare: pendingAlighting.fare,
+          fare: adjustedFare, // Use adjusted fare if location mismatch
           baggageFee: pendingAlighting.baggageInfo?.fee,
           paymentMethod: pendingAlighting.paymentMethod,
         });
@@ -1986,7 +2034,7 @@ const ScanPage: React.FC = () => {
         currentBus?.route,
         'alighting',
         pendingAlighting.destination, // Pass the destination from pendingAlighting
-        0,
+        adjustedFare, // Use adjusted fare if location mismatch
         undefined,
         undefined,
         pendingAlighting.paymentMethod === 'qr_card' ? 'card' : pendingAlighting.paymentMethod,
@@ -2008,6 +2056,18 @@ const ScanPage: React.FC = () => {
         const cardUid = isTicket ? undefined : normalized.toUpperCase();
         const ticketUid = isTicket ? normalized.toUpperCase() : undefined;
 
+        // Recalculate adjusted fare for offline fallback
+        let fallbackAdjustedFare = pendingAlighting.fare;
+        if (gpsResult && gpsResult.status === 'mismatch' && pendingAlighting.boardingPoint) {
+          const actualBoardingStop = pendingAlighting.boardingPoint;
+          const actualAlightingStop = gpsResult.nearestStop;
+          const passengerType = pendingAlighting.passengerType || 'regular';
+          const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+          if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
+            fallbackAdjustedFare = actualRouteFare;
+          }
+        }
+
         offlineQueueService.addScan({
           type: 'alighting',
           cardUid,
@@ -2017,7 +2077,7 @@ const ScanPage: React.FC = () => {
           boardingPoint: pendingAlighting.boardingPoint,
           tripId: currentTrip.id,
           destination: pendingAlighting.destination,
-          fare: pendingAlighting.fare,
+          fare: fallbackAdjustedFare, // Use adjusted fare if location mismatch
           baggageFee: pendingAlighting.baggageInfo?.fee,
           paymentMethod: pendingAlighting.paymentMethod,
         });
@@ -2956,10 +3016,11 @@ const ScanPage: React.FC = () => {
                                 </button>
                               )}
 
-                              {/* Cash option */}
+                              {/* Cash option - only for tickets or cards with zero balance */}
                               <button
                                 type="button"
                                 onClick={() => handlePaymentMethodChange('cash')}
+                                disabled={!pendingScan.isTicket && pendingScan.balance > 0}
                                 style={{
                                   display: 'flex',
                                   flexDirection: 'column',
@@ -2969,8 +3030,9 @@ const ScanPage: React.FC = () => {
                                   borderRadius: 10,
                                   border: `2px solid ${selectedPaymentMethod === 'cash' ? '#22C55E' : 'var(--glass-border)'}`,
                                   background: selectedPaymentMethod === 'cash' ? 'rgba(34, 197, 94, 0.12)' : 'var(--bg-tertiary)',
-                                  cursor: 'pointer',
+                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0) ? 'not-allowed' : 'pointer',
                                   transition: 'all 0.15s ease',
+                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0) ? 0.4 : 1,
                                 }}
                               >
                                 <Banknote size={18} color={selectedPaymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)'} />
@@ -2982,10 +3044,11 @@ const ScanPage: React.FC = () => {
                                 </span>
                               </button>
 
-                              {/* GCash option */}
+                              {/* GCash option - only for tickets or cards with zero balance */}
                               <button
                                 type="button"
                                 onClick={() => handlePaymentMethodChange('gcash')}
+                                disabled={!pendingScan.isTicket && pendingScan.balance > 0}
                                 style={{
                                   display: 'flex',
                                   flexDirection: 'column',
@@ -2995,8 +3058,9 @@ const ScanPage: React.FC = () => {
                                   borderRadius: 10,
                                   border: `2px solid ${selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--glass-border)'}`,
                                   background: selectedPaymentMethod === 'gcash' ? 'rgba(0, 125, 254, 0.12)' : 'var(--bg-tertiary)',
-                                  cursor: 'pointer',
+                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0) ? 'not-allowed' : 'pointer',
                                   transition: 'all 0.15s ease',
+                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0) ? 0.4 : 1,
                                 }}
                               >
                                 <Smartphone size={18} color={selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--text-secondary)'} />
