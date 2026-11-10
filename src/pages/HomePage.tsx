@@ -29,6 +29,7 @@ import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
 import { realtimeService } from '../services/realtimeService';
 import { isLikelyNetworkError } from '../utils/networkUtils';
+import { useDestinationAlerts } from '../hooks/useDestinationAlerts';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -74,6 +75,24 @@ const HomePage: React.FC = () => {
   } = useApp();
   const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
 
+  // Destination proximity alerts and irregularity logging
+  useDestinationAlerts(
+    currentTrip?.id,
+    profile?.id,
+    currentLocation,
+    isOnline,
+    (destination, passengers, count) => {
+      const passengerList = passengers.join(', ');
+      const message = count === 1
+        ? `Approaching ${destination} - Passenger: ${passengerList}`
+        : `Approaching ${destination} - ${count} passengers: ${passengerList}`;
+      
+      setToastMessage(message);
+      setToastColor('warning');
+      setShowToast(true);
+    }
+  );
+
 
 
   // Refs
@@ -118,14 +137,14 @@ const HomePage: React.FC = () => {
   }, [currentDate]);
 
   const seatCapacity = currentBus?.seat_capacity || 50;
-  const occupancyPercent = Math.min(Math.round((validatedCount / seatCapacity) * 100), 100);
-  const remainingSeats = Math.max(0, seatCapacity - validatedCount);
+  const occupancyPercent = Math.min(Math.round((currentPassengersCount / seatCapacity) * 100), 100);
+  const remainingSeats = Math.max(0, seatCapacity - currentPassengersCount);
 
   const occupancyStatus = useMemo(() => {
-    if (validatedCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
-    if (validatedCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
+    if (currentPassengersCount >= seatCapacity) return { label: 'Full Capacity', variant: 'danger' as const };
+    if (currentPassengersCount >= seatCapacity * 0.8) return { label: 'Near Full', variant: 'warning' as const };
     return { label: 'Seats Available', variant: 'success' as const };
-  }, [validatedCount, seatCapacity]);
+  }, [currentPassengersCount, seatCapacity]);
 
   const tripStartTime = useMemo(() => {
     if (!currentTrip?.started_at) return null;
@@ -287,6 +306,17 @@ const HomePage: React.FC = () => {
       if (!txError && transactions) {
         const totalFare = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
         setFareCollected(totalFare);
+      }
+
+      // Load actual current onboard count from boarded_passengers table
+      const { count: onboardCount, error: onboardError } = await supabase
+        .from('boarded_passengers')
+        .select('id', { count: 'exact', head: true })
+        .eq('trip_id', currentTrip.id)
+        .is('alighted_at', null);
+
+      if (!onboardError && onboardCount !== null) {
+        setCurrentPassengersCount(onboardCount);
       }
 
       // Load current GPS location from trip
@@ -521,6 +551,23 @@ const HomePage: React.FC = () => {
       if (!isAllowedTime) {
         console.log('[HomePage] Auto-completing trip due to time restrictions');
         try {
+          // Check for count mismatch before completing trip
+          if (isOnline && aiPassengerCount > 0 && validatedCount > 0) {
+            const delta = aiPassengerCount - validatedCount;
+            if (Math.abs(delta) > 3) {
+              // Log count mismatch irregularity
+              await supabase.from('fare_irregularities').insert({
+                trip_id: currentTrip.id,
+                conductor_id: profile?.id,
+                type: 'count_mismatch',
+                description: `AI camera count (${aiPassengerCount}) differs from QR validated count (${validatedCount}) by ${delta > 0 ? '+' : ''}${delta} passengers at trip completion`,
+                detected_at: new Date().toISOString(),
+                notes: `Trip auto-completed at ${now.toLocaleTimeString()}. AI count: ${aiPassengerCount}, QR count: ${validatedCount}`,
+              });
+              console.warn('[HomePage] Count mismatch logged:', { aiCount: aiPassengerCount, validatedCount, delta });
+            }
+          }
+
           const { error } = await supabase
             .from('trips')
             .update({
@@ -550,6 +597,50 @@ const HomePage: React.FC = () => {
       clearInterval(timeCheckInterval);
     };
   }, [currentTrip, history, showNotification]);
+
+  // Monitor for count mismatch between AI camera and QR validated counts
+  useEffect(() => {
+    if (!currentTrip || !isOnline || aiPassengerCount === 0 || validatedCount === 0) return;
+
+    const delta = aiPassengerCount - validatedCount;
+    const mismatchThreshold = 5; // Higher threshold for real-time to avoid false positives
+
+    if (Math.abs(delta) > mismatchThreshold) {
+      // Debounce: only log if mismatch persists for 30 seconds
+      const debounceTimer = setTimeout(async () => {
+        console.warn('[HomePage] Persistent count mismatch detected:', { aiCount: aiPassengerCount, validatedCount, delta });
+        
+        try {
+          // Check if we already logged this mismatch recently (within last 5 minutes)
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const { data: recentMismatches } = await supabase
+            .from('fare_irregularities')
+            .select('id')
+            .eq('trip_id', currentTrip.id)
+            .eq('type', 'count_mismatch')
+            .gte('detected_at', fiveMinutesAgo);
+
+          if (!recentMismatches || recentMismatches.length === 0) {
+            // Log the irregularity
+            await supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile?.id,
+              type: 'count_mismatch',
+              description: `Real-time count discrepancy: AI camera count (${aiPassengerCount}) differs from QR validated count (${validatedCount}) by ${delta > 0 ? '+' : ''}${delta} passengers`,
+              detected_at: new Date().toISOString(),
+              notes: `Detected during active trip at ${new Date().toLocaleTimeString()}`,
+            });
+            
+            showNotification(`Passenger count mismatch detected: ${Math.abs(delta)} difference`, 'warning');
+          }
+        } catch (err) {
+          console.error('[HomePage] Error logging count mismatch:', err);
+        }
+      }, 30000); // 30 second debounce
+
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [aiPassengerCount, validatedCount, currentTrip, isOnline, profile?.id, showNotification]);
 
   const handleRefresh = useCallback(async (event: CustomEvent) => {
     setIsRefreshing(true);
@@ -1166,9 +1257,9 @@ const HomePage: React.FC = () => {
                           strokeWidth="8"
                           strokeLinecap="round"
                           strokeDasharray={`${2 * Math.PI * 44}`}
-                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1))}`}
+                          strokeDashoffset={`${2 * Math.PI * 44 * (1 - Math.min(currentPassengersCount / seatCapacity, 1))}`}
                           initial={{ strokeDashoffset: 2 * Math.PI * 44 }}
-                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(validatedCount / seatCapacity, 1)) }}
+                          animate={{ strokeDashoffset: 2 * Math.PI * 44 * (1 - Math.min(currentPassengersCount / seatCapacity, 1)) }}
                           transition={{ duration: 1, ease: 'easeOut' }}
                           transform="rotate(-90 55 55)"
                         />

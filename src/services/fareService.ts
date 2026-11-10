@@ -6,6 +6,16 @@
 
 import { supabase } from '../supabaseClient';
 import { cache, CacheKeys, CacheTTL } from './cacheService';
+import { smsService } from './smsService';
+import fareMatrixData from '../data/fareMatrix.json';
+
+interface FareMatrixEntry {
+  route_from: string;
+  route_to: string;
+  km_distance: number | null;
+  regular_fare: number;
+  discounted_fare: number;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,248 +88,37 @@ export type ScanResult =
 export const DEFAULT_FARE = 12;
 
 // ── Fare Matrix ───────────────────────────────────────────────────────────────
-// Based on the provided fare matrix for Manolo Fortich → Cagayan de Oro route
-// Format: from_stop -> to_stop -> { regularFare, discountedFare }
+// Fare matrix is now loaded from fareMatrix.json
 
-const FARE_MATRIX: Record<string, Record<string, { regularFare: number; discountedFare: number }>> = {
-  'Gaisano CDO': {
-    'Agora': { regularFare: 15, discountedFare: 15 },
-  },
-  'Agora': {
-    'Gusa': { regularFare: 15, discountedFare: 15 },
-    'Cugman': { regularFare: 20, discountedFare: 15 },
-    'Tablon Baloi': { regularFare: 25, discountedFare: 20 },
-    'Tablon': { regularFare: 25, discountedFare: 20 },
-    'Agusan': { regularFare: 30, discountedFare: 20 },
-    'Puerto': { regularFare: 30, discountedFare: 25 },
-    'Bae Upper Puerto': { regularFare: 45, discountedFare: 25 },
-    'Mambatangan': { regularFare: 45, discountedFare: 35 },
-    'Balubal': { regularFare: 45, discountedFare: 35 },
-    'Maitum': { regularFare: 50, discountedFare: 40 },
-    'Alae Manolo': { regularFare: 55, discountedFare: 45 },
-    'Lunocan': { regularFare: 65, discountedFare: 55 },
-    'Cawayanon': { regularFare: 80, discountedFare: 75 },
-    'San Miguel': { regularFare: 65, discountedFare: 55 },
-    'Dicklum': { regularFare: 75, discountedFare: 65 },
-    'Tankulan': { regularFare: 75, discountedFare: 65 },
-    'Sankanan': { regularFare: 100, discountedFare: 90 },
-    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
-  },
-  'Gusa': {
-    'Cugman': { regularFare: 15, discountedFare: 15 },
-    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 20, discountedFare: 15 },
-    'Puerto': { regularFare: 23, discountedFare: 20 },
-    'Bae Upper Puerto': { regularFare: 35, discountedFare: 30 },
-    'Mambatangan': { regularFare: 40, discountedFare: 35 },
-    'Balubal': { regularFare: 40, discountedFare: 35 },
-    'Maitum': { regularFare: 48, discountedFare: 40 },
-    'Alae Manolo': { regularFare: 52, discountedFare: 45 },
-    'Lunocan': { regularFare: 55, discountedFare: 55 },
-    'Cawayanon': { regularFare: 80, discountedFare: 75 },
-    'San Miguel': { regularFare: 65, discountedFare: 55 },
-    'Dicklum': { regularFare: 75, discountedFare: 65 },
-    'Tankulan': { regularFare: 75, discountedFare: 65 },
-    'Sankanan': { regularFare: 100, discountedFare: 90 },
-    'Kalugmanan Manolo': { regularFare: 110, discountedFare: 100 },
-  },
-  'Cugman': {
-    'Tablon Baloi': { regularFare: 15, discountedFare: 15 },
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 17, discountedFare: 15 },
-    'Puerto': { regularFare: 20, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 30, discountedFare: 25 },
-    'Mambatangan': { regularFare: 35, discountedFare: 30 },
-    'Balubal': { regularFare: 35, discountedFare: 30 },
-    'Maitum': { regularFare: 40, discountedFare: 35 },
-    'Alae Manolo': { regularFare: 50, discountedFare: 40 },
-    'Lunocan': { regularFare: 50, discountedFare: 50 },
-    'Cawayanon': { regularFare: 75, discountedFare: 75 },
-    'San Miguel': { regularFare: 60, discountedFare: 50 },
-    'Dicklum': { regularFare: 70, discountedFare: 60 },
-    'Tankulan': { regularFare: 70, discountedFare: 60 },
-    'Sankanan': { regularFare: 95, discountedFare: 85 },
-    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
-  },
-  'Tablon Baloi': {
-    'Tablon': { regularFare: 15, discountedFare: 15 },
-    'Agusan': { regularFare: 15, discountedFare: 15 },
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 25, discountedFare: 20 },
-    'Mambatangan': { regularFare: 30, discountedFare: 20 },
-    'Balubal': { regularFare: 30, discountedFare: 20 },
-    'Maitum': { regularFare: 35, discountedFare: 25 },
-    'Alae Manolo': { regularFare: 40, discountedFare: 30 },
-    'Lunocan': { regularFare: 50, discountedFare: 40 },
-    'Cawayanon': { regularFare: 75, discountedFare: 65 },
-    'San Miguel': { regularFare: 55, discountedFare: 45 },
-    'Dicklum': { regularFare: 60, discountedFare: 50 },
-    'Tankulan': { regularFare: 70, discountedFare: 50 },
-    'Sankanan': { regularFare: 95, discountedFare: 85 },
-    'Kalugmanan Manolo': { regularFare: 105, discountedFare: 95 },
-  },
-  'Tablon': {
-    'Agusan': { regularFare: 15, discountedFare: 15 },
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 24, discountedFare: 20 },
-    'Mambatangan': { regularFare: 30, discountedFare: 25 },
-    'Balubal': { regularFare: 30, discountedFare: 25 },
-    'Maitum': { regularFare: 35, discountedFare: 30 },
-    'Alae Manolo': { regularFare: 40, discountedFare: 35 },
-    'Lunocan': { regularFare: 45, discountedFare: 40 },
-    'Cawayanon': { regularFare: 75, discountedFare: 65 },
-    'San Miguel': { regularFare: 55, discountedFare: 45 },
-    'Dicklum': { regularFare: 60, discountedFare: 50 },
-    'Tankulan': { regularFare: 63, discountedFare: 50 },
-    'Sankanan': { regularFare: 90, discountedFare: 80 },
-    'Kalugmanan Manolo': { regularFare: 100, discountedFare: 90 },
-  },
-  'Agusan': {
-    'Puerto': { regularFare: 15, discountedFare: 15 },
-    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
-    'Mambatangan': { regularFare: 25, discountedFare: 20 },
-    'Balubal': { regularFare: 25, discountedFare: 20 },
-    'Maitum': { regularFare: 30, discountedFare: 20 },
-    'Alae Manolo': { regularFare: 35, discountedFare: 25 },
-    'Lunocan': { regularFare: 40, discountedFare: 35 },
-    'Cawayanon': { regularFare: 60, discountedFare: 50 },
-    'San Miguel': { regularFare: 50, discountedFare: 40 },
-    'Dicklum': { regularFare: 55, discountedFare: 45 },
-    'Tankulan': { regularFare: 58, discountedFare: 45 },
-    'Sankanan': { regularFare: 85, discountedFare: 75 },
-    'Kalugmanan Manolo': { regularFare: 95, discountedFare: 85 },
-  },
-  'Puerto': {
-    'Bae Upper Puerto': { regularFare: 20, discountedFare: 15 },
-    'Mambatangan': { regularFare: 20, discountedFare: 20 },
-    'Balubal': { regularFare: 20, discountedFare: 20 },
-    'Maitum': { regularFare: 25, discountedFare: 20 },
-    'Alae Manolo': { regularFare: 30, discountedFare: 25 },
-    'Lunocan': { regularFare: 40, discountedFare: 35 },
-    'Cawayanon': { regularFare: 60, discountedFare: 50 },
-    'San Miguel': { regularFare: 45, discountedFare: 35 },
-    'Dicklum': { regularFare: 55, discountedFare: 45 },
-    'Tankulan': { regularFare: 55, discountedFare: 45 },
-    'Sankanan': { regularFare: 80, discountedFare: 70 },
-    'Kalugmanan Manolo': { regularFare: 90, discountedFare: 80 },
-    'Agora Terminal': { regularFare: 34.75, discountedFare: 27.75 },
-  },
-  'Bae Upper Puerto': {
-    'Mambatangan': { regularFare: 15, discountedFare: 15 },
-    'Balubal': { regularFare: 15, discountedFare: 15 },
-    'Maitum': { regularFare: 20, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 25, discountedFare: 20 },
-    'Lunocan': { regularFare: 30, discountedFare: 25 },
-    'Cawayanon': { regularFare: 50, discountedFare: 40 },
-    'San Miguel': { regularFare: 40, discountedFare: 35 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 50, discountedFare: 40 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
-  },
-  'Mambatangan': {
-    'Balubal': { regularFare: 15, discountedFare: 15 },
-    'Maitum': { regularFare: 15, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
-    'Lunocan': { regularFare: 30, discountedFare: 20 },
-    'Cawayanon': { regularFare: 50, discountedFare:  40 },
-    'San Miguel': { regularFare: 35, discountedFare: 25 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 48, discountedFare: 38 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 50.25, discountedFare: 40.25 },
-  },
-  'Balubal': {
-    'Maitum': { regularFare: 15, discountedFare: 15 },
-    'Alae Manolo': { regularFare: 20, discountedFare: 15 },
-    'Lunocan': { regularFare: 30, discountedFare: 20 },
-    'Cawayanon': { regularFare: 50, discountedFare: 40 },
-    'San Miguel': { regularFare: 35, discountedFare: 30 },
-    'Dicklum': { regularFare: 45, discountedFare: 35 },
-    'Tankulan': { regularFare: 48, discountedFare: 38 },
-    'Sankanan': { regularFare: 75, discountedFare: 65 },
-    'Kalugmanan Manolo': { regularFare: 85, discountedFare: 75 },
-    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
-  },
-  'Maitom': {
-    'Alae Manolo': { regularFare: 15, discountedFare: 15 },
-    'Lunocan': { regularFare: 25, discountedFare: 20 },
-    'Cawayanon': { regularFare: 40, discountedFare: 30 },
-    'San Miguel': { regularFare: 35, discountedFare: 25 },
-    'Dicklum': { regularFare: 35, discountedFare: 30 },
-    'Tankulan': { regularFare: 40, discountedFare: 30 },
-    'Sankanan': { regularFare: 65, discountedFare: 55 },
-    'Kalugmanan Manolo': { regularFare: 75, discountedFare: 65 },
-    'Agora Terminal': { regularFare: 59.00, discountedFare: 47.25 },
-  },
-  'Alae Manolo': {
-    'Lunocan': { regularFare: 15, discountedFare: 15 },
-    'Cawayanon': { regularFare: 30, discountedFare: 25 },
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 30, discountedFare: 20 },
-    'Tankulan': { regularFare: 30, discountedFare: 20 },
-    'Sankanan': { regularFare: 55, discountedFare: 45 },
-    'Kalugmanan Manolo': { regularFare: 65, discountedFare: 55 },
-    'Agora Terminal': { regularFare: 41.50, discountedFare: 33.00 },
-  },
-  'Lonocan': {
-    'Cawayanon': { regularFare: 25, discountedFare: 15 },
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 20, discountedFare: 20 },
-    'Tankulan': { regularFare: 25, discountedFare: 20 },
-    'Sankanan': { regularFare: 50, discountedFare: 40 },
-    'Kalugmanan Manolo': { regularFare: 60, discountedFare: 50 },
-    'Agora Terminal': { regularFare: 65.50, discountedFare: 52.50 },
-  },
-  'Cawayanon': {
-    'San Miguel': { regularFare: 20, discountedFare: 15 },
-    'Dicklum': { regularFare: 20, discountedFare: 15 },
-    'Tankulan': { regularFare: 20, discountedFare: 15 },
-    'Sankanan': { regularFare: 45, discountedFare: 35 },
-    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
-  },
-  'San Miguel': {
-    'Dicklum': { regularFare: 15, discountedFare: 15 },
-    'Tankulan': { regularFare: 20, discountedFare: 15 },
-    'Sankanan': { regularFare: 45, discountedFare: 35 },
-    'Kalugmanan Manolo': { regularFare: 55, discountedFare: 45 },
-    'Agora Terminal': { regularFare: 74.50, discountedFare: 59.50 },
-  },
-  'Dicklum': {
-    'Tankulan': { regularFare: 15, discountedFare: 15 },
-    'Sankanan': { regularFare: 40, discountedFare: 30 },
-    'Kalugmanan Manolo': { regularFare: 50, discountedFare: 40 },
-    'Agora Terminal': { regularFare: 83.25, discountedFare: 66.50 },
-  },
-  'Tankulan': {
-    'Sankanan': { regularFare: 25, discountedFare: 15 },
-    'Kalugmanan Manolo': { regularFare: 35, discountedFare: 25 },
-  },
-  'Sankanan': {
-    'Kalugmanan Manolo': { regularFare: 20, discountedFare: 15 },
-  },
-  // New routes from database fare_matrix
-  'Agora Terminal': {
-    'Puerto': { regularFare: 34.75, discountedFare: 27.75 },
-    'Ba-e': { regularFare: 41.50, discountedFare: 33.00 },
-    'Mambatangan': { regularFare: 50.25, discountedFare: 40.25 },
-    'Maitom': { regularFare: 59.00, discountedFare: 47.25 },
-    'Ala-e': { regularFare: 63.50, discountedFare: 50.75 },
-    'Lonocan': { regularFare: 65.50, discountedFare: 52.50 },
-    'San Miguel': { regularFare: 74.50, discountedFare: 59.50 },
-    'Diclum': { regularFare: 83.25, discountedFare: 66.50 },
-    'Manolo Fortich': { regularFare: 85.50, discountedFare: 68.25 },
-  },
-  'Ala-e': {
-    'Agora Terminal': { regularFare: 63.50, discountedFare: 50.75 },
-  },
-  'Manolo Fortich': {
-    'Agora Terminal': { regularFare: 85.50, discountedFare: 68.25 },
-  },
-};
+/**
+ * Normalize stop name to match fare matrix naming
+ * Handles name variations like "Agora" vs "Agora Terminal", "Alae" vs "Alae Manolo"
+ */
+function normalizeStopName(stopName: string): string {
+  const normalized = stopName.trim();
+
+  // Handle specific name mappings
+  const nameMappings: Record<string, string> = {
+    'Agora Terminal': 'Agora',
+    'Agora': 'Agora',
+    'Alae': 'Alae Manolo',
+    'Alae Manolo': 'Alae Manolo',
+  };
+
+  // Check if the name or a variation exists in mappings
+  if (nameMappings[normalized]) {
+    return nameMappings[normalized];
+  }
+
+  // Also check if the normalized name contains a mapped key
+  for (const [key, value] of Object.entries(nameMappings)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return value;
+    }
+  }
+
+  return normalized;
+}
 
 /**
  * Get fare from matrix based on origin and destination stops
@@ -334,27 +133,25 @@ export function getFareFromMatrix(fromStop: string | undefined, toStop: string |
     return null;
   }
 
-  const normalizedFrom = fromStop.trim();
-  const normalizedTo = toStop.trim();
+  const normalizedFrom = normalizeStopName(fromStop);
+  const normalizedTo = normalizeStopName(toStop);
 
-  const fromRoutes = FARE_MATRIX[normalizedFrom];
-  if (!fromRoutes) {
-    console.warn(`[FareMatrix] No fare data found for origin: ${normalizedFrom}`);
-    return null;
-  }
+  // Search in fareMatrixData from JSON file
+  const fareEntry = fareMatrixData.find(
+    item => item.route_from === normalizedFrom && item.route_to === normalizedTo
+  );
 
-  const fareData = fromRoutes[normalizedTo];
-  if (!fareData) {
-    console.warn(`[FareMatrix] No fare data found for destination: ${normalizedTo} from ${normalizedFrom}`);
+  if (!fareEntry) {
+    console.warn(`[FareMatrix] No fare data found for route: ${normalizedFrom} -> ${normalizedTo} (original: ${fromStop} -> ${toStop})`);
     return null;
   }
 
   // Return discounted fare for student, senior_citizen, pwd
   if (passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd') {
-    return fareData.discountedFare;
+    return fareEntry.discounted_fare ?? null;
   }
 
-  return fareData.regularFare;
+  return fareEntry.regular_fare ?? null;
 }
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
@@ -458,6 +255,24 @@ export async function processScan(
   boardingStop?: string,
 ): Promise<ScanResult> {
   console.log('[FareService] processScan called with boardingStop:', boardingStop, 'currentDestination:', currentDestination);
+
+  // ── Entry Point Validations ──────────────────────────────────────────────────
+  if (!scannedUid || scannedUid.trim().length === 0) {
+    return { status: 'qr_fake', reason: 'No QR code provided' };
+  }
+
+  if (!tripId || tripId.trim().length === 0) {
+    return { status: 'error', message: 'No active trip. Please start a trip first.' };
+  }
+
+  if (!conductorId || conductorId.trim().length === 0) {
+    return { status: 'error', message: 'Conductor not authenticated. Please log in again.' };
+  }
+
+  if (!['onboarding', 'alighting'].includes(scanType)) {
+    return { status: 'error', message: 'Invalid scan type' };
+  }
+
   const normalizedUid = normalizeQrCode(scannedUid);
 
   // Check cache for QR card first
@@ -470,7 +285,7 @@ export async function processScan(
   // Check for QR card from database
   const { data: card } = await supabase
     .from('qr_cards')
-    .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid')
+    .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid, owner_name, contact_number')
     .eq('card_uid', normalizedUid)
     .maybeSingle();
 
@@ -479,7 +294,9 @@ export async function processScan(
     const cardData = {
       ...card,
       balance: Number(card.balance),
-      passenger_type: card.passenger_type as PassengerType
+      passenger_type: card.passenger_type as PassengerType,
+      owner_name: card.owner_name,
+      contact_number: card.contact_number,
     };
     cache.set(CacheKeys.card(normalizedUid), cardData, CacheTTL.MEDIUM);
     return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
@@ -522,17 +339,22 @@ async function processQRCard(
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
 ): Promise<ScanResult> {
-  // Check for fake QR
+  // ── Basic QR Format Validation ───────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 8) {
     return { status: 'qr_fake', reason: 'Invalid QR format' };
   }
 
-  // Check route restrictions
+  // ── Card Status Validation ──────────────────────────────────────────────────
+  if (card.status !== 'active') {
+    return { status: 'qr_inactive' };
+  }
+
+  // ── Route Restriction Validation ─────────────────────────────────────────────
   if (card.allowed_routes && card.allowed_routes.length > 0 && busRoute) {
     const hasRouteRestriction = card.allowed_routes.some((route: string) => !route.startsWith('type:') && route !== 'temporary');
     if (hasRouteRestriction) {
       const normalizedBusRoute = normalizeRoute(busRoute);
-      
+
       const isAllowed = card.allowed_routes.some((allowedRoute: string) => {
         const normalizedAllowed = normalizeRoute(allowedRoute);
         const busWords = normalizedBusRoute.split(' ');
@@ -541,14 +363,60 @@ async function processQRCard(
         const similarity = matchCount / Math.max(busWords.length, allowedWords.length);
         return similarity >= 0.5;
       });
-      
+
       if (!isAllowed) {
         return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
       }
     }
   }
 
-  // Find the most recent active (not yet alighted) boarding for this card on this trip
+  // ── Trip Status Validation ───────────────────────────────────────────────────
+  const { data: trip } = await supabase
+    .from('trips')
+    .select('status, ended_at')
+    .eq('id', tripId)
+    .single();
+
+  if (!trip) {
+    return { status: 'error', message: 'Trip not found' };
+  }
+
+  if (trip.status !== 'in_progress') {
+    return { status: 'error', message: `Trip is ${trip.status}. Cannot process scan.` };
+  }
+
+  // ── Onboarding Validations ───────────────────────────────────────────────────
+  if (scanType === 'onboarding') {
+    // Validate boarding stop is provided
+    if (!boardingStop) {
+      return { status: 'error', message: 'Boarding location is required. Please select your current stop.' };
+    }
+
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Destination is required. Please select passenger destination.' };
+    }
+
+    // Validate payment method
+    if (!['card', 'qr_card', 'cash', 'gcash'].includes(paymentMethod)) {
+      return { status: 'error', message: 'Invalid payment method selected.' };
+    }
+
+    // Validate baggage fee matches category
+    if (baggageCategory && baggageFee === undefined) {
+      return { status: 'error', message: 'Baggage fee required when baggage category is selected.' };
+    }
+  }
+
+  // ── Alighting Validations ────────────────────────────────────────────────────
+  if (scanType === 'alighting') {
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Alighting location is required.' };
+    }
+  }
+
+  // ── Find Boarded Passenger ─────────────────────────────────────────────────
   const boardedPassengerResult = await supabase
     .from('boarded_passengers')
     .select('id, alighted_at, boarding_stop')
@@ -575,38 +443,45 @@ async function processQRCard(
 
   const boardedData = boardedPassenger.data;
 
-  let destinationMismatchOccurred = false;
+  // ── Duplicate Scan Validation (Onboarding) ─────────────────────────────────
   if (scanType === 'onboarding') {
-    // Duplicate check: is the card currently on board (boarded but not yet alighted)?
     if (boardedData) {
       return { status: 'duplicate_scan', type: 'qr_card', uid: scannedUid };
     }
-  } else if (scanType === 'alighting') {
+  }
+
+  // ── Boarded Check Validation (Alighting) ────────────────────────────────────
+  if (scanType === 'alighting') {
     if (!boardedData) {
       return { status: 'error', message: 'Passenger not boarded on this trip' };
     }
-    if (currentDestination && card.destination) {
-      const normalizedCardDest = card.destination.toLowerCase().trim();
-      const normalizedCurrentDest = currentDestination.toLowerCase().trim();
-      const isDestinationMatch = normalizedCardDest === normalizedCurrentDest || 
-                                 normalizedCardDest.includes(normalizedCurrentDest) ||
-                                 normalizedCurrentDest.includes(normalizedCardDest);
-      
-      if (!isDestinationMatch) {
-        destinationMismatchOccurred = true;
-        await supabase.from('fare_irregularities').insert({
-          trip_id: tripId,
-          type: 'other',
-          description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
-          detected_at: new Date().toISOString(),
-        });
-        console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
-      }
-    }
   }
 
-  if (card.status !== 'active') {
-    return { status: 'qr_inactive' };
+  // ── Destination Mismatch Validation (Alighting) ──────────────────────────────
+  let destinationMismatchOccurred = false;
+  if (scanType === 'alighting' && currentDestination && card.destination) {
+    const normalizedCardDest = card.destination.toLowerCase().trim();
+    const normalizedCurrentDest = currentDestination.toLowerCase().trim();
+    const isDestinationMatch = normalizedCardDest === normalizedCurrentDest ||
+                               normalizedCardDest.includes(normalizedCurrentDest) ||
+                               normalizedCurrentDest.includes(normalizedCardDest);
+
+    if (!isDestinationMatch) {
+      destinationMismatchOccurred = true;
+      await supabase.from('fare_irregularities').insert({
+        trip_id: tripId,
+        conductor_id: conductorId,
+        card_uid: card.card_uid,
+        passenger_id: boardedData?.id,
+        type: 'other',
+        description: `Destination mismatch: Card destination "${card.destination}" vs actual alighting stop "${currentDestination}". Passenger: ${card.owner_name || card.card_uid}`,
+        detected_at: new Date().toISOString(),
+        destination_stop: card.destination,
+        current_stop: currentDestination,
+        notes: `Boarded at: ${boardedData?.boarding_stop || 'Unknown'}`,
+      });
+      console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
+    }
   }
 
   // Calculate fare using matrix if boarding stop and destination are provided
@@ -649,8 +524,14 @@ async function processQRCard(
       card_id: card.id,
       trip_id: tripId,
       type: 'fare_validation',
+      transaction_type: 'fare_validation',
+      fare_amount: fare,
+      discount_amount: card.passenger_type === 'student' || card.passenger_type === 'senior_citizen' || card.passenger_type === 'pwd' ? fare * 0.20 : 0,
       amount: totalFare,
+      final_amount: totalFare,
       channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
+      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : paymentMethod === 'card' ? 'qr_card' : 'qr_card',
+      status: 'completed',
       staff_id: conductorId,
       baggage_category: baggageCategory || null,
       baggage_weight: baggageWeight || null,
@@ -695,6 +576,26 @@ async function processQRCard(
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
 
+    // Queue SMS notification if card has contact number
+    if (card.contact_number) {
+      try {
+        await smsService.queueAlightingSMS(card.contact_number, {
+          passengerName: card.owner_name || 'Passenger',
+          tripSummary: {
+            route: 'CommutAI Route',
+            boardingPoint: boardedData.boarding_stop || 'Unknown',
+            destination: currentDestination || card.destination || 'Unknown',
+            fare: 0, // Fare already paid at boarding
+          },
+          tripId: tripId,
+        });
+        console.log('[FareService] Alighting SMS queued for', card.contact_number);
+      } catch (smsError) {
+        console.error('[FareService] Failed to queue alighting SMS:', smsError);
+        // Don't fail the alighting if SMS fails
+      }
+    }
+
     return {
       status: 'qr_pass',
       newBalance: card.balance,
@@ -725,12 +626,63 @@ async function processTemporaryTicket(
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'cash',
   boardingStop?: string,
 ): Promise<ScanResult> {
-  // Check for fake QR
+  // ── Basic Ticket Format Validation ────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 4) {
     return { status: 'qr_fake', reason: 'Invalid ticket format' };
   }
 
-  // Find the most recent active (not yet alighted) boarding for this ticket on this trip
+  // ── Ticket Status Validation ──────────────────────────────────────────────────
+  if (ticket.status !== 'issued') {
+    return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
+  }
+
+  // ── Trip Status Validation ───────────────────────────────────────────────────
+  const { data: trip } = await supabase
+    .from('trips')
+    .select('status, ended_at')
+    .eq('id', tripId)
+    .single();
+
+  if (!trip) {
+    return { status: 'error', message: 'Trip not found' };
+  }
+
+  if (trip.status !== 'in_progress') {
+    return { status: 'error', message: `Trip is ${trip.status}. Cannot process scan.` };
+  }
+
+  // ── Onboarding Validations ───────────────────────────────────────────────────
+  if (scanType === 'onboarding') {
+    // Validate boarding stop is provided
+    if (!boardingStop) {
+      return { status: 'error', message: 'Boarding location is required. Please select your current stop.' };
+    }
+
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Destination is required. Please select passenger destination.' };
+    }
+
+    // Validate payment method
+    if (!['cash', 'gcash'].includes(paymentMethod)) {
+      return { status: 'error', message: 'Invalid payment method for temporary ticket. Only cash or GCash allowed.' };
+    }
+
+    // Validate baggage fee matches category
+    if (baggageCategory && baggageFee === undefined) {
+      return { status: 'error', message: 'Baggage fee required when baggage category is selected.' };
+    }
+  }
+
+  // ── Alighting Validations ────────────────────────────────────────────────────
+  if (scanType === 'alighting') {
+    // Validate destination is provided
+    if (!currentDestination) {
+      return { status: 'error', message: 'Alighting location is required.' };
+    }
+  }
+
+  // ── Find Boarded Passenger ─────────────────────────────────────────────────
   const boardedPassengerResult = await supabase
     .from('boarded_passengers')
     .select('id, alighted_at, boarding_stop')
@@ -743,13 +695,10 @@ async function processTemporaryTicket(
 
   const boardedData = boardedPassengerResult.data;
 
+  // ── Duplicate Scan Validation (Onboarding) ─────────────────────────────────
   if (scanType === 'onboarding') {
     if (boardedData) {
       return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
-    }
-
-    if (ticket.status !== 'issued') {
-      return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
     }
 
     const { error: updateErr } = await supabase
@@ -764,7 +713,7 @@ async function processTemporaryTicket(
     if (updateErr) {
       return { status: 'error', message: `Failed to validate ticket: ${updateErr.message}` };
     }
-    
+
     // Invalidate cache for this ticket after validation
     cache.delete(CacheKeys.ticket(ticket.ticket_uid));
     console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
@@ -773,12 +722,19 @@ async function processTemporaryTicket(
     const totalFare = baseFare + (baggageFee || 0);
 
     const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
+    const txPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'cash';
     const { error: txErr } = await supabase.from('transactions').insert({
       temp_ticket_id: ticket.id,
       trip_id: tripId,
       type: 'fare_validation',
+      transaction_type: 'fare_validation',
+      fare_amount: baseFare,
+      discount_amount: 0,
       amount: totalFare,
+      final_amount: totalFare,
       channel: txChannel,
+      payment_method: txPaymentMethod,
+      status: 'completed',
       staff_id: conductorId,
       baggage_category: baggageCategory || null,
       baggage_weight: baggageWeight || null,
@@ -823,6 +779,9 @@ async function processTemporaryTicket(
     if (alightErr) {
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
+
+    // Note: Temporary tickets don't have contact numbers, so no SMS is sent
+    // To enable SMS for temporary tickets, add contact_number field to temporary_tickets table
 
     return {
       status: 'ticket_validated',

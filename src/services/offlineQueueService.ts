@@ -624,14 +624,21 @@ class OfflineQueueService {
       // Phase 2: Create transaction if fare was collected
       const totalAmount = (scan.fare || 0) + (scan.baggageFee || 0);
       if (totalAmount > 0 && passengerId) {
+        const txPaymentMethod = scan.paymentMethod === 'cash' ? 'cash' : scan.paymentMethod === 'gcash' ? 'gcash' : tempTicketId ? 'cash' : 'qr_card';
         const { error: txError } = await supabase.from('transactions').insert({
           trip_id: scan.tripId,
           card_id: cardId ?? null,
           temp_ticket_id: tempTicketId ?? null,
-          amount: totalAmount,
-          baggage_fee: scan.baggageFee || null,
           type: 'fare_validation',
+          transaction_type: 'fare_validation',
+          fare_amount: scan.fare || 0,
+          discount_amount: 0,
+          amount: totalAmount,
+          final_amount: totalAmount,
+          baggage_fee: scan.baggageFee || null,
           channel: scan.paymentMethod === 'cash' ? 'cash' : scan.paymentMethod === 'gcash' ? 'gcash' : 'offline_sync',
+          payment_method: txPaymentMethod,
+          status: 'completed',
           created_at: scan.timestamp,
         });
 
@@ -663,11 +670,13 @@ class OfflineQueueService {
       .insert({
         phone_number: sms.phoneNumber,
         message: sms.message,
-        type: sms.type,
+        sms_type: sms.type,
         priority: sms.priority,
         related_id: sms.relatedId,
         trip_id: sms.tripId,
         status: 'pending',
+        retry_count: 0,
+        max_retries: 3,
         created_at: sms.timestamp,
       });
 
