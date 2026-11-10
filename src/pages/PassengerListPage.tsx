@@ -105,6 +105,54 @@ const PassengerListPage: React.FC = () => {
     'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
   >('fare_evasion');
 
+  const IRREGULARITY_DESCRIPTIONS: Record<string, string[]> = {
+    fare_evasion: [
+      'Passenger boarded without paying fare',
+      'Passenger refused to pay after boarding',
+      'Passenger ran off without paying',
+      'Passenger pretending to have already paid',
+    ],
+    unauthorized_passenger: [
+      'Passenger has no valid card or ticket',
+      'Passenger using an expired card',
+      'Passenger using a suspended card',
+      'Minor traveling alone without guardian consent',
+    ],
+    wrong_route: [
+      'Passenger boarded the wrong bus route',
+      'Card is registered for a different route',
+      'Passenger confused about the destination',
+    ],
+    card_sharing: [
+      'Two passengers using the same QR card',
+      'Card passed between passengers after boarding',
+      'Multiple boardings detected for the same card',
+    ],
+    overshooting: [
+      'Passenger traveled past their designated stop',
+      'Passenger refused to alight at their destination',
+      'Passenger still onboard after final stop',
+    ],
+    underpayment: [
+      'Passenger paid less than the required fare',
+      'Discounted fare used without valid ID',
+      'Student/PWD/Senior discount misused',
+      'Fare balance deducted incorrectly',
+    ],
+    passenger_dispute: [
+      'Passenger arguing about fare amount',
+      'Passenger disputing their destination stop',
+      'Altercation between passengers',
+      'Passenger threatening or harassing conductor',
+    ],
+    other: [
+      'Suspicious behavior observed',
+      'Passenger causing disturbance',
+      'Unruly or drunk passenger',
+      'Other violation not listed above',
+    ],
+  };
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const { currentTrip, currentBus, isRestoringTrip, decrementCurrentPassengers } = useApp();
@@ -407,7 +455,6 @@ const PassengerListPage: React.FC = () => {
         location_lat: currentLocation?.lat,
         location_lng: currentLocation?.lng,
         destination_stop: passengerToReport.destination_stop,
-        boarding_stop: passengerToReport.boarding_stop,
         notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}`,
       });
 
@@ -1161,10 +1208,13 @@ const PassengerListPage: React.FC = () => {
               </label>
               <select
                 value={irregularityType}
-                onChange={(e) => setIrregularityType(e.target.value as
-                    'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
-                    'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
-                  )}
+                onChange={(e) => {
+                    setIrregularityType(e.target.value as
+                      'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
+                      'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
+                    );
+                    setIrregularityReason(''); // reset description when type changes
+                  }}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -1188,7 +1238,7 @@ const PassengerListPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Reason Text Area */}
+            {/* Description Dropdown */}
             <div style={{ marginBottom: 18 }}>
               <label style={{
                 display: 'block',
@@ -1199,30 +1249,33 @@ const PassengerListPage: React.FC = () => {
               }}>
                 Describe the Issue <span style={{ color: '#EF4444' }}>*</span>
               </label>
-              <textarea
+              <select
                 value={irregularityReason}
                 onChange={(e) => setIrregularityReason(e.target.value)}
-                placeholder="E.g., Passenger attempting to travel without payment, suspicious card sharing, refusal to show ticket..."
-                rows={4}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1.5px solid var(--glass-border)',
+                  border: `1.5px solid ${irregularityReason ? 'var(--color-primary)' : 'var(--glass-border)'}`,
                   background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
+                  color: irregularityReason ? 'var(--text-primary)' : 'var(--text-tertiary)',
                   fontSize: '0.85rem',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
+                  fontWeight: 600,
+                  cursor: 'pointer',
                 }}
-              />
+              >
+                <option value="">— Select a description —</option>
+                {(IRREGULARITY_DESCRIPTIONS[irregularityType] || []).map((desc) => (
+                  <option key={desc} value={desc}>{desc}</option>
+                ))}
+              </select>
               <p style={{
                 margin: '6px 0 0',
                 fontSize: '0.72rem',
                 color: 'var(--text-tertiary)',
                 fontStyle: 'italic',
               }}>
-                Be specific. This report will be logged with timestamp and GPS location.
+                This report will be logged with timestamp and GPS location.
               </p>
             </div>
 
