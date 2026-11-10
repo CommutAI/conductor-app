@@ -443,12 +443,18 @@ const PassengerListPage: React.FC = () => {
         console.warn('[PassengerListPage] Could not get GPS location for irregularity report');
       }
 
+      // Validate passenger_id — local offline IDs (e.g. "local_123_abc") are
+      // not valid UUIDs. Only pass the ID if it looks like a real DB UUID.
+      const isValidUuid = (val: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const passengerDbId = isValidUuid(passengerToReport.id) ? passengerToReport.id : null;
+
       // Insert irregularity report
       const { error } = await supabase.from('fare_irregularities').insert({
         trip_id: currentTrip.id,
         conductor_id: conductorId,
         card_uid: passengerToReport.card_uid,
-        passenger_id: passengerToReport.id,
+        passenger_id: passengerDbId,
         type: irregularityType,
         description: `Conductor report: ${irregularityReason}`,
         detected_at: new Date().toISOString(),
@@ -456,7 +462,7 @@ const PassengerListPage: React.FC = () => {
         location_lng: currentLocation?.lng,
         boarding_stop: passengerToReport.boarding_stop,
         destination_stop: passengerToReport.destination_stop,
-        notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}`,
+        notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}${passengerDbId ? '' : ' (offline boarding — no DB passenger ID)'}`,
       });
 
       if (error) {
