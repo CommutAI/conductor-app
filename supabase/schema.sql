@@ -36,7 +36,20 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE irregularity_type AS ENUM ('double_scan', 'count_mismatch', 'fare_evasion', 'destination_overstay', 'missed_alighting', 'other');
+  CREATE TYPE irregularity_type AS ENUM (
+    'double_scan',
+    'count_mismatch',
+    'fare_evasion',
+    'destination_overstay',
+    'missed_alighting',
+    'unauthorized_passenger',
+    'wrong_route',
+    'card_sharing',
+    'overshooting',
+    'underpayment',
+    'passenger_dispute',
+    'other'
+  );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────

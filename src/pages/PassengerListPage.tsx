@@ -100,7 +100,10 @@ const PassengerListPage: React.FC = () => {
   const [passengerToReport, setPassengerToReport] = useState<BoardedPassengerItem | null>(null);
   const [reportingInProgress, setReportingInProgress] = useState(false);
   const [irregularityReason, setIrregularityReason] = useState('');
-  const [irregularityType, setIrregularityType] = useState<'fare_evasion' | 'other'>('fare_evasion');
+  const [irregularityType, setIrregularityType] = useState<
+    'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
+    'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
+  >('fare_evasion');
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -1158,7 +1161,10 @@ const PassengerListPage: React.FC = () => {
               </label>
               <select
                 value={irregularityType}
-                onChange={(e) => setIrregularityType(e.target.value as 'fare_evasion' | 'other')}
+                onChange={(e) => setIrregularityType(e.target.value as
+                    'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
+                    'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
+                  )}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -1171,8 +1177,14 @@ const PassengerListPage: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                <option value="fare_evasion">Fare Evasion</option>
-                <option value="other">Other Violation</option>
+                <option value="fare_evasion">🚫 Fare Evasion</option>
+                <option value="unauthorized_passenger">🪪 Unauthorized Passenger</option>
+                <option value="wrong_route">🗺️ Wrong Route</option>
+                <option value="card_sharing">💳 Card Sharing</option>
+                <option value="overshooting">📍 Overshooting</option>
+                <option value="underpayment">💰 Underpayment</option>
+                <option value="passenger_dispute">⚠️ Passenger Dispute</option>
+                <option value="other">📝 Other Violation</option>
               </select>
             </div>
 
