@@ -454,6 +454,7 @@ const PassengerListPage: React.FC = () => {
         detected_at: new Date().toISOString(),
         location_lat: currentLocation?.lat,
         location_lng: currentLocation?.lng,
+        boarding_stop: passengerToReport.boarding_stop,
         destination_stop: passengerToReport.destination_stop,
         notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}`,
       });
