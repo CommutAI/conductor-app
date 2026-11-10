@@ -187,13 +187,20 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
   return calculateFare(DEFAULT_FARE, type).finalFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
 }
 
-/** Validate if a destination exists in the fare matrix */
+/** Validate if a destination exists in the fare matrix (fuzzy match) */
 function isValidDestination(destination: string): boolean {
-  const allDestinations = new Set([
-    ...fareMatrixData.map(item => item.route_from),
-    ...fareMatrixData.map(item => item.route_to)
-  ]);
-  return allDestinations.has(destination);
+  const normalized = destination.toLowerCase().trim();
+  for (const item of fareMatrixData) {
+    if (
+      item.route_from.toLowerCase().trim().includes(normalized) ||
+      normalized.includes(item.route_from.toLowerCase().trim()) ||
+      item.route_to.toLowerCase().trim().includes(normalized) ||
+      normalized.includes(item.route_to.toLowerCase().trim())
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Get all unique destinations from bus stops */
