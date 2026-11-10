@@ -187,15 +187,6 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
   return calculateFare(DEFAULT_FARE, type).finalFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
 }
 
-/** Validate if a destination exists in the fare matrix */
-function isValidDestination(destination: string): boolean {
-  const allDestinations = new Set([
-    ...fareMatrixData.map(item => item.route_from),
-    ...fareMatrixData.map(item => item.route_to)
-  ]);
-  return allDestinations.has(destination);
-}
-
 /** Get all unique destinations from bus stops */
 function getAvailableDestinations(): string[] {
   return busStopsData
@@ -593,13 +584,6 @@ const ScanPage: React.FC = () => {
           return true;
         }
 
-        // Validate destination exists in fare matrix (only if destination is set)
-        if (cachedTicket.destination && !isValidDestination(cachedTicket.destination)) {
-          setFailedMsg(`Invalid destination: ${cachedTicket.destination}`);
-          setScanState('failed');
-          return true;
-        }
-        
         setPendingScan({
           code: scannedCode,
           balance: cachedTicket.fare_amount,
@@ -626,13 +610,6 @@ const ScanPage: React.FC = () => {
       if (cachedCard) {
         if (cachedCard.status !== 'active') {
           setFailedMsg('Card is inactive');
-          setScanState('failed');
-          return true;
-        }
-
-        // Validate destination exists in fare matrix (only if destination is set)
-        if (cachedCard.destination && !isValidDestination(cachedCard.destination)) {
-          setFailedMsg(`Invalid destination: ${cachedCard.destination}`);
           setScanState('failed');
           return true;
         }
@@ -799,13 +776,6 @@ const ScanPage: React.FC = () => {
             return;
           }
 
-          // Validate destination exists in fare matrix (only if destination is set)
-          if (ticket.destination && !isValidDestination(ticket.destination)) {
-            setFailedMsg(`Invalid destination: ${ticket.destination}`);
-            setScanState('failed');
-            return;
-          }
-
           const presetTicketDest = ticket.destination || '';
           setPendingScan({
             code: scannedCode,
@@ -888,13 +858,6 @@ const ScanPage: React.FC = () => {
           setLastDetectedCode(scannedCode);
           setCrossModeAction('prompt_alight');
           setFailedMsg('Already boarded on this trip');
-          setScanState('failed');
-          return;
-        }
-
-        // Validate destination exists in fare matrix (only if destination is set)
-        if (card.destination && !isValidDestination(card.destination)) {
-          setFailedMsg(`Invalid destination: ${card.destination}`);
           setScanState('failed');
           return;
         }

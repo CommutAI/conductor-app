@@ -100,7 +100,58 @@ const PassengerListPage: React.FC = () => {
   const [passengerToReport, setPassengerToReport] = useState<BoardedPassengerItem | null>(null);
   const [reportingInProgress, setReportingInProgress] = useState(false);
   const [irregularityReason, setIrregularityReason] = useState('');
-  const [irregularityType, setIrregularityType] = useState<'fare_evasion' | 'other'>('fare_evasion');
+  const [irregularityType, setIrregularityType] = useState<
+    'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
+    'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
+  >('fare_evasion');
+
+  const IRREGULARITY_DESCRIPTIONS: Record<string, string[]> = {
+    fare_evasion: [
+      'Passenger boarded without paying fare',
+      'Passenger refused to pay after boarding',
+      'Passenger ran off without paying',
+      'Passenger pretending to have already paid',
+    ],
+    unauthorized_passenger: [
+      'Passenger has no valid card or ticket',
+      'Passenger using an expired card',
+      'Passenger using a suspended card',
+      'Minor traveling alone without guardian consent',
+    ],
+    wrong_route: [
+      'Passenger boarded the wrong bus route',
+      'Card is registered for a different route',
+      'Passenger confused about the destination',
+    ],
+    card_sharing: [
+      'Two passengers using the same QR card',
+      'Card passed between passengers after boarding',
+      'Multiple boardings detected for the same card',
+    ],
+    overshooting: [
+      'Passenger traveled past their designated stop',
+      'Passenger refused to alight at their destination',
+      'Passenger still onboard after final stop',
+    ],
+    underpayment: [
+      'Passenger paid less than the required fare',
+      'Discounted fare used without valid ID',
+      'Student/PWD/Senior discount misused',
+      'Fare balance deducted incorrectly',
+    ],
+    passenger_dispute: [
+      'Passenger arguing about fare amount',
+      'Passenger disputing their destination stop',
+      'Altercation between passengers',
+      'Passenger threatening or harassing conductor',
+    ],
+    other: [
+      'Suspicious behavior observed',
+      'Passenger causing disturbance',
+      'Unruly or drunk passenger',
+      'Other violation not listed above',
+    ],
+  };
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -392,20 +443,26 @@ const PassengerListPage: React.FC = () => {
         console.warn('[PassengerListPage] Could not get GPS location for irregularity report');
       }
 
+      // Validate passenger_id — local offline IDs (e.g. "local_123_abc") are
+      // not valid UUIDs. Only pass the ID if it looks like a real DB UUID.
+      const isValidUuid = (val: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const passengerDbId = isValidUuid(passengerToReport.id) ? passengerToReport.id : null;
+
       // Insert irregularity report
       const { error } = await supabase.from('fare_irregularities').insert({
         trip_id: currentTrip.id,
         conductor_id: conductorId,
         card_uid: passengerToReport.card_uid,
-        passenger_id: passengerToReport.id,
+        passenger_id: passengerDbId,
         type: irregularityType,
         description: `Conductor report: ${irregularityReason}`,
         detected_at: new Date().toISOString(),
         location_lat: currentLocation?.lat,
         location_lng: currentLocation?.lng,
-        destination_stop: passengerToReport.destination_stop,
         boarding_stop: passengerToReport.boarding_stop,
-        notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}`,
+        destination_stop: passengerToReport.destination_stop,
+        notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}${passengerDbId ? '' : ' (offline boarding — no DB passenger ID)'}`,
       });
 
       if (error) {
@@ -1158,7 +1215,13 @@ const PassengerListPage: React.FC = () => {
               </label>
               <select
                 value={irregularityType}
-                onChange={(e) => setIrregularityType(e.target.value as 'fare_evasion' | 'other')}
+                onChange={(e) => {
+                    setIrregularityType(e.target.value as
+                      'fare_evasion' | 'unauthorized_passenger' | 'wrong_route' |
+                      'card_sharing' | 'overshooting' | 'underpayment' | 'passenger_dispute' | 'other'
+                    );
+                    setIrregularityReason(''); // reset description when type changes
+                  }}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -1171,12 +1234,18 @@ const PassengerListPage: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                <option value="fare_evasion">Fare Evasion</option>
-                <option value="other">Other Violation</option>
+                <option value="fare_evasion">🚫 Fare Evasion</option>
+                <option value="unauthorized_passenger">🪪 Unauthorized Passenger</option>
+                <option value="wrong_route">🗺️ Wrong Route</option>
+                <option value="card_sharing">💳 Card Sharing</option>
+                <option value="overshooting">📍 Overshooting</option>
+                <option value="underpayment">💰 Underpayment</option>
+                <option value="passenger_dispute">⚠️ Passenger Dispute</option>
+                <option value="other">📝 Other Violation</option>
               </select>
             </div>
 
-            {/* Reason Text Area */}
+            {/* Description Dropdown */}
             <div style={{ marginBottom: 18 }}>
               <label style={{
                 display: 'block',
@@ -1187,30 +1256,33 @@ const PassengerListPage: React.FC = () => {
               }}>
                 Describe the Issue <span style={{ color: '#EF4444' }}>*</span>
               </label>
-              <textarea
+              <select
                 value={irregularityReason}
                 onChange={(e) => setIrregularityReason(e.target.value)}
-                placeholder="E.g., Passenger attempting to travel without payment, suspicious card sharing, refusal to show ticket..."
-                rows={4}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1.5px solid var(--glass-border)',
+                  border: `1.5px solid ${irregularityReason ? 'var(--color-primary)' : 'var(--glass-border)'}`,
                   background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
+                  color: irregularityReason ? 'var(--text-primary)' : 'var(--text-tertiary)',
                   fontSize: '0.85rem',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
+                  fontWeight: 600,
+                  cursor: 'pointer',
                 }}
-              />
+              >
+                <option value="">— Select a description —</option>
+                {(IRREGULARITY_DESCRIPTIONS[irregularityType] || []).map((desc) => (
+                  <option key={desc} value={desc}>{desc}</option>
+                ))}
+              </select>
               <p style={{
                 margin: '6px 0 0',
                 fontSize: '0.72rem',
                 color: 'var(--text-tertiary)',
                 fontStyle: 'italic',
               }}>
-                Be specific. This report will be logged with timestamp and GPS location.
+                This report will be logged with timestamp and GPS location.
               </p>
             </div>
 

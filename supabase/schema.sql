@@ -36,7 +36,20 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE irregularity_type AS ENUM ('double_scan', 'count_mismatch', 'fare_evasion', 'destination_overstay', 'missed_alighting', 'other');
+  CREATE TYPE irregularity_type AS ENUM (
+    'double_scan',
+    'count_mismatch',
+    'fare_evasion',
+    'destination_overstay',
+    'missed_alighting',
+    'unauthorized_passenger',
+    'wrong_route',
+    'card_sharing',
+    'overshooting',
+    'underpayment',
+    'passenger_dispute',
+    'other'
+  );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────
@@ -715,8 +728,9 @@ CREATE TABLE IF NOT EXISTS fare_irregularities (
   detected_at  TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
   location_lat DECIMAL(10, 8),
   location_lng DECIMAL(11, 8),
+  boarding_stop    TEXT,
   destination_stop TEXT,
-  current_stop TEXT,
+  current_stop     TEXT,
   distance_km  DECIMAL(10, 3),
   resolved     BOOLEAN            NOT NULL DEFAULT FALSE,
   resolved_by  UUID               REFERENCES staff_users (id),
@@ -1221,6 +1235,33 @@ CREATE INDEX IF NOT EXISTS idx_sms_queue_priority
   ON sms_queue(priority, created_at);
 
 -- ── 17. Realtime Publications ─────────────────────────────────────────────────
+-- Enable Realtime on all tables the app subscribes to.
+-- REPLICA IDENTITY FULL is required so UPDATE/DELETE payloads include old row data.
+
+ALTER TABLE trips              REPLICA IDENTITY FULL;
+ALTER TABLE boarded_passengers REPLICA IDENTITY FULL;
+ALTER TABLE passenger_counts   REPLICA IDENTITY FULL;
+ALTER TABLE fare_irregularities REPLICA IDENTITY FULL;
+ALTER TABLE emergency_alerts   REPLICA IDENTITY FULL;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'trips'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE trips;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'boarded_passengers'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE boarded_passengers;
+  END IF;
+END $$;
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
@@ -1245,24 +1286,6 @@ DO $$ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'emergency_alerts'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE emergency_alerts;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'trips'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE trips;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'boarded_passengers'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE boarded_passengers;
   END IF;
 END $$;
 
