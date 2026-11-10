@@ -185,20 +185,37 @@ class RealtimeService {
   }
 
   /**
-   * Subscribe to trips for a specific conductor or driver
+   * Subscribe to trips for a specific conductor or driver.
+   * Supabase Realtime only supports a single filter condition per channel,
+   * so we create two channels — one for conductor_id, one for driver_id —
+   * and merge their callbacks.
    */
   subscribeToTrips(staffId: string, callbacks: {
     onInsert?: (trip: any) => void;
     onUpdate?: (trip: any, oldTrip: any) => void;
     onDelete?: (trip: any) => void;
   }): () => void {
-    return this.subscribe({
+    const cleanupConductor = this.subscribe({
       table: 'trips',
-      filter: `conductor_id=eq.${staffId},driver_id=eq.${staffId}`,
+      filter: `conductor_id=eq.${staffId}`,
       onInsert: callbacks.onInsert,
       onUpdate: callbacks.onUpdate,
       onDelete: callbacks.onDelete,
     });
+
+    const cleanupDriver = this.subscribe({
+      table: 'trips',
+      filter: `driver_id=eq.${staffId}`,
+      onInsert: callbacks.onInsert,
+      onUpdate: callbacks.onUpdate,
+      onDelete: callbacks.onDelete,
+    });
+
+    // Return a combined cleanup that tears down both channels
+    return () => {
+      cleanupConductor();
+      cleanupDriver();
+    };
   }
 
   /**

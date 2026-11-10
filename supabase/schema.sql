@@ -1221,6 +1221,33 @@ CREATE INDEX IF NOT EXISTS idx_sms_queue_priority
   ON sms_queue(priority, created_at);
 
 -- ── 17. Realtime Publications ─────────────────────────────────────────────────
+-- Enable Realtime on all tables the app subscribes to.
+-- REPLICA IDENTITY FULL is required so UPDATE/DELETE payloads include old row data.
+
+ALTER TABLE trips              REPLICA IDENTITY FULL;
+ALTER TABLE boarded_passengers REPLICA IDENTITY FULL;
+ALTER TABLE passenger_counts   REPLICA IDENTITY FULL;
+ALTER TABLE fare_irregularities REPLICA IDENTITY FULL;
+ALTER TABLE emergency_alerts   REPLICA IDENTITY FULL;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'trips'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE trips;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'boarded_passengers'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE boarded_passengers;
+  END IF;
+END $$;
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
@@ -1245,24 +1272,6 @@ DO $$ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'emergency_alerts'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE emergency_alerts;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'trips'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE trips;
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'boarded_passengers'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE boarded_passengers;
   END IF;
 END $$;
 
