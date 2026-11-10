@@ -96,6 +96,12 @@ const PassengerListPage: React.FC = () => {
   const [passengerToCancel, setPassengerToCancel] = useState<BoardedPassengerItem | null>(null);
   const [cancellingInProgress, setCancellingInProgress] = useState(false);
 
+  // Report irregularity modal
+  const [passengerToReport, setPassengerToReport] = useState<BoardedPassengerItem | null>(null);
+  const [reportingInProgress, setReportingInProgress] = useState(false);
+  const [irregularityReason, setIrregularityReason] = useState('');
+  const [irregularityType, setIrregularityType] = useState<'fare_evasion' | 'other'>('fare_evasion');
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const { currentTrip, currentBus, isRestoringTrip, decrementCurrentPassengers } = useApp();
@@ -120,8 +126,8 @@ const PassengerListPage: React.FC = () => {
           .from('boarded_passengers')
           .select(`
             id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop,
-            qr_cards(card_uid, passenger_type, destination, owner_name),
-            temporary_tickets(ticket_uid, passenger_type, destination, fare_amount)
+            qr_cards!card_id(card_uid, passenger_type, destination, owner_name),
+            temporary_tickets!temp_ticket_id(ticket_uid, passenger_type, destination, fare_amount)
           `)
           .eq('trip_id', currentTrip.id)
           .order('boarded_at', { ascending: false });
@@ -357,6 +363,66 @@ const PassengerListPage: React.FC = () => {
   async function handleRefresh(event: CustomEvent) {
     await loadData();
     (event.target as HTMLIonRefresherElement).complete();
+  }
+
+  async function handleReportIrregularity() {
+    if (!passengerToReport || !currentTrip || !irregularityReason.trim()) return;
+    
+    setReportingInProgress(true);
+    try {
+      if (!isOnline) {
+        alert('Reporting irregularities requires internet connection');
+        return;
+      }
+
+      const { data: profileData } = await supabase.auth.getUser();
+      const conductorId = profileData?.user?.id;
+
+      // Get current location if available
+      let currentLocation: { lat: number; lng: number } | null = null;
+      try {
+        if ((window as any).Capacitor?.Geolocation) {
+          const position = await (window as any).Capacitor.Geolocation.getCurrentPosition();
+          currentLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+        }
+      } catch (gpsErr) {
+        console.warn('[PassengerListPage] Could not get GPS location for irregularity report');
+      }
+
+      // Insert irregularity report
+      const { error } = await supabase.from('fare_irregularities').insert({
+        trip_id: currentTrip.id,
+        conductor_id: conductorId,
+        card_uid: passengerToReport.card_uid,
+        passenger_id: passengerToReport.id,
+        type: irregularityType,
+        description: `Conductor report: ${irregularityReason}`,
+        detected_at: new Date().toISOString(),
+        location_lat: currentLocation?.lat,
+        location_lng: currentLocation?.lng,
+        destination_stop: passengerToReport.destination_stop,
+        boarding_stop: passengerToReport.boarding_stop,
+        notes: `Manually reported by conductor. Passenger type: ${passengerToReport.passenger_type}, Payment: ${passengerToReport.payment_method}`,
+      });
+
+      if (error) {
+        throw new Error(`Failed to report irregularity: ${error.message}`);
+      }
+
+      setToastMessage(`Irregularity reported for ${passengerToReport.card_uid}`);
+      setTimeout(() => setToastMessage(null), 3000);
+      setPassengerToReport(null);
+      setIrregularityReason('');
+      setIrregularityType('fare_evasion');
+    } catch (err: any) {
+      console.error('[PassengerListPage] Report irregularity error:', err);
+      alert(`Error reporting irregularity: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setReportingInProgress(false);
+    }
   }
 
   // Filter passengers currently on board
@@ -650,7 +716,28 @@ const PassengerListPage: React.FC = () => {
                                   <span>{formatRelativeTime(passenger.boarded_at)}</span>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 8 }}>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPassengerToReport(passenger)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '6px 14px',
+                                      borderRadius: 18,
+                                      border: '1.5px solid rgba(245, 158, 11, 0.4)',
+                                      background: 'rgba(245, 158, 11, 0.1)',
+                                      color: '#F59E0B',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                  >
+                                    <AlertTriangle size={13} />
+                                    Report
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => setPassengerToCancel(passenger)}
@@ -991,6 +1078,168 @@ const PassengerListPage: React.FC = () => {
                 icon={<RotateCcw size={17} />}
               >
                 {cancellingInProgress ? 'Cancelling…' : 'Cancel & Refund'}
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+      </AnimatedModal>
+
+      {/* ── Report Irregularity Modal ──────────────────────────────── */}
+      <AnimatedModal
+        isOpen={!!passengerToReport}
+        onClose={() => {
+          setPassengerToReport(null);
+          setIrregularityReason('');
+          setIrregularityType('fare_evasion');
+        }}
+        title="Report Irregularity"
+        variant="center"
+      >
+        {passengerToReport && (
+          <div style={{ padding: '6px 4px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                background: 'rgba(245, 158, 11, 0.14)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 10px',
+              }}>
+                <AlertTriangle size={26} color="#F59E0B" />
+              </div>
+              <h4 style={{ margin: '0 0 4px', fontSize: '1.1rem', fontWeight: 800 }}>
+                Report Irregularity
+              </h4>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Document suspicious activity or fare violation
+              </p>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-tertiary)',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid var(--glass-border)',
+              marginBottom: 18,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Card / Ticket</span>
+                <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {passengerToReport.card_uid}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Passenger Type</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  {passengerTypeLabel(passengerToReport.passenger_type)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Destination</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  {passengerToReport.destination_stop || 'Open Stop'}
+                </span>
+              </div>
+            </div>
+
+            {/* Irregularity Type Selector */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                marginBottom: 8,
+              }}>
+                Irregularity Type
+              </label>
+              <select
+                value={irregularityType}
+                onChange={(e) => setIrregularityType(e.target.value as 'fare_evasion' | 'other')}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1.5px solid var(--glass-border)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="fare_evasion">Fare Evasion</option>
+                <option value="other">Other Violation</option>
+              </select>
+            </div>
+
+            {/* Reason Text Area */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                marginBottom: 8,
+              }}>
+                Describe the Issue <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <textarea
+                value={irregularityReason}
+                onChange={(e) => setIrregularityReason(e.target.value)}
+                placeholder="E.g., Passenger attempting to travel without payment, suspicious card sharing, refusal to show ticket..."
+                rows={4}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1.5px solid var(--glass-border)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                }}
+              />
+              <p style={{
+                margin: '6px 0 0',
+                fontSize: '0.72rem',
+                color: 'var(--text-tertiary)',
+                fontStyle: 'italic',
+              }}>
+                Be specific. This report will be logged with timestamp and GPS location.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <PrimaryButton
+                onClick={() => {
+                  setPassengerToReport(null);
+                  setIrregularityReason('');
+                  setIrregularityType('fare_evasion');
+                }}
+                variant="ghost"
+                style={{ flex: 1 }}
+                disabled={reportingInProgress}
+              >
+                Cancel
+              </PrimaryButton>
+              <PrimaryButton
+                onClick={handleReportIrregularity}
+                style={{
+                  flex: 1.5,
+                  background: irregularityReason.trim() 
+                    ? 'linear-gradient(135deg, #F59E0B, #D97706)' 
+                    : 'var(--bg-tertiary)',
+                  color: irregularityReason.trim() ? '#ffffff' : 'var(--text-tertiary)',
+                }}
+                disabled={reportingInProgress || !irregularityReason.trim()}
+                icon={<AlertTriangle size={17} />}
+              >
+                {reportingInProgress ? 'Reporting…' : 'Submit Report'}
               </PrimaryButton>
             </div>
           </div>

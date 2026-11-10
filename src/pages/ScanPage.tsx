@@ -1236,15 +1236,49 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+          
+          // Log irregularity for duplicate boarding attempt
+          if (currentTrip && profile?.id && result.uid) {
+            // Try to get passenger_id from boarded_passengers
+            supabase
+              .from('boarded_passengers')
+              .select('id, card_id, temp_ticket_id')
+              .eq('trip_id', currentTrip.id)
+              .is('alighted_at', null)
+              .then(({ data: boardedData }) => {
+                const passenger = boardedData?.find(p => 
+                  (result.type === 'qr_card' && p.card_id) || 
+                  (result.type === 'temp_ticket' && p.temp_ticket_id)
+                );
+
+                return supabase.from('fare_irregularities').insert({
+                  trip_id: currentTrip.id,
+                  conductor_id: profile.id,
+                  card_uid: result.uid,
+                  passenger_id: passenger?.id,
+                  type: 'double_scan',
+                  description: `Duplicate boarding attempt detected. Card/ticket "${result.uid}" attempted to board again on the same trip. Type: ${result.type}`,
+                  detected_at: new Date().toISOString(),
+                  location_lat: currentCoordinates?.lat,
+                  location_lng: currentCoordinates?.lng,
+                  notes: passenger ? 'Linked to active boarding record' : 'Could not link to boarding record',
+                });
+              })
+              .then(({ error }) => {
+                if (error) {
+                  console.error('[ScanPage] Error logging duplicate scan irregularity:', error);
+                } else {
+                  console.log('[ScanPage] Duplicate scan irregularity logged for:', result.uid);
+                }
+              });
+          }
           break;
         case 'qr_fail_balance':
-          setFailedMsg('Insufficient balance. Please select cash or GCash payment method.');
-          setScanState('failed');
-          setBaggageSelection(null);
-          setSelectedDestination('');
-    setSelectedPaymentMethod('');
-          setSelectedPaymentMethod('');
+          // Don't go to failed — keep pendingScan alive and switch payment to cash
+          setSelectedPaymentMethod('cash');
+          setScanState('pick_destination');
+          showNotification(`Insufficient balance (₱${result.balance.toFixed(2)}). Please pay via Cash or GCash.`, 'warning');
           break;
         case 'qr_inactive':
           setFailedMsg('Card is inactive');
@@ -1908,8 +1942,10 @@ const ScanPage: React.FC = () => {
         setScanState('idle');
       }, 1500);
     } else if (result.status === 'qr_fail_balance') {
-      setFailedMsg(`Insufficient balance ₱${result.balance.toFixed(2)} — need ₱${result.fare}`);
-      setScanState('failed');
+      // Shouldn't normally occur during alighting, but handle gracefully
+      setSelectedPaymentMethod('cash');
+      setScanState('pick_destination');
+      showNotification(`Insufficient balance (₱${result.balance.toFixed(2)}). Please pay via Cash or GCash.`, 'warning');
     } else if (result.status === 'error') {
       setFailedMsg(result.message);
       setScanState('failed');
@@ -2976,6 +3012,31 @@ const ScanPage: React.FC = () => {
                             <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                               Payment Method
                             </p>
+
+                            {/* ── Insufficient Balance Banner ── */}
+                            {isLowBalance && (
+                              <div style={{
+                                marginBottom: 10,
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                              }}>
+                                <AlertTriangle size={16} color="#EF4444" style={{ flexShrink: 0 }} />
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: '0 0 2px', fontSize: '0.78rem', fontWeight: 800, color: '#EF4444' }}>
+                                    Insufficient Balance
+                                  </p>
+                                  <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                    Card has ₱{pendingScan.balance.toFixed(2)}, needs ₱{currentTotalFare.toFixed(2)}. Switch to Cash or GCash below.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
                             <div style={{
                               display: 'grid',
                               gridTemplateColumns: pendingScan.isTicket ? '1fr 1fr' : '1fr 1fr 1fr',
@@ -3016,11 +3077,11 @@ const ScanPage: React.FC = () => {
                                 </button>
                               )}
 
-                              {/* Cash option - only for tickets or cards with zero balance */}
+                              {/* Cash option - available for tickets, low balance cards, or zero balance */}
                               <button
                                 type="button"
                                 onClick={() => handlePaymentMethodChange('cash')}
-                                disabled={!pendingScan.isTicket && pendingScan.balance > 0}
+                                disabled={!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance}
                                 style={{
                                   display: 'flex',
                                   flexDirection: 'column',
@@ -3028,15 +3089,15 @@ const ScanPage: React.FC = () => {
                                   justifyContent: 'center',
                                   padding: '10px 6px',
                                   borderRadius: 10,
-                                  border: `2px solid ${selectedPaymentMethod === 'cash' ? '#22C55E' : 'var(--glass-border)'}`,
-                                  background: selectedPaymentMethod === 'cash' ? 'rgba(34, 197, 94, 0.12)' : 'var(--bg-tertiary)',
-                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0) ? 'not-allowed' : 'pointer',
+                                  border: `2px solid ${selectedPaymentMethod === 'cash' ? '#22C55E' : isLowBalance ? 'rgba(34,197,94,0.5)' : 'var(--glass-border)'}`,
+                                  background: selectedPaymentMethod === 'cash' ? 'rgba(34, 197, 94, 0.12)' : isLowBalance ? 'rgba(34,197,94,0.06)' : 'var(--bg-tertiary)',
+                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance) ? 'not-allowed' : 'pointer',
                                   transition: 'all 0.15s ease',
-                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0) ? 0.4 : 1,
+                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance) ? 0.4 : 1,
                                 }}
                               >
-                                <Banknote size={18} color={selectedPaymentMethod === 'cash' ? '#16A34A' : 'var(--text-secondary)'} />
-                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'cash' ? '#16A34A' : 'var(--text-primary)' }}>
+                                <Banknote size={18} color={selectedPaymentMethod === 'cash' ? '#16A34A' : isLowBalance ? '#16A34A' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'cash' ? '#16A34A' : isLowBalance ? '#16A34A' : 'var(--text-primary)' }}>
                                   Cash
                                 </span>
                                 <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -3044,11 +3105,11 @@ const ScanPage: React.FC = () => {
                                 </span>
                               </button>
 
-                              {/* GCash option - only for tickets or cards with zero balance */}
+                              {/* GCash option - available for tickets, low balance cards, or zero balance */}
                               <button
                                 type="button"
                                 onClick={() => handlePaymentMethodChange('gcash')}
-                                disabled={!pendingScan.isTicket && pendingScan.balance > 0}
+                                disabled={!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance}
                                 style={{
                                   display: 'flex',
                                   flexDirection: 'column',
@@ -3056,15 +3117,15 @@ const ScanPage: React.FC = () => {
                                   justifyContent: 'center',
                                   padding: '10px 6px',
                                   borderRadius: 10,
-                                  border: `2px solid ${selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--glass-border)'}`,
-                                  background: selectedPaymentMethod === 'gcash' ? 'rgba(0, 125, 254, 0.12)' : 'var(--bg-tertiary)',
-                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0) ? 'not-allowed' : 'pointer',
+                                  border: `2px solid ${selectedPaymentMethod === 'gcash' ? '#007DFE' : isLowBalance ? 'rgba(0,125,254,0.5)' : 'var(--glass-border)'}`,
+                                  background: selectedPaymentMethod === 'gcash' ? 'rgba(0, 125, 254, 0.12)' : isLowBalance ? 'rgba(0,125,254,0.06)' : 'var(--bg-tertiary)',
+                                  cursor: (!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance) ? 'not-allowed' : 'pointer',
                                   transition: 'all 0.15s ease',
-                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0) ? 0.4 : 1,
+                                  opacity: (!pendingScan.isTicket && pendingScan.balance > 0 && !isLowBalance) ? 0.4 : 1,
                                 }}
                               >
-                                <Smartphone size={18} color={selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--text-secondary)'} />
-                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'gcash' ? '#007DFE' : 'var(--text-primary)' }}>
+                                <Smartphone size={18} color={selectedPaymentMethod === 'gcash' ? '#007DFE' : isLowBalance ? '#007DFE' : 'var(--text-secondary)'} />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'gcash' ? '#007DFE' : isLowBalance ? '#007DFE' : 'var(--text-primary)' }}>
                                   GCash
                                 </span>
                                 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#007DFE' }}>

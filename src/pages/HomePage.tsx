@@ -29,6 +29,7 @@ import { useNetwork } from '../context/NetworkContext';
 import { supabase } from '../supabaseClient';
 import { realtimeService } from '../services/realtimeService';
 import { isLikelyNetworkError } from '../utils/networkUtils';
+import { useDestinationAlerts } from '../hooks/useDestinationAlerts';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -73,6 +74,24 @@ const HomePage: React.FC = () => {
     loading: authLoading,
   } = useApp();
   const { isOnline, syncInProgress, lastSyncAt } = useNetwork();
+
+  // Destination proximity alerts and irregularity logging
+  useDestinationAlerts(
+    currentTrip?.id,
+    profile?.id,
+    currentLocation,
+    isOnline,
+    (destination, passengers, count) => {
+      const passengerList = passengers.join(', ');
+      const message = count === 1
+        ? `Approaching ${destination} - Passenger: ${passengerList}`
+        : `Approaching ${destination} - ${count} passengers: ${passengerList}`;
+      
+      setToastMessage(message);
+      setToastColor('warning');
+      setShowToast(true);
+    }
+  );
 
 
 
@@ -532,6 +551,23 @@ const HomePage: React.FC = () => {
       if (!isAllowedTime) {
         console.log('[HomePage] Auto-completing trip due to time restrictions');
         try {
+          // Check for count mismatch before completing trip
+          if (isOnline && aiPassengerCount > 0 && validatedCount > 0) {
+            const delta = aiPassengerCount - validatedCount;
+            if (Math.abs(delta) > 3) {
+              // Log count mismatch irregularity
+              await supabase.from('fare_irregularities').insert({
+                trip_id: currentTrip.id,
+                conductor_id: profile?.id,
+                type: 'count_mismatch',
+                description: `AI camera count (${aiPassengerCount}) differs from QR validated count (${validatedCount}) by ${delta > 0 ? '+' : ''}${delta} passengers at trip completion`,
+                detected_at: new Date().toISOString(),
+                notes: `Trip auto-completed at ${now.toLocaleTimeString()}. AI count: ${aiPassengerCount}, QR count: ${validatedCount}`,
+              });
+              console.warn('[HomePage] Count mismatch logged:', { aiCount: aiPassengerCount, validatedCount, delta });
+            }
+          }
+
           const { error } = await supabase
             .from('trips')
             .update({
@@ -561,6 +597,50 @@ const HomePage: React.FC = () => {
       clearInterval(timeCheckInterval);
     };
   }, [currentTrip, history, showNotification]);
+
+  // Monitor for count mismatch between AI camera and QR validated counts
+  useEffect(() => {
+    if (!currentTrip || !isOnline || aiPassengerCount === 0 || validatedCount === 0) return;
+
+    const delta = aiPassengerCount - validatedCount;
+    const mismatchThreshold = 5; // Higher threshold for real-time to avoid false positives
+
+    if (Math.abs(delta) > mismatchThreshold) {
+      // Debounce: only log if mismatch persists for 30 seconds
+      const debounceTimer = setTimeout(async () => {
+        console.warn('[HomePage] Persistent count mismatch detected:', { aiCount: aiPassengerCount, validatedCount, delta });
+        
+        try {
+          // Check if we already logged this mismatch recently (within last 5 minutes)
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const { data: recentMismatches } = await supabase
+            .from('fare_irregularities')
+            .select('id')
+            .eq('trip_id', currentTrip.id)
+            .eq('type', 'count_mismatch')
+            .gte('detected_at', fiveMinutesAgo);
+
+          if (!recentMismatches || recentMismatches.length === 0) {
+            // Log the irregularity
+            await supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile?.id,
+              type: 'count_mismatch',
+              description: `Real-time count discrepancy: AI camera count (${aiPassengerCount}) differs from QR validated count (${validatedCount}) by ${delta > 0 ? '+' : ''}${delta} passengers`,
+              detected_at: new Date().toISOString(),
+              notes: `Detected during active trip at ${new Date().toLocaleTimeString()}`,
+            });
+            
+            showNotification(`Passenger count mismatch detected: ${Math.abs(delta)} difference`, 'warning');
+          }
+        } catch (err) {
+          console.error('[HomePage] Error logging count mismatch:', err);
+        }
+      }, 30000); // 30 second debounce
+
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [aiPassengerCount, validatedCount, currentTrip, isOnline, profile?.id, showNotification]);
 
   const handleRefresh = useCallback(async (event: CustomEvent) => {
     setIsRefreshing(true);

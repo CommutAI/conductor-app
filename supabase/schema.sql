@@ -36,7 +36,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE irregularity_type AS ENUM ('double_scan', 'count_mismatch', 'fare_evasion', 'other');
+  CREATE TYPE irregularity_type AS ENUM ('double_scan', 'count_mismatch', 'fare_evasion', 'destination_overstay', 'missed_alighting', 'other');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── 1. Staff Users ────────────────────────────────────────────────────────────
@@ -707,12 +707,21 @@ CREATE TABLE IF NOT EXISTS gps_logs (
 CREATE TABLE IF NOT EXISTS fare_irregularities (
   id           UUID               PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id      UUID               NOT NULL REFERENCES trips (id) ON DELETE CASCADE,
+  conductor_id UUID               REFERENCES staff_users (id),
+  card_uid     TEXT,
+  passenger_id UUID,
   type         irregularity_type  NOT NULL,
   description  TEXT               NOT NULL,
   detected_at  TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
+  location_lat DECIMAL(10, 8),
+  location_lng DECIMAL(11, 8),
+  destination_stop TEXT,
+  current_stop TEXT,
+  distance_km  DECIMAL(10, 3),
   resolved     BOOLEAN            NOT NULL DEFAULT FALSE,
   resolved_by  UUID               REFERENCES staff_users (id),
-  resolved_at  TIMESTAMPTZ
+  resolved_at  TIMESTAMPTZ,
+  notes        TEXT
 );
 
 -- ── 11. Emergency Alerts ──────────────────────────────────────────────────────

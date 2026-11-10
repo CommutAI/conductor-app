@@ -470,9 +470,15 @@ async function processQRCard(
       destinationMismatchOccurred = true;
       await supabase.from('fare_irregularities').insert({
         trip_id: tripId,
+        conductor_id: conductorId,
+        card_uid: card.card_uid,
+        passenger_id: boardedData?.id,
         type: 'other',
-        description: `Destination mismatch: Card destination ${card.destination} vs alighting stop ${currentDestination}`,
+        description: `Destination mismatch: Card destination "${card.destination}" vs actual alighting stop "${currentDestination}". Passenger: ${card.owner_name || card.card_uid}`,
         detected_at: new Date().toISOString(),
+        destination_stop: card.destination,
+        current_stop: currentDestination,
+        notes: `Boarded at: ${boardedData?.boarding_stop || 'Unknown'}`,
       });
       console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
     }
