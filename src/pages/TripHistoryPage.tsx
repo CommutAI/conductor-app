@@ -167,44 +167,100 @@ const TripHistoryPage: React.FC = () => {
 
     // ── Online: fetch from Supabase then cache ────────────────────────────
     try {
+      // FIX 1: Fetch trips without JOIN to avoid FK ambiguity errors
+      // FIX 2: Filter to completed/cancelled only — in_progress trips belong in the
+      // active trip view, not history.
       let query = supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, bus_id`)
         .eq('conductor_id', profile.id)
+        .in('status', ['completed', 'cancelled'])
         .order('started_at', { ascending: false });
 
       if (segment === 'today') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        query = query.gte('started_at', today.toISOString()).lt('started_at', tomorrow.toISOString());
+        // FIX 4: Build the date range in UTC so it matches how Supabase stores timestamps,
+        // regardless of the device's local timezone (e.g. UTC+8 Philippines).
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+        const tomorrowUTC = new Date(todayUTC);
+        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+        query = query.gte('started_at', todayUTC.toISOString()).lt('started_at', tomorrowUTC.toISOString());
       }
 
-      const { data } = await query;
+      const { data, error: tripsError } = await query;
+      if (tripsError) throw tripsError;
 
-      const tripsWithStats = await Promise.all(
-        (data || []).map(async (trip: any) => {
-          const { data: txData } = await supabase.from('transactions').select('amount').eq('trip_id', trip.id);
-          const fareCollected = txData?.reduce((sum, tx) => sum + tx.amount, 0) || 0;
-          const { data: passengerData } = await supabase.from('boarded_passengers').select('id').eq('trip_id', trip.id);
-          const { data: irregData } = await supabase.from('fare_irregularities').select('id').eq('trip_id', trip.id);
+      const trips = data || [];
 
-          return {
-            id: trip.id,
-            started_at: trip.started_at,
-            ended_at: trip.ended_at,
-            status: trip.status,
-            route: (trip.buses as any).route,
-            plate_number: (trip.buses as any).plate_number,
-            starting_point: trip.starting_point,
-            end_point: trip.end_point,
-            passenger_count: passengerData?.length || 0,
-            fare_collected: fareCollected,
-            irregularities: irregData?.length || 0,
-          };
-        })
-      );
+      if (trips.length === 0) {
+        setTrips([]);
+        setIsFromCache(false);
+        saveTripHistoryCache(segment, []);
+        return;
+      }
+
+      // FIX 3: Batch all queries by IDs instead of N+1 per trip
+      const tripIds = trips.map((t: any) => t.id);
+      const busIds = [...new Set(trips.map((t: any) => t.bus_id).filter(Boolean))];
+
+      const [
+        { data: txRows, error: txError }, 
+        { data: passengerRows, error: passError }, 
+        { data: irregRows, error: irregError },
+        { data: busRows, error: busError }
+      ] = await Promise.all([
+        supabase.from('transactions').select('trip_id, amount').in('trip_id', tripIds),
+        supabase.from('boarded_passengers').select('id, trip_id').in('trip_id', tripIds),
+        supabase.from('fare_irregularities').select('id, trip_id').in('trip_id', tripIds),
+        busIds.length > 0 
+          ? supabase.from('buses').select('id, route, plate_number').in('id', busIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (txError) console.error('[TripHistory] Transaction query error:', txError);
+      if (passError) console.error('[TripHistory] Passenger query error:', passError);
+      if (irregError) console.error('[TripHistory] Irregularity query error:', irregError);
+      if (busError) console.error('[TripHistory] Bus query error:', busError);
+
+      console.log('[TripHistory] Fetched trips:', trips.length);
+      console.log('[TripHistory] Transactions fetched:', txRows?.length);
+      console.log('[TripHistory] Sample transaction:', txRows?.[0]);
+      console.log('[TripHistory] Passengers fetched:', passengerRows?.length);
+
+      // Build lookup maps for O(1) access per trip
+      const fareByTrip: Record<string, number> = {};
+      (txRows || []).forEach((tx: any) => {
+        fareByTrip[tx.trip_id] = (fareByTrip[tx.trip_id] || 0) + tx.amount;
+      });
+      const passengersByTrip: Record<string, number> = {};
+      (passengerRows || []).forEach((p: any) => {
+        passengersByTrip[p.trip_id] = (passengersByTrip[p.trip_id] || 0) + 1;
+      });
+      const irregsByTrip: Record<string, number> = {};
+      (irregRows || []).forEach((ir: any) => {
+        irregsByTrip[ir.trip_id] = (irregsByTrip[ir.trip_id] || 0) + 1;
+      });
+      const busById: Record<string, any> = {};
+      (busRows || []).forEach((b: any) => {
+        busById[b.id] = b;
+      });
+
+      const tripsWithStats = trips.map((trip: any) => {
+        const bus = busById[trip.bus_id];
+        return {
+          id: trip.id,
+          started_at: trip.started_at,
+          ended_at: trip.ended_at,
+          status: trip.status,
+          route: bus?.route ?? 'Unknown Route',
+          plate_number: bus?.plate_number ?? 'Unknown Plate',
+          starting_point: trip.starting_point,
+          end_point: trip.end_point,
+          passenger_count: passengersByTrip[trip.id] || 0,
+          fare_collected: fareByTrip[trip.id] || 0,
+          irregularities: irregsByTrip[trip.id] || 0,
+        };
+      });
 
       setTrips(tripsWithStats);
       setIsFromCache(false);
@@ -292,22 +348,37 @@ const TripHistoryPage: React.FC = () => {
     try {
       const { data: tripData } = await supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, bus_id`)
         .eq('id', tripId)
         .single();
 
       if (!tripData) { setLoadingDetails(false); return; }
 
-      const { data: passengers } = await supabase
+      // Fetch bus info separately to avoid FK ambiguity
+      const { data: busData } = await supabase
+        .from('buses')
+        .select('route, plate_number')
+        .eq('id', tripData.bus_id)
+        .maybeSingle();
+
+      const { data: passengers, error: passError } = await supabase
         .from('boarded_passengers')
         .select('id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop')
         .eq('trip_id', tripId);
 
-      const { data: transactions } = await supabase
+      const { data: transactions, error: txError } = await supabase
         .from('transactions')
-        .select('id, amount, channel, created_at, baggage_fee, card_id, temp_ticket_id, payment_method')
+        .select('id, amount, channel, created_at, baggage_fee, card_id, payment_method')
         .eq('trip_id', tripId)
         .order('created_at', { ascending: false });
+
+      if (passError) console.error('[TripDetails] Passenger query error:', passError);
+      if (txError) console.error('[TripDetails] Transaction query error:', txError);
+
+      console.log('[TripDetails] Trip:', tripId);
+      console.log('[TripDetails] Passengers fetched:', passengers?.length);
+      console.log('[TripDetails] Transactions fetched:', transactions?.length);
+      console.log('[TripDetails] Sample transaction:', transactions?.[0]);
 
       const cardIds = (passengers || []).map(p => p.card_id).filter(Boolean);
       const ticketIds = (passengers || []).map(p => p.temp_ticket_id).filter(Boolean);
@@ -325,11 +396,21 @@ const TripHistoryPage: React.FC = () => {
       (cardRows || []).forEach((c: any) => { cardUidMap[c.id] = c.card_uid; });
       (ticketRows || []).forEach((t: any) => { cardUidMap[t.id] = t.ticket_uid; });
 
-      const passengersWithFare = (passengers || []).map((passenger: any) => {
+      const passengersWithFare = (passengers || []).map((passenger: any, idx: number) => {
+        // Match transaction by card_id only (temp_ticket_id doesn't exist in transactions table)
         const passengerTx = (transactions || []).find(tx =>
-          (passenger.card_id && tx.card_id === passenger.card_id) ||
-          (passenger.temp_ticket_id && tx.temp_ticket_id === passenger.temp_ticket_id)
+          passenger.card_id && tx.card_id === passenger.card_id
         );
+
+        // Debug: log first 3 passengers to see why matching fails
+        if (idx < 3) {
+          console.log(`[TripDetails] Passenger ${idx}:`, {
+            card_id: passenger.card_id,
+            temp_ticket_id: passenger.temp_ticket_id,
+            payment_method: passenger.payment_method,
+            matched_tx: passengerTx ? { id: passengerTx.id, amount: passengerTx.amount, card_id: passengerTx.card_id } : 'NO MATCH'
+          });
+        }
 
         const cardUid =
           (passenger.card_id && cardUidMap[passenger.card_id]) ||
@@ -354,8 +435,8 @@ const TripHistoryPage: React.FC = () => {
         started_at: tripData.started_at,
         ended_at: tripData.ended_at,
         status: tripData.status,
-        route: (tripData.buses as any).route,
-        plate_number: (tripData.buses as any).plate_number,
+        route: busData?.route ?? 'Unknown Route',
+        plate_number: busData?.plate_number ?? 'Unknown Plate',
         starting_point: tripData.starting_point,
         end_point: tripData.end_point,
         passengers: passengersWithFare,
