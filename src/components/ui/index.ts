@@ -11,4 +11,5 @@ export { default as AppToast } from './Toast';
 export { default as PassengerDetailsCard } from './PassengerDetailsCard';
 export { default as TripTimeline } from './TripTimeline';
 export { default as AnimatedIllustration } from './AnimatedIllustration';
+export { default as ScanFrame } from './ScanFrame';
 export type { ToastColor } from './Toast';

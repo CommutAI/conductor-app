@@ -29,6 +29,7 @@ import PageHeader from '../components/layout/PageHeader';
 import {
   SoftCard, PrimaryButton,
   StatusBadge, AnimatedIllustration,
+  ScanFrame,
 } from '../components/ui';
 import AnimatedModal from '../components/ui/AnimatedModal';
 import QRCardCanvas from '../components/ui/QRCardCanvas';
@@ -436,11 +437,15 @@ const ScanPage: React.FC = () => {
       const qrCode = new Html5Qrcode('qr-reader');
       scannerRef.current = qrCode;
       
-      // Add qrbox for better detection - define scan area
+      // Define card-proportioned scan area matching the QR card frame (aspect ratio ~1.586)
       const config = {
         fps: 10,
         aspectRatio: 1.0,
-        qrbox: { width: 250, height: 250 },
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const w = Math.min(Math.max(Math.round(viewfinderWidth * 0.78), 220), 290);
+          const h = Math.min(Math.round(w / 1.586), Math.round(viewfinderHeight * 0.7));
+          return { width: w, height: h };
+        },
       };
 
       await qrCode.start(
@@ -2124,7 +2129,8 @@ const ScanPage: React.FC = () => {
 
   const isActiveView = scanState !== 'idle';
   const shortEdge = Math.min(window.innerWidth, window.innerHeight);
-  const boxSize = Math.min(Math.round(shortEdge * 0.7), 280);
+  const cardWidth = Math.min(Math.max(Math.round(shortEdge * 0.74), 220), 280);
+  const cardHeight = Math.round(cardWidth / 1.586);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -2397,97 +2403,15 @@ const ScanPage: React.FC = () => {
                     }}
                   />
 
-                  {/* ── Scan-box animation overlay ── */}
+                  {/* ── QR Card Scan Frame Overlay (for Onboarding & Alighting) ── */}
                   {scanState === 'scanning' && (
-                    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                      {/* The scan-box frame */}
-                      <div style={{ position: 'relative', width: boxSize, height: boxSize, flexShrink: 0 }}>
-                        {/* Corner brackets */}
-                        {(['tl','tr','bl','br'] as const).map(pos => (
-                          <div key={pos} style={{
-                            position: 'absolute',
-                            width: Math.round(boxSize * 0.14),
-                            height: Math.round(boxSize * 0.14),
-                            top: pos.startsWith('t') ? 0 : undefined,
-                            bottom: pos.startsWith('b') ? 0 : undefined,
-                            left: pos.endsWith('l') ? 0 : undefined,
-                            right: pos.endsWith('r') ? 0 : undefined,
-                            borderColor: '#22C55E',
-                            borderStyle: 'solid',
-                            borderWidth: pos === 'tl' ? '3px 0 0 3px' : pos === 'tr' ? '3px 3px 0 0' : pos === 'bl' ? '0 0 3px 3px' : '0 3px 3px 0',
-                            borderRadius: pos === 'tl' ? '6px 0 0 0' : pos === 'tr' ? '0 6px 0 0' : pos === 'bl' ? '0 0 0 6px' : '0 0 6px 0',
-                          }} />
-                        ))}
-                        {/* Scan beam */}
-                        <motion.div
-                          style={{
-                            position: 'absolute', left: 0, right: 0, height: 3,
-                            background: 'linear-gradient(90deg, transparent, #22C55E, transparent)',
-                            boxShadow: '0 0 10px 3px rgba(34,197,94,0.8)',
-                            top: 0,
-                          }}
-                          animate={{ top: ['0px', `${boxSize}px`, '0px'] }}
-                          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                        />
-                      </div>
-
-                      {/* Stability meter */}
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '8px 16px',
-                        background: 'rgba(0, 0, 0, 0.7)',
-                        borderRadius: 20,
-                        backdropFilter: 'blur(8px)',
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          width: boxSize * 0.8,
-                        }}>
-                          <motion.div
-                            style={{
-                              flex: 1,
-                              height: 6,
-                              background: 'rgba(255, 255, 255, 0.2)',
-                              borderRadius: 3,
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <motion.div
-                              style={{
-                                height: '100%',
-                                background: stabilityProgress >= 100 ? '#22C55E' : stabilityProgress >= 60 ? '#EAB308' : '#EF4444',
-                                borderRadius: 3,
-                              }}
-                              animate={{ width: `${stabilityProgress}%` }}
-                              transition={{ duration: 0.1 }}
-                            />
-                          </motion.div>
-                          <span style={{
-                            color: 'white',
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            minWidth: 50,
-                            textAlign: 'right',
-                          }}>
-                            {stabilityProgress >= 100 ? 'READY' : `${stabilityProgress}%`}
-                          </span>
-                        </div>
-                        <span style={{
-                          color: 'rgba(255, 255, 255, 0.9)',
-                          fontSize: '0.65rem',
-                          fontWeight: 600,
-                          letterSpacing: '0.5px',
-                          textTransform: 'uppercase',
-                        }}>
-                          {stabilityProgress >= 100 ? 'Stable - Ready to scan' : 'Hold steady...'}
-                        </span>
-                      </div>
-                    </div>
+                    <ScanFrame
+                      mode={scanType}
+                      active={true}
+                      stabilityProgress={stabilityProgress}
+                      cardWidth={cardWidth}
+                      cardHeight={cardHeight}
+                    />
                   )}
 
                   {/* ── Detected animation ── */}
@@ -2496,22 +2420,74 @@ const ScanPage: React.FC = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      style={{ position: 'absolute', inset: 0, background: 'rgba(34,197,94,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 220, padding: '20px' }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: scanType === 'alighting' ? 'rgba(245, 158, 11, 0.35)' : 'rgba(34, 197, 94, 0.35)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        minHeight: 220,
+                        padding: '20px',
+                        zIndex: 20,
+                      }}
                     >
                       <motion.div
                         animate={{ scale: [1, 1.2, 1], opacity: [0.8, 1, 0.8] }}
                         transition={{ duration: 0.5, repeat: 2 }}
                       >
-                        <CheckCircle size={64} color="#22C55E" strokeWidth={3} />
+                        <CheckCircle
+                          size={64}
+                          color={scanType === 'alighting' ? '#F59E0B' : '#22C55E'}
+                          strokeWidth={3}
+                        />
                       </motion.div>
-                      <span style={{ color: '#22C55E', fontWeight: 800, fontSize: '1.1rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-                        QR Code Detected!
+                      <span
+                        style={{
+                          color: scanType === 'alighting' ? '#F59E0B' : '#22C55E',
+                          fontWeight: 800,
+                          fontSize: '1.1rem',
+                          textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        {scanType === 'alighting' ? 'Alighting QR Card Detected!' : 'Onboarding QR Card Detected!'}
                       </span>
                       {/* Display scanned QR code in detected state */}
                       {debugScannedCode && (
-                        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.9)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
-                          <span style={{ color: '#22C55E', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>SCANNED QR:</span>
-                          <span style={{ color: '#1a1a1a', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 500, wordBreak: 'break-all' }}>{debugScannedCode}</span>
+                        <div
+                          style={{
+                            marginTop: 8,
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.92)',
+                            borderRadius: 8,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: scanType === 'alighting' ? '#D97706' : '#16A34A',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              display: 'block',
+                              marginBottom: 4,
+                            }}
+                          >
+                            SCANNED QR:
+                          </span>
+                          <span
+                            style={{
+                              color: '#1a1a1a',
+                              fontSize: '0.8rem',
+                              fontFamily: 'monospace',
+                              fontWeight: 600,
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {debugScannedCode}
+                          </span>
                         </div>
                       )}
                     </motion.div>
