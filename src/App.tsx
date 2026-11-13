@@ -39,6 +39,8 @@ setupIonicReact({
   mode: 'md',
   animated: false,
   swipeBackEnabled: false,
+  inputShims: false,
+  scrollAssist: false,
 });
 
 addIcons({

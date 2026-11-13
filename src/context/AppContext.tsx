@@ -118,6 +118,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (showLoading) {
       setIsRestoringTrip(true);
     }
+    // Safety timer: prevent isRestoringTrip from hanging indefinitely
+    const safetyTimer = setTimeout(() => {
+      setIsRestoringTrip(false);
+    }, 4000);
+
     const freshCached = StorageService.loadTripState();
 
     try {
@@ -228,6 +233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[AppContext] Error validating trip with DB:', err);
     } finally {
+      clearTimeout(safetyTimer);
       if (showLoading) {
         setIsRestoringTrip(false);
       }
@@ -339,12 +345,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Only restore session on initial mount, not on network changes
     let hasMounted = false;
 
+    // Safety fallback: ensure loading is false within 3.5s even if getSession() hangs
+    const initTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3500);
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(initTimer);
       if (!hasMounted) {
         hasMounted = true;
         await applySession(session);
         setLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(initTimer);
+      setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -455,7 +470,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ email: email.trim(), profile: p }));
 
     setSession(data.session);
+    setUser(data.user);
     setProfile(p);
+    setLoading(false);
     return { error: null };
   }
 

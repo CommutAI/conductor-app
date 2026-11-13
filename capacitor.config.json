@@ -27,6 +27,11 @@
     },
     "Geolocation": {
       "permissions": ["location"]
+    },
+    "Keyboard": {
+      "resize": "body",
+      "style": "DARK",
+      "resizeOnFullScreen": true
     }
   }
 }

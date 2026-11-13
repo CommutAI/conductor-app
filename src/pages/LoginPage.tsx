@@ -55,8 +55,10 @@ const LoginPage: React.FC = () => {
       if (result.error) {
         const msg = typeof result.error === 'string' ? result.error : 'Login failed. Please check your credentials.';
         showNotification(msg, 'danger');
+      } else {
+        // Explicitly redirect to dashboard on successful login
+        history.replace('/');
       }
-      // On success, the useEffect above handles navigation
     } catch (err) {
       setLoading(false);
       const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
