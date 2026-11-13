@@ -929,8 +929,17 @@ DO $$ BEGIN
 END $$;
 
 -- Conductors and drivers can read/write their own trips; admins see all
--- Updated: Allow inserting trips if user is assigned to the bus (trigger will auto-assign staff)
+-- Updated: Allow inserting/viewing trips if user is assigned to the bus via buses or staff_users
 DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'trips' AND policyname = 'trips_select_authenticated'
+  ) THEN
+    CREATE POLICY "trips_select_authenticated"
+      ON trips FOR SELECT
+      USING (auth.role() = 'authenticated');
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'trips' AND policyname = 'trips_conductor_rw'
@@ -948,6 +957,12 @@ DO $$ BEGIN
                OR assigned_driver_id = auth.uid()
           )
         )
+        OR (
+          bus_id IN (
+            SELECT bus_id FROM staff_users
+            WHERE id = auth.uid() AND bus_id IS NOT NULL
+          )
+        )
       )
       WITH CHECK (
         conductor_id = auth.uid()
@@ -958,6 +973,12 @@ DO $$ BEGIN
             SELECT id FROM buses
             WHERE assigned_conductor_id = auth.uid()
                OR assigned_driver_id = auth.uid()
+          )
+        )
+        OR (
+          bus_id IN (
+            SELECT bus_id FROM staff_users
+            WHERE id = auth.uid() AND bus_id IS NOT NULL
           )
         )
       );

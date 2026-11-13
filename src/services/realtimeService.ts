@@ -59,6 +59,12 @@ class RealtimeService {
    * Create a channel with retry logic for unstable connections
    */
   private createChannelWithRetry(channelName: string, table: string, filter?: string) {
+    // If a channel already exists with this name on the client, clean it up first
+    const existing = supabase.getChannels().find((c) => c.topic === `realtime:${channelName}` || c.topic === channelName);
+    if (existing) {
+      supabase.removeChannel(existing);
+    }
+
     const channel = supabase.channel(channelName);
 
     const subscriptionConfig: any = {
@@ -121,15 +127,16 @@ class RealtimeService {
       const delay = this.retryDelays[Math.min(currentAttempt, this.retryDelays.length - 1)];
       console.log(`[Realtime] Retry ${nextAttempt}/${this.maxRetries} for ${table} in ${delay}ms`);
       
-      setTimeout(() => {
+      setTimeout(async () => {
         if (this.channels.has(channelName)) {
-          // Remove old channel and create new one
           const oldChannel = this.channels.get(channelName);
           if (oldChannel) {
-            supabase.removeChannel(oldChannel);
+            await supabase.removeChannel(oldChannel);
           }
-          this.connectionState.set(channelName, 'connecting');
-          this.createChannelWithRetry(channelName, table, filter);
+          if (this.channels.has(channelName)) {
+            this.connectionState.set(channelName, 'connecting');
+            this.createChannelWithRetry(channelName, table, filter);
+          }
         }
       }, delay);
     } else if (currentAttempt >= this.maxRetries) {
@@ -185,36 +192,57 @@ class RealtimeService {
   }
 
   /**
-   * Subscribe to trips for a specific conductor or driver.
+   * Subscribe to trips for a specific conductor, driver, or bus.
    * Supabase Realtime only supports a single filter condition per channel,
-   * so we create two channels — one for conductor_id, one for driver_id —
+   * so we create separate channels — for conductor_id, driver_id, and bus_id —
    * and merge their callbacks.
    */
-  subscribeToTrips(staffId: string, callbacks: {
-    onInsert?: (trip: any) => void;
-    onUpdate?: (trip: any, oldTrip: any) => void;
-    onDelete?: (trip: any) => void;
-  }): () => void {
-    const cleanupConductor = this.subscribe({
-      table: 'trips',
-      filter: `conductor_id=eq.${staffId}`,
-      onInsert: callbacks.onInsert,
-      onUpdate: callbacks.onUpdate,
-      onDelete: callbacks.onDelete,
-    });
+  subscribeToTrips(
+    staffId: string,
+    callbacks: {
+      onInsert?: (trip: any) => void;
+      onUpdate?: (trip: any, oldTrip: any) => void;
+      onDelete?: (trip: any) => void;
+    },
+    busId?: string | null
+  ): () => void {
+    const cleanups: (() => void)[] = [];
 
-    const cleanupDriver = this.subscribe({
-      table: 'trips',
-      filter: `driver_id=eq.${staffId}`,
-      onInsert: callbacks.onInsert,
-      onUpdate: callbacks.onUpdate,
-      onDelete: callbacks.onDelete,
-    });
+    cleanups.push(
+      this.subscribe({
+        table: 'trips',
+        filter: `conductor_id=eq.${staffId}`,
+        onInsert: callbacks.onInsert,
+        onUpdate: callbacks.onUpdate,
+        onDelete: callbacks.onDelete,
+      })
+    );
 
-    // Return a combined cleanup that tears down both channels
+    cleanups.push(
+      this.subscribe({
+        table: 'trips',
+        filter: `driver_id=eq.${staffId}`,
+        onInsert: callbacks.onInsert,
+        onUpdate: callbacks.onUpdate,
+        onDelete: callbacks.onDelete,
+      })
+    );
+
+    if (busId) {
+      cleanups.push(
+        this.subscribe({
+          table: 'trips',
+          filter: `bus_id=eq.${busId}`,
+          onInsert: callbacks.onInsert,
+          onUpdate: callbacks.onUpdate,
+          onDelete: callbacks.onDelete,
+        })
+      );
+    }
+
+    // Return a combined cleanup that tears down all channels
     return () => {
-      cleanupConductor();
-      cleanupDriver();
+      cleanups.forEach((cleanup) => cleanup());
     };
   }
 

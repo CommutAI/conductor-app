@@ -228,8 +228,10 @@ const HomePage: React.FC = () => {
       }
 
       if (bus) {
-        console.log('[HomePage] Bus info loaded:', bus);
-        setCurrentBus(bus);
+        if (!currentBus || currentBus.id !== bus.id || currentBus.plate_number !== bus.plate_number) {
+          console.log('[HomePage] Bus info loaded:', bus);
+          setCurrentBus(bus);
+        }
         // Cache for offline use
         localStorage.setItem(`cached_bus_${profile.bus_id}`, JSON.stringify(bus));
       }
@@ -346,6 +348,9 @@ const HomePage: React.FC = () => {
     }
   }, [currentTrip, isOnline, currentBus, currentPassengersCount, setValidatedCount, setFareCollected, setCurrentTrip, setCurrentBus]);
 
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+
   // Effects
 
   useEffect(() => {
@@ -362,70 +367,97 @@ const HomePage: React.FC = () => {
     }
 
     // Set up real-time subscriptions for cross-device sync.
-    // Subscribe regardless of whether a trip is active so that Device 2
-    // can pick up a trip that was started on Device 1 (INSERT event).
-    // The realtimeService now handles network changes and reconnection automatically.
     if (profile?.id) {
       console.log('[HomePage] Setting up realtime subscriptions');
       
-      // Subscribe to trip changes
-      const tripCleanup = realtimeService.subscribeToTrips(profile.id, {
-        onInsert: async (newTrip) => {
-          console.log('[Realtime] New trip started on another device:', newTrip);
-          if (!currentTrip) {
-            // Load the associated bus so the UI renders correctly
-            const { data: bus } = await supabase
-              .from('buses')
-              .select('*')
-              .eq('id', newTrip.bus_id)
-              .single();
-            setCurrentTrip(newTrip);
-            if (bus) setCurrentBus(bus);
-            setValidatedCount(0);
-            setCurrentPassengersCount(0);
-            setFareCollected(0);
-            showNotification('Trip started from another device', 'warning');
-          }
-        },
-        onUpdate: (updatedTrip) => {
-          console.log('[Realtime] Trip updated:', updatedTrip);
-          if (currentTrip && updatedTrip.id === currentTrip.id) {
-            // If trip was completed on another device
-            if (updatedTrip.status === 'completed' && currentTrip.status !== 'completed') {
-              console.log('[Realtime] Trip completed on another device');
-              setCurrentTrip(updatedTrip);
-              showNotification('Trip completed from another device', 'warning');
-              history.push('/trip-summary');
-            } else {
-              // Update current trip with latest data
+      // Subscribe to trip changes with conductor_id, driver_id, and bus_id filters
+      const tripCleanup = realtimeService.subscribeToTrips(
+        profile.id,
+        {
+          onInsert: async (newTrip) => {
+            console.log('[Realtime] New trip started on another device:', newTrip);
+            if (
+              !currentTrip &&
+              newTrip.status === 'in_progress' &&
+              (newTrip.conductor_id === profile.id || newTrip.bus_id === profile.bus_id)
+            ) {
+              // Load the associated bus so the UI renders correctly
+              let bus = currentBus;
+              if (!bus || bus.id !== newTrip.bus_id) {
+                const { data: fetchedBus } = await supabase
+                  .from('buses')
+                  .select('*')
+                  .eq('id', newTrip.bus_id)
+                  .single();
+                if (fetchedBus) {
+                  bus = fetchedBus;
+                  setCurrentBus(fetchedBus);
+                }
+              }
+              setCurrentTrip(newTrip);
+              setValidatedCount(0);
+              setCurrentPassengersCount(0);
+              setFareCollected(0);
+              showNotification('Trip started from another device', 'warning');
+            }
+          },
+          onUpdate: async (updatedTrip) => {
+            console.log('[Realtime] Trip updated:', updatedTrip);
+            if (currentTrip && updatedTrip.id === currentTrip.id) {
+              // If trip was completed on another device
+              if (updatedTrip.status === 'completed' && currentTrip.status !== 'completed') {
+                console.log('[Realtime] Trip completed on another device');
+                setCurrentTrip(updatedTrip);
+                showNotification('Trip completed from another device', 'warning');
+                history.push('/trip-summary');
+              } else {
+                // Update current trip with latest data
+                setCurrentTrip(updatedTrip);
+              }
+            } else if (
+              !currentTrip &&
+              updatedTrip.status === 'in_progress' &&
+              (updatedTrip.conductor_id === profile.id || updatedTrip.bus_id === profile.bus_id)
+            ) {
+              let bus = currentBus;
+              if (!bus || bus.id !== updatedTrip.bus_id) {
+                const { data: fetchedBus } = await supabase
+                  .from('buses')
+                  .select('*')
+                  .eq('id', updatedTrip.bus_id)
+                  .single();
+                if (fetchedBus) {
+                  bus = fetchedBus;
+                  setCurrentBus(fetchedBus);
+                }
+              }
               setCurrentTrip(updatedTrip);
             }
-          }
+          },
+          onDelete: (deletedTrip) => {
+            if (currentTrip && deletedTrip.id === currentTrip.id) {
+              console.log('[Realtime] Trip deleted on another device');
+              setCurrentTrip(null);
+              setCurrentBus(null);
+              setValidatedCount(0);
+              setCurrentPassengersCount(0);
+              setFareCollected(0);
+            }
+          },
         },
-        onDelete: (deletedTrip) => {
-          if (currentTrip && deletedTrip.id === currentTrip.id) {
-            console.log('[Realtime] Trip deleted on another device');
-            setCurrentTrip(null);
-            setCurrentBus(null);
-            setValidatedCount(0);
-            setCurrentPassengersCount(0);
-            setFareCollected(0);
-          }
-        },
-      });
+        profile.bus_id
+      );
 
       // Subscribe to passenger changes for the current trip
-      // BUG 7 FIX: subscribeToPassengers now takes tripId (not conductorId)
-      // and subscribes to 'boarded_passengers' (not the non-existent 'passengers' table)
       const passengerCleanup = currentTrip
         ? realtimeService.subscribeToPassengers(currentTrip.id, {
             onInsert: (passenger) => {
               console.log('[Realtime] New passenger boarded:', passenger);
-              loadData(); // Refresh stats when new passenger is added
+              loadDataRef.current(); // Refresh stats when new passenger is added
             },
             onUpdate: (passenger) => {
               console.log('[Realtime] Passenger updated (alighted?):', passenger);
-              loadData(); // Refresh stats when passenger is updated (e.g., alighted)
+              loadDataRef.current(); // Refresh stats when passenger is updated (e.g., alighted)
             },
           })
         : () => {}; // No-op cleanup if there is no active trip yet
@@ -484,7 +516,7 @@ const HomePage: React.FC = () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (realtimeCleanupRef.current) realtimeCleanupRef.current();
     };
-  }, [currentTrip?.id, currentBus?.id, authLoading, initialLoadDone, loadData, profile?.id, setCurrentTrip, setCurrentBus, setValidatedCount, setCurrentPassengersCount, setFareCollected, showNotification, history]);
+  }, [currentTrip?.id, currentBus?.id, authLoading, initialLoadDone, profile?.id, profile?.bus_id]);
 
   // Refresh data when component mounts (handles navigation back from scan page)
   useEffect(() => {
@@ -493,22 +525,12 @@ const HomePage: React.FC = () => {
     }
   }, [isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load bus info when profile is available (works offline too)
+  // Load bus info when profile is available or network status changes
   useEffect(() => {
-    if (profile?.bus_id && !currentBus) {
+    if (profile?.bus_id && (!currentBus || isOnline)) {
       loadBusInfo();
     }
-  }, [profile?.bus_id, currentBus, loadBusInfo]);
-
-  // Refresh bus info when network status changes (debounced to avoid frequent calls)
-  useEffect(() => {
-    if (profile?.bus_id) {
-      const timeoutId = setTimeout(() => {
-        loadBusInfo();
-      }, 1000); // 1 second debounce for smoother transitions
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isOnline, profile?.bus_id, loadBusInfo]);
+  }, [profile?.bus_id, isOnline]);
 
   // Refresh data when network status changes (debounced to avoid frequent calls)
   useEffect(() => {
@@ -537,66 +559,21 @@ const HomePage: React.FC = () => {
     }
   }, [lastSyncAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-complete trip if outside allowed hours (4 AM - 10 PM)
+  // Informational check for operating hours (4 AM - 10 PM)
+  // NOTE: Does NOT mutate or terminate trips in DB so testing, late-night routes, and offline trips are never cancelled
   useEffect(() => {
     if (!currentTrip || currentTrip.status !== 'in_progress') {
       return;
     }
 
-    const checkTimeAndCompleteTrip = async () => {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const isAllowedTime = currentHour >= 4 && currentHour < 22; // 4 AM to 10 PM (22:00)
-      
-      if (!isAllowedTime) {
-        console.log('[HomePage] Auto-completing trip due to time restrictions');
-        try {
-          // Check for count mismatch before completing trip
-          if (isOnline && aiPassengerCount > 0 && validatedCount > 0) {
-            const delta = aiPassengerCount - validatedCount;
-            if (Math.abs(delta) > 3) {
-              // Log count mismatch irregularity
-              await supabase.from('fare_irregularities').insert({
-                trip_id: currentTrip.id,
-                conductor_id: profile?.id,
-                type: 'count_mismatch',
-                description: `AI camera count (${aiPassengerCount}) differs from QR validated count (${validatedCount}) by ${delta > 0 ? '+' : ''}${delta} passengers at trip completion`,
-                detected_at: new Date().toISOString(),
-                notes: `Trip auto-completed at ${now.toLocaleTimeString()}. AI count: ${aiPassengerCount}, QR count: ${validatedCount}`,
-              });
-              console.warn('[HomePage] Count mismatch logged:', { aiCount: aiPassengerCount, validatedCount, delta });
-            }
-          }
+    const now = new Date();
+    const currentHour = now.getHours();
+    const isAllowedTime = currentHour >= 4 && currentHour < 22; // 4 AM to 10 PM (22:00)
 
-          const { error } = await supabase
-            .from('trips')
-            .update({
-              ended_at: new Date().toISOString(),
-              status: 'completed'
-            })
-            .eq('id', currentTrip.id);
-
-          if (error) throw error;
-
-          showNotification('Trip automatically completed (outside operating hours)', 'warning');
-          history.push('/trip-summary');
-        } catch (err) {
-          console.error('[HomePage] Error auto-completing trip:', err);
-          showNotification('Failed to auto-complete trip', 'danger');
-        }
-      }
-    };
-
-    // Check immediately
-    checkTimeAndCompleteTrip();
-
-    // Check every minute
-    const timeCheckInterval = setInterval(checkTimeAndCompleteTrip, 60000);
-
-    return () => {
-      clearInterval(timeCheckInterval);
-    };
-  }, [currentTrip, history, showNotification]);
+    if (!isAllowedTime) {
+      console.log('[HomePage] Trip active outside regular operating hours (4 AM - 10 PM)');
+    }
+  }, [currentTrip?.id]);
 
   // Monitor for count mismatch between AI camera and QR validated counts
   useEffect(() => {
