@@ -35,7 +35,6 @@ import AnimatedModal from '../components/ui/AnimatedModal';
 import QRCardCanvas from '../components/ui/QRCardCanvas';
 import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
 import type { BaggageSelection } from '../types';
-import fareMatrixData from '../data/fareMatrix.json';
 import busStopsData from '../data/busStops.json';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -198,13 +197,7 @@ function getAvailableDestinations(): string[] {
 
 /** Get fare from offline fare matrix */
 function getOfflineFare(from: string, to: string, type: FarePassengerType): number | null {
-  const fareEntry = fareMatrixData.find(
-    item => item.route_from === from && item.route_to === to
-  );
-  if (fareEntry) {
-    return type === 'regular' ? fareEntry.regular_fare ?? null : fareEntry.discounted_fare ?? null;
-  }
-  return null;
+  return getFareFromMatrix(from, to, type);
 }
 
 const ScanPage: React.FC = () => {

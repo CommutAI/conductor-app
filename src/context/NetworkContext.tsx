@@ -4,6 +4,7 @@ import { offlineQueueService } from '../services/offlineQueueService';
 import { cache } from '../services/cacheService';
 import { realtimeService } from '../services/realtimeService';
 import { backgroundSyncService } from '../services/backgroundSyncService';
+import { loadFareMatrixFromDatabase } from '../services/fareService';
 
 interface NetworkContextType {
   isOnline: boolean;
@@ -100,6 +101,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       // Reconnect realtime subscriptions when network is restored
       console.log('[NetworkContext] Network restored, reconnecting realtime subscriptions');
       realtimeService.reconnectAll();
+
+      // Refresh fare matrix from database
+      loadFareMatrixFromDatabase(true).catch(() => {});
 
       // Trigger background sync
       backgroundSyncService.triggerBackgroundSync().catch(err => {

@@ -9,7 +9,8 @@ import { cache, CacheKeys, CacheTTL } from './cacheService';
 import { smsService } from './smsService';
 import fareMatrixData from '../data/fareMatrix.json';
 
-interface FareMatrixEntry {
+export interface FareMatrixEntry {
+  id?: string;
   route_from: string;
   route_to: string;
   km_distance: number | null;
@@ -88,70 +89,201 @@ export type ScanResult =
 export const DEFAULT_FARE = 12;
 
 // ── Fare Matrix ───────────────────────────────────────────────────────────────
-// Fare matrix is now loaded from fareMatrix.json
+// Dynamic fare matrix synced with public.fare_matrix table in Supabase, with local cache & offline JSON fallback.
+
+const FARE_MATRIX_STORAGE_KEY = 'commutai_fare_matrix_cache';
+
+function loadInitialFareMatrix(): FareMatrixEntry[] {
+  try {
+    const cached = localStorage.getItem(FARE_MATRIX_STORAGE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('[FareMatrix] Error loading cached fare matrix from localStorage:', e);
+  }
+  return fareMatrixData as FareMatrixEntry[];
+}
+
+let activeFareMatrix: FareMatrixEntry[] = loadInitialFareMatrix();
 
 /**
- * Normalize stop name to match fare matrix naming
- * Handles name variations like "Agora" vs "Agora Terminal", "Alae" vs "Alae Manolo"
+ * Fetch latest fare matrix from Supabase public.fare_matrix table and cache for offline use.
  */
-function normalizeStopName(stopName: string): string {
-  const normalized = stopName.trim();
-
-  // Handle specific name mappings
-  const nameMappings: Record<string, string> = {
-    'Agora Terminal': 'Agora',
-    'Agora': 'Agora',
-    'Alae': 'Alae Manolo',
-    'Alae Manolo': 'Alae Manolo',
-  };
-
-  // Check if the name or a variation exists in mappings
-  if (nameMappings[normalized]) {
-    return nameMappings[normalized];
-  }
-
-  // Also check if the normalized name contains a mapped key
-  for (const [key, value] of Object.entries(nameMappings)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      return value;
+export async function loadFareMatrixFromDatabase(force = false): Promise<FareMatrixEntry[]> {
+  try {
+    if (!navigator.onLine && activeFareMatrix.length > 0 && !force) {
+      return activeFareMatrix;
     }
-  }
 
-  return normalized;
+    const { data, error } = await supabase
+      .from('fare_matrix')
+      .select('id, route_from, route_to, km_distance, regular_fare, discounted_fare');
+
+    if (error) {
+      console.warn('[FareMatrix] Error loading fare matrix from Supabase:', error);
+      return activeFareMatrix;
+    }
+
+    if (data && data.length > 0) {
+      const parsed: FareMatrixEntry[] = data.map((row: any) => ({
+        id: row.id,
+        route_from: (row.route_from || '').trim(),
+        route_to: (row.route_to || '').trim(),
+        km_distance: row.km_distance !== null && row.km_distance !== undefined ? Number(row.km_distance) : null,
+        regular_fare: Number(row.regular_fare),
+        discounted_fare: Number(row.discounted_fare),
+      }));
+
+      activeFareMatrix = parsed;
+      try {
+        localStorage.setItem(FARE_MATRIX_STORAGE_KEY, JSON.stringify(parsed));
+      } catch (storageErr) {
+        console.warn('[FareMatrix] Could not save fare matrix to localStorage:', storageErr);
+      }
+      console.log(`[FareMatrix] Successfully loaded and cached ${parsed.length} fare entries from database`);
+      return parsed;
+    }
+  } catch (err) {
+    console.error('[FareMatrix] Unexpected error loading fare matrix:', err);
+  }
+  return activeFareMatrix;
+}
+
+// Initialize live sync if running in browser
+if (typeof window !== 'undefined') {
+  // Initial background load
+  loadFareMatrixFromDatabase().catch(() => {});
+
+  // Realtime subscription to live fare changes in database
+  try {
+    supabase
+      .channel('fare_matrix_live_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fare_matrix' },
+        () => {
+          console.log('[FareMatrix] Live update received from Supabase, refreshing fare matrix...');
+          loadFareMatrixFromDatabase(true).catch(() => {});
+        }
+      )
+      .subscribe();
+  } catch (subErr) {
+    console.warn('[FareMatrix] Could not subscribe to realtime fare_matrix changes:', subErr);
+  }
 }
 
 /**
- * Get fare from matrix based on origin and destination stops
- * @param fromStop - Origin stop name
- * @param toStop - Destination stop name
- * @param passengerType - Passenger type (regular, student, senior_citizen, pwd)
- * @returns Fare amount or null if route not found
+ * Comprehensive mapping of known stop aliases between UI dropdowns, database spellings, and terminal names.
  */
-export function getFareFromMatrix(fromStop: string | undefined, toStop: string | undefined, passengerType: PassengerType = 'regular'): number | null {
+const STOP_ALIAS_MAP: Record<string, string[]> = {
+  'agora terminal': ['agora terminal', 'agora'],
+  'agora': ['agora', 'agora terminal'],
+  'manolo fortich terminal': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
+  'manolo fortich': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
+  'kalugmanan manolo': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
+  'alae': ['alae manolo', 'ala-e', 'alae'],
+  'alae manolo': ['alae manolo', 'ala-e', 'alae'],
+  'ala-e': ['ala-e', 'alae manolo', 'alae'],
+  'bae upper puerto': ['bae upper puerto', 'ba-e', 'bae'],
+  'ba-e': ['ba-e', 'bae upper puerto', 'bae'],
+  'bae': ['bae upper puerto', 'ba-e', 'bae'],
+  'dicklum': ['dicklum', 'diclum'],
+  'diclum': ['diclum', 'dicklum'],
+  'lunocan': ['lunocan', 'lonocan'],
+  'lonocan': ['lonocan', 'lunocan'],
+  'maitum': ['maitum', 'maitom'],
+  'maitom': ['maitom', 'maitum'],
+  'tablon baloi': ['tablon baloi', 'tablon'],
+  'cugman': ['cugman'],
+  'gusa': ['gusa'],
+  'agusan': ['agusan'],
+  'puerto': ['puerto'],
+  'mambatangan': ['mambatangan'],
+  'balubal': ['balubal'],
+  'cawayanon': ['cawayanon'],
+  'san miguel': ['san miguel'],
+  'tankulan': ['tankulan'],
+  'sankanan': ['sankanan'],
+  'gaisano cdo': ['gaisano cdo'],
+};
+
+function getStopCandidates(stopName: string): string[] {
+  const clean = stopName.trim().toLowerCase();
+  const aliases = STOP_ALIAS_MAP[clean] || [];
+  return Array.from(new Set([clean, ...aliases]));
+}
+
+/**
+ * Get fare from matrix based on origin and destination stops.
+ * Supports:
+ * 1. Live database fares with automatic offline cache and JSON bundle fallback.
+ * 2. Bidirectional matching (A -> B or B -> A).
+ * 3. Stop alias and terminal spelling normalization.
+ * 4. Regular vs discounted fare rates.
+ */
+export function getFareFromMatrix(
+  fromStop: string | undefined,
+  toStop: string | undefined,
+  passengerType: PassengerType = 'regular'
+): number | null {
   if (!fromStop || !toStop) {
-    console.warn(`[FareMatrix] Missing fromStop or toStop`);
+    console.warn('[FareMatrix] Missing fromStop or toStop');
     return null;
   }
 
-  const normalizedFrom = normalizeStopName(fromStop);
-  const normalizedTo = normalizeStopName(toStop);
+  const fromCandidates = getStopCandidates(fromStop);
+  const toCandidates = getStopCandidates(toStop);
 
-  // Search in fareMatrixData from JSON file
-  const fareEntry = fareMatrixData.find(
-    item => item.route_from === normalizedFrom && item.route_to === normalizedTo
-  );
+  let fareEntry: FareMatrixEntry | undefined;
+
+  // 1. Search in active fare matrix (database-synced / cached)
+  for (const f of fromCandidates) {
+    for (const t of toCandidates) {
+      // Forward direction
+      fareEntry = activeFareMatrix.find(
+        (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
+      );
+      if (fareEntry) break;
+
+      // Bidirectional reverse direction
+      fareEntry = activeFareMatrix.find(
+        (item) => item.route_from.toLowerCase() === t && item.route_to.toLowerCase() === f
+      );
+      if (fareEntry) break;
+    }
+    if (fareEntry) break;
+  }
+
+  // 2. Fallback to bundled JSON if dynamic matrix had no match
+  if (!fareEntry && (fareMatrixData as any[]).length > 0) {
+    for (const f of fromCandidates) {
+      for (const t of toCandidates) {
+        fareEntry = (fareMatrixData as FareMatrixEntry[]).find(
+          (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
+        );
+        if (fareEntry) break;
+
+        fareEntry = (fareMatrixData as FareMatrixEntry[]).find(
+          (item) => item.route_from.toLowerCase() === t && item.route_to.toLowerCase() === f
+        );
+        if (fareEntry) break;
+      }
+      if (fareEntry) break;
+    }
+  }
 
   if (!fareEntry) {
-    console.warn(`[FareMatrix] No fare data found for route: ${normalizedFrom} -> ${normalizedTo} (original: ${fromStop} -> ${toStop})`);
+    console.warn(`[FareMatrix] No fare data found for route: ${fromStop} <-> ${toStop}`);
     return null;
   }
 
-  // Return discounted fare for student, senior_citizen, pwd
-  if (passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd') {
-    return fareEntry.discounted_fare ?? null;
-  }
-
-  return fareEntry.regular_fare ?? null;
+  const isDiscounted = passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd';
+  const fare = isDiscounted ? fareEntry.discounted_fare : fareEntry.regular_fare;
+  return typeof fare === 'number' && !isNaN(fare) ? fare : Number(fare) || null;
 }
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
