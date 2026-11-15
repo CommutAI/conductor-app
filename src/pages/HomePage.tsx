@@ -1223,7 +1223,9 @@ const HomePage: React.FC = () => {
                         fontWeight: 800,
                         color: 'var(--text-primary)',
                       }}>
-                        {currentBus?.route || 'Active Route'}
+                        {currentTrip?.starting_point && currentTrip?.end_point
+                          ? `${currentTrip.starting_point} → ${currentTrip.end_point}`
+                          : (currentBus?.route || 'Active Route')}
                       </h3>
                     </div>
                     <StatusBadge variant={occupancyStatus.variant} dot={true}>
