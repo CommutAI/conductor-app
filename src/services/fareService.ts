@@ -159,8 +159,9 @@ export function determineTripDirection(
     return null;
   }
 
-  const sp = (tripOrRoute.starting_point || '').toLowerCase().trim();
-  const ep = (tripOrRoute.end_point || '').toLowerCase().trim();
+  // Normalize starting_point and end_point to canonical forms
+  const sp = normalizeStopName(tripOrRoute.starting_point || '').toLowerCase();
+  const ep = normalizeStopName(tripOrRoute.end_point || '').toLowerCase();
   const route = (((tripOrRoute as any).route || (tripOrRoute as any).route_name) || '').toLowerCase().trim();
 
   // Check starting_point and end_point
@@ -227,6 +228,9 @@ const STOP_ALIAS_MAP: Record<string, string[]> = {
   'tankulan': ['tankulan'],
   'sankanan': ['sankanan'],
   'gaisano cdo': ['gaisano cdo'],
+  'manolo': ['manolo', 'manolo fortich terminal', 'maluko manolo', 'manolo fortich'],
+  'fortich': ['fortich', 'manolo fortich terminal', 'manolo fortich'],
+  'terminal': ['terminal'],
 };
 
 export function getStopCandidates(stopName: string): string[] {
@@ -235,9 +239,42 @@ export function getStopCandidates(stopName: string): string[] {
   return Array.from(new Set([clean, ...aliases]));
 }
 
+/**
+ * Normalize a stop name to its canonical form for fare matrix lookup.
+ * This handles terminal variants like "Agora Terminal" → "Agora", "Manolo Fortich Terminal" → "Maluko Manolo".
+ */
+export function normalizeStopName(stopName: string): string {
+  if (!stopName) return '';
+  const clean = stopName.trim().toLowerCase();
+  const candidates = getStopCandidates(stopName);
+
+  // Map to canonical names used in fare_matrix database
+  const canonicalMap: Record<string, string> = {
+    'agora terminal': 'agora',
+    'manolo fortich terminal': 'maluko manolo',
+    'manolo fortich': 'maluko manolo',
+    'kalugmanan manolo': 'maluko manolo',
+    'ala-e': 'alae manolo',
+    'ba-e': 'bae upper puerto',
+    'diclum': 'dicklum',
+    'lonocan': 'lunocan',
+    'maitom': 'maitum',
+  };
+
+  for (const candidate of candidates) {
+    if (canonicalMap[candidate]) {
+      return canonicalMap[candidate];
+    }
+  }
+
+  // Return the original if no mapping found
+  return stopName.trim();
+}
+
 function findNormalizedStopIndex(stopName: string, stopsList: readonly string[]): number {
   if (!stopName) return -1;
-  const candidates = getStopCandidates(stopName);
+  const normalized = normalizeStopName(stopName);
+  const candidates = getStopCandidates(normalized);
   for (let i = 0; i < stopsList.length; i++) {
     const s = stopsList[i].toLowerCase();
     if (candidates.some((c) => c === s)) {
@@ -457,8 +494,12 @@ export function getFareFromMatrix(
     return null;
   }
 
-  const fromCandidates = getStopCandidates(fromStop);
-  const toCandidates = getStopCandidates(toStop);
+  // Normalize stop names to canonical forms used in fare_matrix database
+  const normalizedFrom = normalizeStopName(fromStop);
+  const normalizedTo = normalizeStopName(toStop);
+
+  const fromCandidates = getStopCandidates(normalizedFrom);
+  const toCandidates = getStopCandidates(normalizedTo);
 
   let fareEntry: FareMatrixEntry | undefined;
 
@@ -488,7 +529,7 @@ export function getFareFromMatrix(
   }
 
   if (!fareEntry) {
-    console.warn(`[FareMatrix] No fare data found for forward route: ${fromStop} -> ${toStop} (direction: ${currentActiveDirection})`);
+    console.warn(`[FareMatrix] No fare data found for forward route: ${fromStop} -> ${toStop} (normalized: ${normalizedFrom} -> ${normalizedTo}, direction: ${currentActiveDirection})`);
     return null;
   }
 
