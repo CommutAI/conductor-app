@@ -314,6 +314,65 @@ export function isRowInDirection(
   return fromIdx !== -1 && toIdx !== -1 && fromIdx < toIdx;
 }
 
+/**
+ * Validate if a stop combination is valid for the given trip direction.
+ * Returns true if both stops exist in the direction's sequence and fromStop comes before toStop.
+ */
+export function isValidStopCombination(
+  fromStop: string,
+  toStop: string,
+  direction?: TripDirection
+): boolean {
+  const dir = direction || currentActiveDirection;
+  const normalizedFrom = normalizeStopName(fromStop);
+  const normalizedTo = normalizeStopName(toStop);
+  return isRowInDirection(normalizedFrom, normalizedTo, dir);
+}
+
+/**
+ * Filter stops to only show valid destinations based on the current trip direction and boarding point.
+ * Returns a list of stops that come after the boarding point in the direction's sequence.
+ */
+export function getValidDestinations(
+  fromStop: string,
+  direction?: TripDirection
+): string[] {
+  const dir = direction || currentActiveDirection;
+  const stops = dir === 'manolo_to_agora' ? MANOLO_TO_AGORA_STOPS : AGORA_TO_MANOLO_STOPS;
+  const normalizedFrom = normalizeStopName(fromStop);
+  const fromIdx = findNormalizedStopIndex(normalizedFrom, stops);
+
+  if (fromIdx === -1) {
+    // If boarding point not found, return all stops after the first one
+    return stops.slice(1);
+  }
+
+  // Return stops that come after the boarding point
+  return stops.slice(fromIdx + 1);
+}
+
+/**
+ * Filter stops to only show valid boarding points based on the current trip direction and destination.
+ * Returns a list of stops that come before the destination in the direction's sequence.
+ */
+export function getValidBoardingPoints(
+  toStop: string,
+  direction?: TripDirection
+): string[] {
+  const dir = direction || currentActiveDirection;
+  const stops = dir === 'manolo_to_agora' ? MANOLO_TO_AGORA_STOPS : AGORA_TO_MANOLO_STOPS;
+  const normalizedTo = normalizeStopName(toStop);
+  const toIdx = findNormalizedStopIndex(normalizedTo, stops);
+
+  if (toIdx === -1) {
+    // If destination not found, return all stops except the last one
+    return stops.slice(0, -1);
+  }
+
+  // Return stops that come before the destination
+  return stops.slice(0, toIdx);
+}
+
 function getBundledFareMatrixForDirection(direction: TripDirection): FareMatrixEntry[] {
   return direction === 'manolo_to_agora'
     ? (fareMatrixManoloToAgora as FareMatrixEntry[])

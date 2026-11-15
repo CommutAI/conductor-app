@@ -105,6 +105,8 @@ WHERE route_from = 'Agora' AND route_to = 'Gusa';
 -- Should return: ('Agora', 'Gusa', NULL, 15, 15)
 ```
 
+**Status:** ✅ Verified - Database has correct fare data for Agora → Gusa (15 regular, 15 discounted)
+
 ## Expected Behavior
 
 ### For Agora → Gusa (First Leg)

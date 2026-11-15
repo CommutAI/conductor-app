@@ -24,6 +24,9 @@ import {
   getStopsForDirection,
   setActiveTripDirection,
   loadFareMatrixFromDatabase,
+  getValidDestinations,
+  getValidBoardingPoints,
+  isValidStopCombination,
 } from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
@@ -200,9 +203,30 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
   return calculateFare(DEFAULT_FARE, type).finalFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
 }
 
-/** Get destinations for dropdown, ordered in the direction of the active trip */
-function getAvailableDestinations(tripDirection?: any): string[] {
+/** Get destinations for dropdown, ordered in the direction of the active trip and filtered by boarding point */
+function getAvailableDestinations(tripDirection?: any, boardingPoint?: string): string[] {
   if (tripDirection) {
+    // If boarding point is provided, filter to only show valid destinations after it
+    if (boardingPoint) {
+      return getValidDestinations(boardingPoint, tripDirection);
+    }
+    // Otherwise return all stops in direction
+    return getStopsForDirection(tripDirection);
+  }
+  return busStopsData
+    .filter(stop => stop.status === 'active')
+    .map(stop => stop.name)
+    .sort();
+}
+
+/** Get boarding points for dropdown, ordered in the direction of the active trip and filtered by destination */
+function getAvailableBoardingPoints(tripDirection?: any, destination?: string): string[] {
+  if (tripDirection) {
+    // If destination is provided, filter to only show valid boarding points before it
+    if (destination) {
+      return getValidBoardingPoints(destination, tripDirection);
+    }
+    // Otherwise return all stops in direction
     return getStopsForDirection(tripDirection);
   }
   return busStopsData
@@ -721,12 +745,26 @@ const ScanPage: React.FC = () => {
     if (fromStop && toStop) {
       const normalizedFrom = normalizeStopName(fromStop);
       const normalizedTo = normalizeStopName(toStop);
+
+      // Validate that the combination is valid for the current direction
+      const isValid = isValidStopCombination(normalizedFrom, normalizedTo, tripDirection || undefined);
+
+      if (!isValid) {
+        console.warn('[ScanPage] Invalid stop combination for direction:', {
+          from: fromStop,
+          to: toStop,
+          direction: tripDirection
+        });
+        setPendingScan(prev => prev ? { ...prev, fare: 0 } : null);
+        return;
+      }
+
       const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
       if (mFare !== null) {
         setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
       }
     }
-  }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan]);
+  }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan, tripDirection]);
 
   /** For onboarding: auto-confirm boarding with card destination or default */
   async function handleOnboardingPreScan(scannedCode: string) {
@@ -3042,7 +3080,7 @@ const ScanPage: React.FC = () => {
                                     📍 {currentStopName} (GPS)
                                   </option>
                                 )}
-                                {displayStops.map(stop => (
+                                {getAvailableBoardingPoints(tripDirection, selectedDestination).map(stop => (
                                   <option key={stop} value={stop} style={{ background: '#1e293b', color: '#ffffff' }}>
                                     {stop === currentStopName ? `📍 ${stop} (Current GPS)` : stop}
                                   </option>
@@ -3112,7 +3150,7 @@ const ScanPage: React.FC = () => {
                             }}
                           >
                             <option value="">Select destination...</option>
-                            {getAvailableDestinations(tripDirection).map(dest => (
+                            {getAvailableDestinations(tripDirection, selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '')).map(dest => (
                               <option key={dest} value={dest}>{dest}</option>
                             ))}
                           </select>
