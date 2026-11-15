@@ -164,30 +164,46 @@ export function determineTripDirection(
   const ep = normalizeStopName(tripOrRoute.end_point || '').toLowerCase();
   const route = (((tripOrRoute as any).route || (tripOrRoute as any).route_name) || '').toLowerCase().trim();
 
+  console.log('[FareMatrix] determineTripDirection:', {
+    original_start: tripOrRoute.starting_point,
+    original_end: tripOrRoute.end_point,
+    normalized_start: sp,
+    normalized_end: ep,
+    route
+  });
+
   // Check starting_point and end_point
   if ((sp.includes('manolo') || sp.includes('maluko')) && ep.includes('agora')) {
+    console.log('[FareMatrix] Detected direction: manolo_to_agora');
     return 'manolo_to_agora';
   }
   if (sp.includes('agora') && (ep.includes('manolo') || ep.includes('maluko'))) {
+    console.log('[FareMatrix] Detected direction: agora_to_manolo');
     return 'agora_to_manolo';
   }
   if (sp.includes('manolo') || sp.includes('maluko')) {
+    console.log('[FareMatrix] Fallback to manolo_to_agora (start point)');
     return 'manolo_to_agora';
   }
   if (sp.includes('agora')) {
+    console.log('[FareMatrix] Fallback to agora_to_manolo (start point)');
     return 'agora_to_manolo';
   }
   if (ep.includes('agora')) {
+    console.log('[FareMatrix] Fallback to manolo_to_agora (end point)');
     return 'manolo_to_agora';
   }
   if (ep.includes('manolo') || ep.includes('maluko')) {
+    console.log('[FareMatrix] Fallback to agora_to_manolo (end point)');
     return 'agora_to_manolo';
   }
 
   if (route) {
+    console.log('[FareMatrix] Fallback to route-based detection');
     return determineTripDirection(route);
   }
 
+  console.log('[FareMatrix] Could not determine direction, returning null');
   return null;
 }
 
@@ -498,6 +514,16 @@ export function getFareFromMatrix(
   const normalizedFrom = normalizeStopName(fromStop);
   const normalizedTo = normalizeStopName(toStop);
 
+  console.log('[FareMatrix] getFareFromMatrix called:', {
+    original_from: fromStop,
+    original_to: toStop,
+    normalized_from: normalizedFrom,
+    normalized_to: normalizedTo,
+    passengerType,
+    activeDirection: currentActiveDirection,
+    matrixSize: activeFareMatrix.length
+  });
+
   const fromCandidates = getStopCandidates(normalizedFrom);
   const toCandidates = getStopCandidates(normalizedTo);
 
@@ -516,6 +542,7 @@ export function getFareFromMatrix(
 
   // 2. Fallback to bundled directional JSON if dynamic matrix had no match
   if (!fareEntry) {
+    console.log('[FareMatrix] No match in active matrix, trying bundled data');
     const bundledData = getBundledFareMatrixForDirection(currentActiveDirection);
     for (const f of fromCandidates) {
       for (const t of toCandidates) {
@@ -530,11 +557,13 @@ export function getFareFromMatrix(
 
   if (!fareEntry) {
     console.warn(`[FareMatrix] No fare data found for forward route: ${fromStop} -> ${toStop} (normalized: ${normalizedFrom} -> ${normalizedTo}, direction: ${currentActiveDirection})`);
+    console.log('[FareMatrix] Available stops in matrix:', activeFareMatrix.slice(0, 5).map(m => `${m.route_from} -> ${m.route_to}`));
     return null;
   }
 
   const isDiscounted = passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd';
   const fare = isDiscounted ? fareEntry.discounted_fare : fareEntry.regular_fare;
+  console.log('[FareMatrix] Fare found:', { fareEntry, finalFare: fare, isDiscounted });
   return typeof fare === 'number' && !isNaN(fare) ? fare : Number(fare) || null;
 }
 
