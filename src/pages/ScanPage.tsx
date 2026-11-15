@@ -18,6 +18,7 @@ import {
   ScanResult,
   calculateFare,
   getFareFromMatrix,
+  normalizeStopName,
   PassengerType as FarePassengerType,
   determineTripDirection,
   getStopsForDirection,
@@ -187,7 +188,9 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
 
   // Use fare matrix if both stops are provided
   if (fromStop && toStop) {
-    const matrixFare = getFareFromMatrix(fromStop, toStop, type);
+    const normalizedFrom = normalizeStopName(fromStop);
+    const normalizedTo = normalizeStopName(toStop);
+    const matrixFare = getFareFromMatrix(normalizedFrom, normalizedTo, type);
     if (matrixFare !== null) {
       return matrixFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
     }
@@ -210,7 +213,9 @@ function getAvailableDestinations(tripDirection?: any): string[] {
 
 /** Get fare from offline fare matrix */
 function getOfflineFare(from: string, to: string, type: FarePassengerType): number | null {
-  return getFareFromMatrix(from, to, type);
+  const normalizedFrom = normalizeStopName(from);
+  const normalizedTo = normalizeStopName(to);
+  return getFareFromMatrix(normalizedFrom, normalizedTo, type);
 }
 
 const ScanPage: React.FC = () => {
@@ -714,7 +719,9 @@ const ScanPage: React.FC = () => {
     const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
 
     if (fromStop && toStop) {
-      const mFare = getFareFromMatrix(fromStop, toStop, pType);
+      const normalizedFrom = normalizeStopName(fromStop);
+      const normalizedTo = normalizeStopName(toStop);
+      const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
       if (mFare !== null) {
         setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
       }
@@ -891,8 +898,10 @@ const ScanPage: React.FC = () => {
         console.log('Card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
         const presetCardDest = card.destination || '';
-        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
-        const matrixFare = presetCardDest ? getFareFromMatrix(fromStop, presetCardDest, passengerType) : null;
+        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+        const normalizedFrom = normalizeStopName(fromStop);
+        const normalizedDest = normalizeStopName(presetCardDest);
+        const matrixFare = presetCardDest ? getFareFromMatrix(normalizedFrom, normalizedDest, passengerType) : null;
         const initialFare = matrixFare !== null ? matrixFare : DEFAULT_FARE;
 
         setPendingScan({
@@ -983,9 +992,11 @@ const ScanPage: React.FC = () => {
       if (pendingScan.isTicket) {
         effectivePaymentMethod = 'cash';
       } else {
-        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
+        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
         const passengerType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-        const matrixFare = getFareFromMatrix(fromStop, destination, passengerType);
+        const normalizedFrom = normalizeStopName(fromStop);
+        const normalizedDest = normalizeStopName(destination);
+        const matrixFare = getFareFromMatrix(normalizedFrom, normalizedDest, passengerType);
         const finalFare = matrixFare !== null ? matrixFare : (pendingScan.fare || 0);
         const totalFare = finalFare + (baggageSelection?.fee || 0);
         effectivePaymentMethod = pendingScan.balance >= totalFare ? 'qr_card' : 'cash';
@@ -1038,10 +1049,12 @@ const ScanPage: React.FC = () => {
       console.log('Is online:', isOnline);
 
       // Calculate fare using matrix
-      const fromStop = boardingPoint || selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
-      const toStop = destination || undefined;
+      const fromStop = boardingPoint || selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+      const toStop = destination || '';
       const passengerType = (pendingScan?.passengerType || 'regular') as FarePassengerType;
-      const matrixFare = getFareFromMatrix(fromStop, toStop, passengerType);
+      const normalizedFrom = normalizeStopName(fromStop);
+      const normalizedTo = normalizeStopName(toStop);
+      const matrixFare = getFareFromMatrix(normalizedFrom, normalizedTo, passengerType);
 
       // Use matrix fare if available, otherwise use pending scan fare
       const finalFare = matrixFare !== null ? matrixFare : (pendingScan?.fare || 0);
@@ -1856,10 +1869,13 @@ const ScanPage: React.FC = () => {
             const passengerType = (card.passenger_type || 'regular') as FarePassengerType;
 
             // Calculate original fare (boarding stop to destination)
-            const originalFare = getFareFromMatrix(actualBoardingStop, storedDestination, passengerType) || 0;
+            const normalizedBoarding = normalizeStopName(actualBoardingStop);
+            const normalizedStoredDest = normalizeStopName(storedDestination);
+            const originalFare = getFareFromMatrix(normalizedBoarding, normalizedStoredDest, passengerType) || 0;
 
             // Calculate actual fare (boarding stop to actual alighting location)
-            const actualFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType) || 0;
+            const normalizedAlighting = normalizeStopName(actualAlightingStop);
+            const actualFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType) || 0;
 
             const fareDifference = actualFare - originalFare;
 
@@ -1894,7 +1910,9 @@ const ScanPage: React.FC = () => {
       if (gpsResult && gpsResult.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
         const actualBoardingStop = actualBoardedPassenger.boarding_stop;
         const actualAlightingStop = gpsResult.nearestStop;
-        const adjustedBaseFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType);
+        const normalizedBoarding = normalizeStopName(actualBoardingStop);
+        const normalizedAlighting = normalizeStopName(actualAlightingStop);
+        const adjustedBaseFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType);
 
         if (adjustedBaseFare !== null && adjustedBaseFare > baseFare) {
           baseFare = adjustedBaseFare;
@@ -2105,7 +2123,9 @@ const ScanPage: React.FC = () => {
       const passengerType = pendingAlighting.passengerType || 'regular';
 
       // Calculate fare for actual route (boarding to actual alighting location)
-      const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+      const normalizedBoarding = normalizeStopName(actualBoardingStop);
+      const normalizedAlighting = normalizeStopName(actualAlightingStop);
+      const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
 
       if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
         // Charge additional fare for the longer route
@@ -2217,7 +2237,9 @@ const ScanPage: React.FC = () => {
           const actualBoardingStop = pendingAlighting.boardingPoint;
           const actualAlightingStop = gpsResult.nearestStop;
           const passengerType = pendingAlighting.passengerType || 'regular';
-          const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+          const normalizedBoarding = normalizeStopName(actualBoardingStop);
+          const normalizedAlighting = normalizeStopName(actualAlightingStop);
+          const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
           if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
             fallbackAdjustedFare = actualRouteFare;
           }
@@ -2932,7 +2954,9 @@ const ScanPage: React.FC = () => {
                                       setSelectedBoardingPoint(currentStopName || '');
                                       if (pendingScan.cardDestination && pendingScan) {
                                         const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                                        const mFare = getFareFromMatrix(currentStopName || undefined, pendingScan.cardDestination, pType);
+                                        const normalizedCurrent = normalizeStopName(currentStopName || '');
+                                        const normalizedDest = normalizeStopName(pendingScan.cardDestination);
+                                        const mFare = getFareFromMatrix(normalizedCurrent, normalizedDest, pType);
                                         if (mFare !== null) {
                                           setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
                                         }
@@ -2986,7 +3010,9 @@ const ScanPage: React.FC = () => {
                                   setSelectedBoardingPoint(stop);
                                   if (pendingScan?.cardDestination && pendingScan) {
                                     const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                                    const mFare = getFareFromMatrix(stop, pendingScan.cardDestination, pType);
+                                    const normalizedStop = normalizeStopName(stop);
+                                    const normalizedDest = normalizeStopName(pendingScan.cardDestination);
+                                    const mFare = getFareFromMatrix(normalizedStop, normalizedDest, pType);
                                     if (mFare !== null) {
                                       setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
                                     }
@@ -3063,9 +3089,11 @@ const ScanPage: React.FC = () => {
                             value={selectedDestination || pendingScan.cardDestination || ''}
                             onChange={(e) => {
                               setSelectedDestination(e.target.value);
-                              const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
+                              const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
                               const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                              const mFare = getFareFromMatrix(fromStop, e.target.value, pType);
+                              const normalizedFrom = normalizeStopName(fromStop);
+                              const normalizedTo = normalizeStopName(e.target.value);
+                              const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
                               if (mFare !== null) {
                                 setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
                               }
