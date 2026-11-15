@@ -42,6 +42,7 @@ DO $$ BEGIN
     'fare_evasion',
     'destination_overstay',
     'missed_alighting',
+    'destination_mismatch',
     'unauthorized_passenger',
     'wrong_route',
     'card_sharing',

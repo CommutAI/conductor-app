@@ -8,15 +8,12 @@ import { supabase } from '../supabaseClient';
 import { cache, CacheKeys, CacheTTL } from './cacheService';
 import { smsService } from './smsService';
 import fareMatrixData from '../data/fareMatrix.json';
+import fareMatrixManoloToAgora from '../data/fareMatrixManoloToAgora.json';
+import fareMatrixAgoraToManolo from '../data/fareMatrixAgoraToManolo.json';
+import busStopsData from '../data/busStops.json';
+import { Trip, TripDirection, FareMatrixEntry } from '../types';
 
-export interface FareMatrixEntry {
-  id?: string;
-  route_from: string;
-  route_to: string;
-  km_distance: number | null;
-  regular_fare: number;
-  discounted_fare: number;
-}
+export type { TripDirection, FareMatrixEntry };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,120 +68,140 @@ export interface FareCalculationResult {
 }
 
 export type ScanResult =
-  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string }
-  | { status: 'qr_fail_balance'; balance: number; fare: number; baggageFee?: number; totalFare?: number }
-  | { status: 'qr_inactive' }
-  | { status: 'qr_wrong_trip'; expectedRoute: string }
-  | { status: 'qr_fake'; reason: string }
-  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string }
-  | { status: 'ticket_already_used' }
-  | { status: 'ticket_expired' }
-  | { status: 'ticket_wrong_trip'; expectedRoute: string }
+  | { status: 'qr_pass'; newBalance: number; fare: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string; uid?: string }
+  | { status: 'qr_fail_balance'; balance: number; fare: number; baggageFee?: number; totalFare?: number; uid?: string }
+  | { status: 'qr_inactive'; uid?: string }
+  | { status: 'qr_wrong_trip'; expectedRoute: string; uid?: string }
+  | { status: 'qr_fake'; reason: string; uid?: string }
+  | { status: 'ticket_validated'; fareAmount: number; baggageFee?: number; totalFare?: number; passengerId?: string; destination?: string; contactNumber?: string; passengerName?: string; boardingPoint?: string; destinationMismatch?: boolean; expectedDestination?: string; uid?: string }
+  | { status: 'ticket_already_used'; uid?: string }
+  | { status: 'ticket_expired'; uid?: string }
+  | { status: 'ticket_wrong_trip'; expectedRoute: string; uid?: string }
   | { status: 'duplicate_scan'; type: 'qr_card' | 'temp_ticket'; uid: string }
-  | { status: 'not_found' }
-  | { status: 'error'; message: string };
+  | { status: 'not_found'; uid?: string }
+  | { status: 'error'; message: string; uid?: string };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const DEFAULT_FARE = 12;
+export const DEFAULT_FARE = 15;
 
 // ── Fare Matrix ───────────────────────────────────────────────────────────────
-// Dynamic fare matrix synced with public.fare_matrix table in Supabase, with local cache & offline JSON fallback.
+// Dynamic directional fare matrix synced with public.fare_matrix table in Supabase,
+// with local cache and directional offline JSON fallbacks.
 
-const FARE_MATRIX_STORAGE_KEY = 'commutai_fare_matrix_cache';
+export const MANOLO_TO_AGORA_STOPS = [
+  'Maluko Manolo',
+  'Dalirig',
+  'Tankulan',
+  'Dicklum',
+  'San Miguel',
+  'Cawayanon',
+  'Lunocan',
+  'Alae Manolo',
+  'Maitum',
+  'Balubal',
+  'Mambatangan',
+  'Bae Upper Puerto',
+  'Puerto',
+  'Agusan',
+  'Tablon',
+  'Tablon Baloi',
+  'Cugman',
+  'Gusa',
+  'Agora',
+] as const;
 
-function loadInitialFareMatrix(): FareMatrixEntry[] {
-  try {
-    const cached = localStorage.getItem(FARE_MATRIX_STORAGE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn('[FareMatrix] Error loading cached fare matrix from localStorage:', e);
-  }
-  return fareMatrixData as FareMatrixEntry[];
-}
+export const AGORA_TO_MANOLO_STOPS = [
+  'Agora',
+  'Gusa',
+  'Cugman',
+  'Tablon Baloi',
+  'Tablon',
+  'Agusan',
+  'Puerto',
+  'Bae Upper Puerto',
+  'Mambatangan',
+  'Balubal',
+  'Maitum',
+  'Alae Manolo',
+  'Lunocan',
+  'Cawayanon',
+  'San Miguel',
+  'Dicklum',
+  'Tankulan',
+  'Dalirig',
+  'Maluko Manolo',
+] as const;
 
-let activeFareMatrix: FareMatrixEntry[] = loadInitialFareMatrix();
+const FARE_MATRIX_STORAGE_KEY_PREFIX = 'commutai_fare_matrix_';
+const FARE_MATRIX_STORAGE_KEY_LEGACY = 'commutai_fare_matrix_cache';
 
 /**
- * Fetch latest fare matrix from Supabase public.fare_matrix table and cache for offline use.
+ * Determine trip direction from trip object or route string.
  */
-export async function loadFareMatrixFromDatabase(force = false): Promise<FareMatrixEntry[]> {
-  try {
-    if (!navigator.onLine && activeFareMatrix.length > 0 && !force) {
-      return activeFareMatrix;
-    }
+export function determineTripDirection(
+  tripOrRoute?: Trip | { starting_point?: string | null; end_point?: string | null; route?: string | null; route_name?: string | null } | string | null
+): TripDirection | null {
+  if (!tripOrRoute) return null;
 
-    const { data, error } = await supabase
-      .from('fare_matrix')
-      .select('id, route_from, route_to, km_distance, regular_fare, discounted_fare');
+  if (typeof tripOrRoute === 'string') {
+    const s = tripOrRoute.toLowerCase().trim();
+    if (s === 'manolo_to_agora' || s === 'manolo-to-agora') return 'manolo_to_agora';
+    if (s === 'agora_to_manolo' || s === 'agora-to-manolo') return 'agora_to_manolo';
 
-    if (error) {
-      console.warn('[FareMatrix] Error loading fare matrix from Supabase:', error);
-      return activeFareMatrix;
-    }
+    const isManoloFirst = /(manolo|maluko|tankulan).*(agora|cdo|cugman|gusa)/i.test(s);
+    const isAgoraFirst = /(agora|cdo|cugman|gusa).*(manolo|maluko|tankulan)/i.test(s);
+    if (isManoloFirst && !isAgoraFirst) return 'manolo_to_agora';
+    if (isAgoraFirst && !isManoloFirst) return 'agora_to_manolo';
 
-    if (data && data.length > 0) {
-      const parsed: FareMatrixEntry[] = data.map((row: any) => ({
-        id: row.id,
-        route_from: (row.route_from || '').trim(),
-        route_to: (row.route_to || '').trim(),
-        km_distance: row.km_distance !== null && row.km_distance !== undefined ? Number(row.km_distance) : null,
-        regular_fare: Number(row.regular_fare),
-        discounted_fare: Number(row.discounted_fare),
-      }));
-
-      activeFareMatrix = parsed;
-      try {
-        localStorage.setItem(FARE_MATRIX_STORAGE_KEY, JSON.stringify(parsed));
-      } catch (storageErr) {
-        console.warn('[FareMatrix] Could not save fare matrix to localStorage:', storageErr);
-      }
-      console.log(`[FareMatrix] Successfully loaded and cached ${parsed.length} fare entries from database`);
-      return parsed;
-    }
-  } catch (err) {
-    console.error('[FareMatrix] Unexpected error loading fare matrix:', err);
+    if (s.startsWith('manolo') || s.startsWith('maluko')) return 'manolo_to_agora';
+    if (s.startsWith('agora')) return 'agora_to_manolo';
+    return null;
   }
-  return activeFareMatrix;
-}
 
-// Initialize live sync if running in browser
-if (typeof window !== 'undefined') {
-  // Initial background load
-  loadFareMatrixFromDatabase().catch(() => {});
+  const sp = (tripOrRoute.starting_point || '').toLowerCase().trim();
+  const ep = (tripOrRoute.end_point || '').toLowerCase().trim();
+  const route = (((tripOrRoute as any).route || (tripOrRoute as any).route_name) || '').toLowerCase().trim();
 
-  // Realtime subscription to live fare changes in database
-  try {
-    supabase
-      .channel('fare_matrix_live_sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'fare_matrix' },
-        () => {
-          console.log('[FareMatrix] Live update received from Supabase, refreshing fare matrix...');
-          loadFareMatrixFromDatabase(true).catch(() => {});
-        }
-      )
-      .subscribe();
-  } catch (subErr) {
-    console.warn('[FareMatrix] Could not subscribe to realtime fare_matrix changes:', subErr);
+  // Check starting_point and end_point
+  if ((sp.includes('manolo') || sp.includes('maluko')) && ep.includes('agora')) {
+    return 'manolo_to_agora';
   }
+  if (sp.includes('agora') && (ep.includes('manolo') || ep.includes('maluko'))) {
+    return 'agora_to_manolo';
+  }
+  if (sp.includes('manolo') || sp.includes('maluko')) {
+    return 'manolo_to_agora';
+  }
+  if (sp.includes('agora')) {
+    return 'agora_to_manolo';
+  }
+  if (ep.includes('agora')) {
+    return 'manolo_to_agora';
+  }
+  if (ep.includes('manolo') || ep.includes('maluko')) {
+    return 'agora_to_manolo';
+  }
+
+  if (route) {
+    return determineTripDirection(route);
+  }
+
+  return null;
 }
 
 /**
- * Comprehensive mapping of known stop aliases between UI dropdowns, database spellings, and terminal names.
+ * Stop aliases map for normalizing names between UI, database, and terminal variants.
  */
 const STOP_ALIAS_MAP: Record<string, string[]> = {
   'agora terminal': ['agora terminal', 'agora'],
   'agora': ['agora', 'agora terminal'],
-  'manolo fortich terminal': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
-  'manolo fortich': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
-  'kalugmanan manolo': ['kalugmanan manolo', 'manolo fortich', 'manolo fortich terminal'],
+  'manolo fortich terminal': ['manolo fortich terminal', 'maluko manolo', 'manolo fortich', 'kalugmanan manolo', 'tankulan'],
+  'manolo fortich': ['manolo fortich', 'manolo fortich terminal', 'maluko manolo', 'kalugmanan manolo'],
+  'kalugmanan manolo': ['kalugmanan manolo', 'manolo fortich terminal', 'manolo fortich', 'maluko manolo'],
+  'maluko manolo': ['maluko manolo', 'maluko', 'manolo fortich terminal', 'manolo fortich'],
+  'maluko': ['maluko', 'maluko manolo', 'manolo fortich terminal'],
+  'dalirig': ['dalirig'],
   'alae': ['alae manolo', 'ala-e', 'alae'],
   'alae manolo': ['alae manolo', 'ala-e', 'alae'],
   'ala-e': ['ala-e', 'alae manolo', 'alae'],
@@ -197,7 +214,8 @@ const STOP_ALIAS_MAP: Record<string, string[]> = {
   'lonocan': ['lonocan', 'lunocan'],
   'maitum': ['maitum', 'maitom'],
   'maitom': ['maitom', 'maitum'],
-  'tablon baloi': ['tablon baloi', 'tablon'],
+  'tablon baloi': ['tablon baloi'],
+  'tablon': ['tablon'],
   'cugman': ['cugman'],
   'gusa': ['gusa'],
   'agusan': ['agusan'],
@@ -211,17 +229,221 @@ const STOP_ALIAS_MAP: Record<string, string[]> = {
   'gaisano cdo': ['gaisano cdo'],
 };
 
-function getStopCandidates(stopName: string): string[] {
+export function getStopCandidates(stopName: string): string[] {
   const clean = stopName.trim().toLowerCase();
   const aliases = STOP_ALIAS_MAP[clean] || [];
   return Array.from(new Set([clean, ...aliases]));
 }
 
+function findNormalizedStopIndex(stopName: string, stopsList: readonly string[]): number {
+  if (!stopName) return -1;
+  const candidates = getStopCandidates(stopName);
+  for (let i = 0; i < stopsList.length; i++) {
+    const s = stopsList[i].toLowerCase();
+    if (candidates.some((c) => c === s)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Check whether a database row belongs to a directional sequence (route_from appears before route_to).
+ */
+export function isRowInDirection(
+  routeFrom: string,
+  routeTo: string,
+  direction: TripDirection
+): boolean {
+  const stops = direction === 'manolo_to_agora' ? MANOLO_TO_AGORA_STOPS : AGORA_TO_MANOLO_STOPS;
+  const fromIdx = findNormalizedStopIndex(routeFrom, stops);
+  const toIdx = findNormalizedStopIndex(routeTo, stops);
+  return fromIdx !== -1 && toIdx !== -1 && fromIdx < toIdx;
+}
+
+function getBundledFareMatrixForDirection(direction: TripDirection): FareMatrixEntry[] {
+  return direction === 'manolo_to_agora'
+    ? (fareMatrixManoloToAgora as FareMatrixEntry[])
+    : (fareMatrixAgoraToManolo as FareMatrixEntry[]);
+}
+
+function loadInitialFareMatrix(direction: TripDirection): FareMatrixEntry[] {
+  try {
+    const storageKey = `${FARE_MATRIX_STORAGE_KEY_PREFIX}${direction}`;
+    const cached = localStorage.getItem(storageKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn(`[FareMatrix] Error loading cached fare matrix for ${direction}:`, e);
+  }
+  return getBundledFareMatrixForDirection(direction);
+}
+
+let currentActiveDirection: TripDirection = 'manolo_to_agora';
+let activeFareMatrix: FareMatrixEntry[] = loadInitialFareMatrix('manolo_to_agora');
+
+/**
+ * Explicitly switch the active trip direction and load its matrix (synchronous).
+ */
+export function setActiveTripDirection(
+  tripOrDirection?: TripDirection | Trip | { starting_point?: string | null; end_point?: string | null } | string | null
+): TripDirection {
+  const resolved = determineTripDirection(tripOrDirection) || 'manolo_to_agora';
+  if (currentActiveDirection !== resolved || activeFareMatrix.length === 0) {
+    currentActiveDirection = resolved;
+    activeFareMatrix = loadInitialFareMatrix(resolved);
+    console.log(`[FareMatrix] Switched active trip direction to: ${resolved} (${activeFareMatrix.length} rows loaded)`);
+  }
+  return resolved;
+}
+
+export function getActiveTripDirection(): TripDirection {
+  return currentActiveDirection;
+}
+
+export function getActiveFareMatrix(): FareMatrixEntry[] {
+  return activeFareMatrix;
+}
+
+export function getStopsForDirection(direction?: TripDirection | null): string[] {
+  const dir = direction || currentActiveDirection;
+  return dir === 'agora_to_manolo' ? [...AGORA_TO_MANOLO_STOPS] : [...MANOLO_TO_AGORA_STOPS];
+}
+
+/**
+ * Fetch latest fare matrix from Supabase public.fare_matrix table for the specified direction,
+ * and cache for offline use. When online, only the 171 rows for that direction are kept.
+ */
+export async function loadFareMatrixFromDatabase(
+  tripOrDirectionOrForce?: TripDirection | Trip | { starting_point?: string | null; end_point?: string | null } | string | boolean | null,
+  force = false
+): Promise<FareMatrixEntry[]> {
+  let directionArg: TripDirection | Trip | { starting_point?: string | null; end_point?: string | null } | string | null = null;
+  let forceArg = force;
+
+  if (typeof tripOrDirectionOrForce === 'boolean') {
+    forceArg = tripOrDirectionOrForce;
+    directionArg = currentActiveDirection;
+  } else {
+    directionArg = tripOrDirectionOrForce ?? null;
+  }
+
+  const direction = setActiveTripDirection(directionArg);
+
+  try {
+    if (!navigator.onLine && activeFareMatrix.length > 0 && !forceArg) {
+      return activeFareMatrix;
+    }
+
+    const { data, error } = await supabase
+      .from('fare_matrix')
+      .select('id, route_from, route_to, km_distance, regular_fare, discounted_fare');
+
+    if (error) {
+      console.warn('[FareMatrix] Error loading fare matrix from Supabase:', error);
+      return activeFareMatrix;
+    }
+
+    if (data && data.length > 0) {
+      // Filter rows to ONLY the 171 rows belonging to the active direction
+      const directionalRows: FareMatrixEntry[] = data
+        .filter((row: any) => isRowInDirection(row.route_from || '', row.route_to || '', direction))
+        .map((row: any) => ({
+          id: row.id,
+          route_from: (row.route_from || '').trim(),
+          route_to: (row.route_to || '').trim(),
+          km_distance: row.km_distance !== null && row.km_distance !== undefined ? Number(row.km_distance) : null,
+          regular_fare: Number(row.regular_fare),
+          discounted_fare: Number(row.discounted_fare),
+          direction,
+        }));
+
+      if (directionalRows.length > 0) {
+        activeFareMatrix = directionalRows;
+        try {
+          localStorage.setItem(
+            `${FARE_MATRIX_STORAGE_KEY_PREFIX}${direction}`,
+            JSON.stringify(directionalRows)
+          );
+        } catch (storageErr) {
+          console.warn(`[FareMatrix] Could not save fare matrix for ${direction} to localStorage:`, storageErr);
+        }
+        console.log(`[FareMatrix] Successfully loaded and cached ${directionalRows.length} fare entries for direction: ${direction}`);
+        return directionalRows;
+      }
+    }
+  } catch (err) {
+    console.error('[FareMatrix] Unexpected error loading fare matrix:', err);
+  }
+  return activeFareMatrix;
+}
+
+// Initialize live sync if running in browser
+if (typeof window !== 'undefined') {
+  try {
+    const rawTripState = localStorage.getItem('commutai_trip_state');
+    if (rawTripState) {
+      const parsed = JSON.parse(rawTripState);
+      if (parsed?.currentTrip) {
+        setActiveTripDirection(parsed.currentTrip);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Initial background load
+  loadFareMatrixFromDatabase().catch(() => {});
+
+  // Realtime subscription to live fare changes in database
+  try {
+    supabase
+      .channel('fare_matrix_live_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fare_matrix' },
+        () => {
+          console.log('[FareMatrix] Live update received from Supabase, refreshing fare matrix...');
+          loadFareMatrixFromDatabase(currentActiveDirection, true).catch(() => {});
+        }
+      )
+      .subscribe();
+  } catch (subErr) {
+    console.warn('[FareMatrix] Could not subscribe to realtime fare_matrix changes:', subErr);
+  }
+}
+
+/**
+ * Get sequence order of a bus stop along the route along the active trip direction.
+ */
+export function getStopSequenceOrder(stopName: string, direction?: TripDirection | null): number | null {
+  if (!stopName) return null;
+  const dir = direction || currentActiveDirection || 'manolo_to_agora';
+  const stops = dir === 'agora_to_manolo' ? AGORA_TO_MANOLO_STOPS : MANOLO_TO_AGORA_STOPS;
+  const idx = findNormalizedStopIndex(stopName, stops);
+  if (idx !== -1) {
+    return idx + 1; // 1-based order along trip
+  }
+
+  const candidates = getStopCandidates(stopName);
+  for (const stop of busStopsData as any[]) {
+    const sName = (stop.name || '').toLowerCase().trim();
+    if (candidates.some((c) => c === sName || sName.includes(c) || c.includes(sName))) {
+      return Number(stop.sequence_order);
+    }
+  }
+  return null;
+}
+
 /**
  * Get fare from matrix based on origin and destination stops.
  * Supports:
- * 1. Live database fares with automatic offline cache and JSON bundle fallback.
- * 2. Bidirectional matching (A -> B or B -> A).
+ * 1. Strict directional lookup (only forward travel along the active trip's direction).
+ * 2. Live database fares with automatic offline cache and directional JSON bundle fallback.
  * 3. Stop alias and terminal spelling normalization.
  * 4. Regular vs discounted fare rates.
  */
@@ -240,35 +462,24 @@ export function getFareFromMatrix(
 
   let fareEntry: FareMatrixEntry | undefined;
 
-  // 1. Search in active fare matrix (database-synced / cached)
+  // 1. Search in active directional fare matrix (ONLY forward direction along the trip)
   for (const f of fromCandidates) {
     for (const t of toCandidates) {
-      // Forward direction
       fareEntry = activeFareMatrix.find(
         (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
-      );
-      if (fareEntry) break;
-
-      // Bidirectional reverse direction
-      fareEntry = activeFareMatrix.find(
-        (item) => item.route_from.toLowerCase() === t && item.route_to.toLowerCase() === f
       );
       if (fareEntry) break;
     }
     if (fareEntry) break;
   }
 
-  // 2. Fallback to bundled JSON if dynamic matrix had no match
-  if (!fareEntry && (fareMatrixData as any[]).length > 0) {
+  // 2. Fallback to bundled directional JSON if dynamic matrix had no match
+  if (!fareEntry) {
+    const bundledData = getBundledFareMatrixForDirection(currentActiveDirection);
     for (const f of fromCandidates) {
       for (const t of toCandidates) {
-        fareEntry = (fareMatrixData as FareMatrixEntry[]).find(
+        fareEntry = bundledData.find(
           (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
-        );
-        if (fareEntry) break;
-
-        fareEntry = (fareMatrixData as FareMatrixEntry[]).find(
-          (item) => item.route_from.toLowerCase() === t && item.route_to.toLowerCase() === f
         );
         if (fareEntry) break;
       }
@@ -277,7 +488,7 @@ export function getFareFromMatrix(
   }
 
   if (!fareEntry) {
-    console.warn(`[FareMatrix] No fare data found for route: ${fromStop} <-> ${toStop}`);
+    console.warn(`[FareMatrix] No fare data found for forward route: ${fromStop} -> ${toStop} (direction: ${currentActiveDirection})`);
     return null;
   }
 
@@ -473,12 +684,12 @@ async function processQRCard(
 ): Promise<ScanResult> {
   // ── Basic QR Format Validation ───────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 8) {
-    return { status: 'qr_fake', reason: 'Invalid QR format' };
+    return { status: 'qr_fake', reason: 'Invalid QR format', uid: scannedUid };
   }
 
   // ── Card Status Validation ──────────────────────────────────────────────────
   if (card.status !== 'active') {
-    return { status: 'qr_inactive' };
+    return { status: 'qr_inactive', uid: scannedUid };
   }
 
   // ── Route Restriction Validation ─────────────────────────────────────────────
@@ -497,7 +708,7 @@ async function processQRCard(
       });
 
       if (!isAllowed) {
-        return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', ') };
+        return { status: 'qr_wrong_trip', expectedRoute: card.allowed_routes.join(', '), uid: scannedUid };
       }
     }
   }
@@ -600,19 +811,41 @@ async function processQRCard(
 
     if (!isDestinationMatch) {
       destinationMismatchOccurred = true;
+
+      // Determine specific irregularity type instead of generic 'other'
+      const targetSeq = getStopSequenceOrder(card.destination);
+      const currentSeq = getStopSequenceOrder(currentDestination);
+      const boardSeq = boardedData?.boarding_stop ? getStopSequenceOrder(boardedData.boarding_stop) : null;
+
+      let isOvershooting = false;
+      if (targetSeq !== null && currentSeq !== null && boardSeq !== null) {
+        const isForward = targetSeq >= boardSeq;
+        isOvershooting = isForward ? currentSeq > targetSeq : currentSeq < targetSeq;
+      } else if (targetSeq !== null && currentSeq !== null) {
+        isOvershooting = currentSeq > targetSeq;
+      }
+
+      // Specific classification: 'overshooting' if traveled beyond paid destination, 'missed_alighting' if alighted early/different
+      const specificType: 'overshooting' | 'missed_alighting' = isOvershooting ? 'overshooting' : 'missed_alighting';
+
+      const detail = isOvershooting
+        ? `Destination overshooting: Ticket destination was "${card.destination}" but passenger alighted past destination at "${currentDestination}".`
+        : `Destination mismatch (early alighting): Ticket destination was "${card.destination}" but passenger alighted at "${currentDestination}".`;
+
       await supabase.from('fare_irregularities').insert({
         trip_id: tripId,
         conductor_id: conductorId,
         card_uid: card.card_uid,
         passenger_id: boardedData?.id,
-        type: 'other',
-        description: `Destination mismatch: Card destination "${card.destination}" vs actual alighting stop "${currentDestination}". Passenger: ${card.owner_name || card.card_uid}`,
+        type: specificType,
+        description: `${detail} Passenger: ${card.owner_name || card.card_uid}`,
         detected_at: new Date().toISOString(),
         destination_stop: card.destination,
         current_stop: currentDestination,
-        notes: `Boarded at: ${boardedData?.boarding_stop || 'Unknown'}`,
+        boarding_stop: boardedData?.boarding_stop || null,
+        notes: `Boarded at: ${boardedData?.boarding_stop || 'Unknown'}. Automated real-time alighting scan audit.`,
       });
-      console.warn(`[FareService] Destination irregularity logged: Card target is ${card.destination}, alighting at ${currentDestination}`);
+      console.warn(`[FareService] Specific destination irregularity logged (${specificType}): Card target is ${card.destination}, alighting at ${currentDestination}`);
     }
   }
 
@@ -760,12 +993,12 @@ async function processTemporaryTicket(
 ): Promise<ScanResult> {
   // ── Basic Ticket Format Validation ────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 4) {
-    return { status: 'qr_fake', reason: 'Invalid ticket format' };
+    return { status: 'qr_fake', reason: 'Invalid ticket format', uid: scannedUid };
   }
 
   // ── Ticket Status Validation ──────────────────────────────────────────────────
   if (ticket.status !== 'issued') {
-    return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used' };
+    return { status: ticket.status === 'expired' ? 'ticket_expired' : 'ticket_already_used', uid: scannedUid };
   }
 
   // ── Trip Status Validation ───────────────────────────────────────────────────
@@ -856,7 +1089,6 @@ async function processTemporaryTicket(
     const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
     const txPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'cash';
     const { error: txErr } = await supabase.from('transactions').insert({
-      temp_ticket_id: ticket.id,
       trip_id: tripId,
       type: 'fare_validation',
       transaction_type: 'fare_validation',
@@ -901,6 +1133,49 @@ async function processTemporaryTicket(
     // Alighting
     if (!boardedData) {
       return { status: 'error', message: 'Ticket not boarded on this trip' };
+    }
+
+    // ── Destination Mismatch Validation (Ticket Alighting) ────────────────────
+    if (currentDestination && ticket.destination) {
+      const normalizedTicketDest = ticket.destination.toLowerCase().trim();
+      const normalizedCurrentDest = currentDestination.toLowerCase().trim();
+      const isDestinationMatch = normalizedTicketDest === normalizedCurrentDest ||
+                                 normalizedTicketDest.includes(normalizedCurrentDest) ||
+                                 normalizedCurrentDest.includes(normalizedTicketDest);
+
+      if (!isDestinationMatch) {
+        const targetSeq = getStopSequenceOrder(ticket.destination);
+        const currentSeq = getStopSequenceOrder(currentDestination);
+        const boardSeq = boardedData?.boarding_stop ? getStopSequenceOrder(boardedData.boarding_stop) : null;
+
+        let isOvershooting = false;
+        if (targetSeq !== null && currentSeq !== null && boardSeq !== null) {
+          const isForward = targetSeq >= boardSeq;
+          isOvershooting = isForward ? currentSeq > targetSeq : currentSeq < targetSeq;
+        } else if (targetSeq !== null && currentSeq !== null) {
+          isOvershooting = currentSeq > targetSeq;
+        }
+
+        const specificType: 'overshooting' | 'missed_alighting' = isOvershooting ? 'overshooting' : 'missed_alighting';
+        const detail = isOvershooting
+          ? `Destination overshooting: Ticket destination was "${ticket.destination}" but passenger alighted past destination at "${currentDestination}".`
+          : `Destination mismatch (early alighting): Ticket destination was "${ticket.destination}" but passenger alighted at "${currentDestination}".`;
+
+        await supabase.from('fare_irregularities').insert({
+          trip_id: tripId,
+          conductor_id: conductorId,
+          card_uid: ticket.ticket_uid,
+          passenger_id: boardedData?.id,
+          type: specificType,
+          description: `${detail} Passenger: ${ticket.passenger_type || 'Ticket passenger'}`,
+          detected_at: new Date().toISOString(),
+          destination_stop: ticket.destination,
+          current_stop: currentDestination,
+          boarding_stop: boardedData?.boarding_stop || null,
+          notes: `Boarded at: ${boardedData?.boarding_stop || 'Unknown'}. Automated real-time alighting scan audit for temporary ticket.`,
+        });
+        console.warn(`[FareService] Specific destination irregularity logged for ticket (${specificType}): Target is ${ticket.destination}, alighting at ${currentDestination}`);
+      }
     }
 
     const { error: alightErr } = await supabase

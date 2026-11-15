@@ -23,6 +23,7 @@ import {
   History,
   User,
   Calendar,
+  Navigation,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
@@ -969,7 +970,7 @@ const HomePage: React.FC = () => {
                     }}>
                       <CheckCircle2 size={16} color="#10b981" />
                       <div style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Ticket Scanner (QR & NFC Barcode)
+                        QR Scanner (Camera & Barcode)
                       </div>
                       <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>Ready</span>
                     </div>
@@ -1166,6 +1167,24 @@ const HomePage: React.FC = () => {
                   }}>
                     Bus #{currentBus?.plate_number || '---'}
                   </span>
+
+                  {(currentTrip?.starting_point || currentTrip?.end_point) && (
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: 12,
+                      background: 'rgba(59, 130, 246, 0.25)',
+                      color: '#93c5fd',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}>
+                      <Navigation size={11} color="#93c5fd" />
+                      {currentTrip.starting_point || 'Start'} → {currentTrip.end_point || 'End'}
+                    </span>
+                  )}
                 </div>
               </motion.div>
 
@@ -1392,7 +1411,7 @@ const HomePage: React.FC = () => {
                 />
                 <DashboardCard
                   icon={ScanLine}
-                  label="Tickets Validated"
+                  label="Cards Scanned"
                   value={validatedCount.toString()}
                   trend="Scanned Entries"
                   iconColor="#3b82f6"

@@ -126,17 +126,69 @@ export type Database = {
         Row: {
           id: string;
           trip_id: string;
-          type: 'double_scan' | 'count_mismatch' | 'fare_evasion' | 'other';
+          conductor_id?: string | null;
+          card_uid?: string | null;
+          passenger_id?: string | null;
+          type:
+            | 'double_scan'
+            | 'count_mismatch'
+            | 'fare_evasion'
+            | 'destination_overstay'
+            | 'missed_alighting'
+            | 'unauthorized_passenger'
+            | 'wrong_route'
+            | 'card_sharing'
+            | 'overshooting'
+            | 'underpayment'
+            | 'passenger_dispute'
+            | 'destination_mismatch'
+            | 'camera_malfunction'
+            | 'trip_duration'
+            | 'other';
           description: string;
           detected_at: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
+          boarding_stop?: string | null;
+          destination_stop?: string | null;
+          current_stop?: string | null;
+          distance_km?: number | null;
           resolved: boolean;
           resolved_by: string | null;
+          notes?: string | null;
         };
         Insert: {
           trip_id: string;
-          type: 'double_scan' | 'count_mismatch' | 'fare_evasion' | 'other';
+          conductor_id?: string | null;
+          card_uid?: string | null;
+          passenger_id?: string | null;
+          type:
+            | 'double_scan'
+            | 'count_mismatch'
+            | 'fare_evasion'
+            | 'destination_overstay'
+            | 'missed_alighting'
+            | 'unauthorized_passenger'
+            | 'wrong_route'
+            | 'card_sharing'
+            | 'overshooting'
+            | 'underpayment'
+            | 'passenger_dispute'
+            | 'destination_mismatch'
+            | 'camera_malfunction'
+            | 'trip_duration'
+            | 'other';
           description: string;
-          detected_at: string;
+          detected_at?: string;
+          location_lat?: number | null;
+          location_lng?: number | null;
+          boarding_stop?: string | null;
+          destination_stop?: string | null;
+          current_stop?: string | null;
+          distance_km?: number | null;
+          resolved?: boolean;
+          resolved_by?: string | null;
+          notes?: string | null;
         };
       };
     };

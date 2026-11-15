@@ -6,7 +6,7 @@ import {
   IonRefresherContent,
 } from '@ionic/react';
 import {
-  Users, ArrowUp, ArrowDown, CreditCard, Ticket,
+  Users, ArrowUp, ArrowDown, CreditCard, Ticket, Wallet, QrCode,
   Search, LogOut as AlightIcon, CheckCircle, Navigation,
   Smartphone, Banknote, Clock, MapPin, X, AlertTriangle, RotateCcw
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import { supabase } from '../supabaseClient';
 import { alightBoardedPassenger } from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { realtimeService } from '../services/realtimeService';
 import PageHeader from '../components/layout/PageHeader';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState, DashboardCard, PrimaryButton
@@ -29,6 +30,8 @@ interface TripPassengerStats {
   totalAlighted: number;
   currentOnboard: number;
   qrCardCount: number;
+  regularQrCount: number;
+  tempQrCount: number;
   ticketCount: number;
   fareCollectedTotal: number;
 }
@@ -167,57 +170,99 @@ const PassengerListPage: React.FC = () => {
     loadData();
   }, [currentTrip?.id]);
 
+  // Realtime subscription for passenger boardings and alightings
+  useEffect(() => {
+    if (!currentTrip?.id || !isOnline) return;
+
+    const cleanup = realtimeService.subscribeToPassengers(currentTrip.id, {
+      onInsert: () => { loadData(); },
+      onUpdate: () => { loadData(); },
+      onDelete: () => { loadData(); },
+    });
+
+    return () => { cleanup(); };
+  }, [currentTrip?.id, isOnline]);
+
   async function loadData() {
     if (!currentTrip) return;
     setLoading(true);
     try {
-      // Online: Fetch from database with relations
+      // Online: Fetch without nested joins to avoid FK ambiguity (PGRST201)
       if (isOnline) {
-        const { data, error } = await supabase
+        const { data: rawPassengers, error: passError } = await supabase
           .from('boarded_passengers')
-          .select(`
-            id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop,
-            qr_cards!card_id(card_uid, passenger_type, destination, owner_name),
-            temporary_tickets!temp_ticket_id(ticket_uid, passenger_type, destination, fare_amount)
-          `)
+          .select('id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop')
           .eq('trip_id', currentTrip.id)
           .order('boarded_at', { ascending: false });
 
-        if (error) {
-          console.error('[PassengerListPage] Error loading boarded passengers:', error);
+        if (passError) {
+          console.error('[PassengerListPage] Error loading boarded passengers:', passError);
           loadOfflineData();
           return;
         }
 
-        if (data) {
-          const items: BoardedPassengerItem[] = data.map((p: any) => {
-            const card = p.qr_cards;
-            const ticket = p.temporary_tickets;
-            const cardUid = card?.card_uid || ticket?.ticket_uid || (p.card_id ? 'QR Card' : 'Ticket');
-            const passengerType = card?.passenger_type || ticket?.passenger_type || 'regular';
-            const destination = p.destination_stop || card?.destination || ticket?.destination || 'Open Stop';
-            const ownerName = card?.owner_name || null;
-            const fareAmount = ticket?.fare_amount || 0;
-
-            return {
-              id: p.id,
-              card_id: p.card_id,
-              temp_ticket_id: p.temp_ticket_id,
-              boarded_at: p.boarded_at,
-              alighted_at: p.alighted_at,
-              payment_method: p.payment_method || 'qr_card',
-              boarding_stop: p.boarding_stop,
-              destination_stop: destination,
-              card_uid: cardUid,
-              passenger_type: passengerType,
-              owner_name: ownerName,
-              fare_amount: fareAmount,
-            };
-          });
-
-          computeStatsAndDestinations(items);
-          setPassengersList(items);
+        const passengers = rawPassengers || [];
+        if (passengers.length === 0) {
+          computeStatsAndDestinations([]);
+          setPassengersList([]);
+          setLoading(false);
+          return;
         }
+
+        const cardIds = passengers.map((p: any) => p.card_id).filter(Boolean);
+        const ticketIds = passengers.map((p: any) => p.temp_ticket_id).filter(Boolean);
+
+        const [{ data: cardRows }, { data: ticketRows }, { data: txRows }] = await Promise.all([
+          cardIds.length > 0
+            ? supabase.from('qr_cards').select('id, card_uid, passenger_type, destination, owner_name').in('id', cardIds)
+            : Promise.resolve({ data: [] }),
+          ticketIds.length > 0
+            ? supabase.from('temporary_tickets').select('id, ticket_uid, passenger_type, destination, fare_amount').in('id', ticketIds)
+            : Promise.resolve({ data: [] }),
+          supabase.from('transactions').select('id, card_id, amount, baggage_fee, payment_method').eq('trip_id', currentTrip.id),
+        ]);
+
+        const cardMap: Record<string, any> = {};
+        (cardRows || []).forEach((c: any) => { cardMap[c.id] = c; });
+
+        const ticketMap: Record<string, any> = {};
+        (ticketRows || []).forEach((t: any) => { ticketMap[t.id] = t; });
+
+        const fareByCard: Record<string, number> = {};
+        (txRows || []).forEach((tx: any) => {
+          if (tx.card_id) {
+            fareByCard[tx.card_id] = (fareByCard[tx.card_id] || 0) + (Number(tx.amount) || 0);
+          }
+        });
+
+        const items: BoardedPassengerItem[] = passengers.map((p: any) => {
+          const card = p.card_id ? cardMap[p.card_id] : null;
+          const ticket = p.temp_ticket_id ? ticketMap[p.temp_ticket_id] : null;
+
+          const cardUid = card?.card_uid || ticket?.ticket_uid || (p.card_id ? 'QR Card' : 'Card');
+          const passengerType = card?.passenger_type || ticket?.passenger_type || 'regular';
+          const destination = p.destination_stop || card?.destination || ticket?.destination || 'Open Stop';
+          const ownerName = card?.owner_name || null;
+          const fareAmount = (p.card_id ? fareByCard[p.card_id] : 0) || ticket?.fare_amount || 0;
+
+          return {
+            id: p.id,
+            card_id: p.card_id,
+            temp_ticket_id: p.temp_ticket_id,
+            boarded_at: p.boarded_at,
+            alighted_at: p.alighted_at,
+            payment_method: p.payment_method || 'qr_card',
+            boarding_stop: p.boarding_stop,
+            destination_stop: destination,
+            card_uid: cardUid,
+            passenger_type: passengerType,
+            owner_name: ownerName,
+            fare_amount: fareAmount,
+          };
+        });
+
+        computeStatsAndDestinations(items);
+        setPassengersList(items);
       } else {
         loadOfflineData();
       }
@@ -255,16 +300,18 @@ const PassengerListPage: React.FC = () => {
     const totalBoarded = items.length;
     const totalAlighted = items.filter(p => !!p.alighted_at).length;
     const currentOnboard = totalBoarded - totalAlighted;
-    const qrCardCount = items.filter(p => !!p.card_id || p.payment_method === 'qr_card').length;
-    const ticketCount = items.filter(p => !!p.temp_ticket_id || p.payment_method === 'ticket' || p.payment_method === 'cash').length;
+    const tempQrCount = items.filter(p => !!p.temp_ticket_id || p.card_uid?.toUpperCase().startsWith('T')).length;
+    const regularQrCount = totalBoarded - tempQrCount;
     const fareCollectedTotal = items.reduce((sum, p) => sum + (p.fare_amount || 0), 0);
 
     setStats({
       totalBoarded,
       totalAlighted,
       currentOnboard,
-      qrCardCount,
-      ticketCount,
+      qrCardCount: regularQrCount,
+      regularQrCount,
+      tempQrCount,
+      ticketCount: tempQrCount,
       fareCollectedTotal,
     });
 
@@ -302,14 +349,14 @@ const PassengerListPage: React.FC = () => {
       }
 
       // Step 1: Fetch the boarding transaction to get the fare amount
-      let boardingTx;
-      let txError;
+      let boardingTx: any = null;
+      let txError: any = null;
 
       if (passengerToCancel.card_id) {
         // For QR cards, lookup by card_id
         const result = await supabase
           .from('transactions')
-          .select('id, amount, card_id, temp_ticket_id, baggage_fee')
+          .select('id, amount, card_id, baggage_fee')
           .eq('trip_id', currentTrip.id)
           .eq('card_id', passengerToCancel.card_id)
           .eq('status', 'completed')
@@ -319,18 +366,9 @@ const PassengerListPage: React.FC = () => {
         boardingTx = result.data;
         txError = result.error;
       } else if (passengerToCancel.temp_ticket_id) {
-        // For temporary tickets, lookup by temp_ticket_id
-        const result = await supabase
-          .from('transactions')
-          .select('id, amount, card_id, temp_ticket_id, baggage_fee')
-          .eq('trip_id', currentTrip.id)
-          .eq('temp_ticket_id', passengerToCancel.temp_ticket_id)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        boardingTx = result.data;
-        txError = result.error;
+        // For temporary tickets, fallback to fare_amount on the passenger item
+        boardingTx = { amount: passengerToCancel.fare_amount || 0 };
+        txError = null;
       }
 
       if (txError || !boardingTx) {
@@ -362,17 +400,22 @@ const PassengerListPage: React.FC = () => {
       }
 
       // Step 3: Record the refund transaction
+      const refundPayload: any = {
+        trip_id: currentTrip.id,
+        amount: -refundAmount, // Negative amount for refund
+        type: 'refund',
+        transaction_type: 'refund',
+        channel: 'refund',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      };
+      if (passengerToCancel.card_id) {
+        refundPayload.card_id = passengerToCancel.card_id;
+      }
+
       const { error: refundTxError } = await supabase
         .from('transactions')
-        .insert({
-          card_id: passengerToCancel.card_id,
-          temp_ticket_id: passengerToCancel.temp_ticket_id,
-          trip_id: currentTrip.id,
-          amount: -refundAmount, // Negative amount for refund
-          channel: 'refund',
-          status: 'completed',
-          created_at: new Date().toISOString(),
-        });
+        .insert(refundPayload);
 
       if (refundTxError) {
         throw new Error(`Failed to record refund transaction: ${refundTxError.message}`);
@@ -854,7 +897,7 @@ const PassengerListPage: React.FC = () => {
               {activeTab === 'summary' && (
                 <div>
                   {/* Stat Grid */}
-                  <div className="dashboard-grid" style={{ marginBottom: 16 }}>
+                  <div className="dashboard-grid" style={{ marginBottom: 12 }}>
                     <DashboardCard
                       label="Total Boarded"
                       value={stats.totalBoarded}
@@ -864,29 +907,69 @@ const PassengerListPage: React.FC = () => {
                       delay={0}
                     />
                     <DashboardCard
+                      label="On Board"
+                      value={stats.currentOnboard}
+                      icon={Users}
+                      iconBg="var(--color-info-subtle)"
+                      iconColor="var(--color-info)"
+                      delay={0.05}
+                    />
+                    <DashboardCard
                       label="Alighted"
                       value={stats.totalAlighted}
                       icon={ArrowUp}
                       iconBg="var(--color-warning-subtle)"
                       iconColor="#A16207"
-                      delay={0.05}
-                    />
-                    <DashboardCard
-                      label="QR Cards"
-                      value={stats.qrCardCount}
-                      icon={CreditCard}
-                      iconBg="var(--color-info-subtle)"
-                      iconColor="var(--color-info)"
                       delay={0.1}
                     />
                     <DashboardCard
-                      label="Tickets"
-                      value={stats.ticketCount}
-                      icon={Ticket}
+                      label="Fare Collected"
+                      value={`₱${stats.fareCollectedTotal.toFixed(0)}`}
+                      icon={Wallet}
                       iconBg="var(--color-primary-subtle)"
                       iconColor="var(--color-primary)"
                       delay={0.15}
                     />
+                  </div>
+
+                  {/* Card Type Breakdown: Regular QR vs Temp QR */}
+                  <div style={{
+                    display: 'flex',
+                    gap: 10,
+                    marginBottom: 18,
+                  }}>
+                    <div style={{
+                      flex: 1,
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      border: '1px solid var(--glass-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <CreditCard size={16} color="var(--color-primary)" />
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Regular QR</span>
+                      </div>
+                      <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>{stats.regularQrCount}</span>
+                    </div>
+                    <div style={{
+                      flex: 1,
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      border: '1px solid var(--glass-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <QrCode size={16} color="#EA580C" />
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Temp QR</span>
+                      </div>
+                      <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>{stats.tempQrCount}</span>
+                    </div>
                   </div>
 
                   {/* Destination Breakdown */}
@@ -987,7 +1070,7 @@ const PassengerListPage: React.FC = () => {
               marginBottom: 18,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Card / Ticket</span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>QR Card UID</span>
                 <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {passengerToAlight.card_uid}
                 </span>
@@ -1074,7 +1157,7 @@ const PassengerListPage: React.FC = () => {
               marginBottom: 18,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Card / Ticket</span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>QR Card UID</span>
                 <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {passengerToCancel.card_uid}
                 </span>
@@ -1183,7 +1266,7 @@ const PassengerListPage: React.FC = () => {
               marginBottom: 18,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Card / Ticket</span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>QR Card UID</span>
                 <span style={{ fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-primary)' }}>
                   {passengerToReport.card_uid}
                 </span>

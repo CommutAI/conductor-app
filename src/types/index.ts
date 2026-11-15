@@ -27,6 +27,18 @@ export interface Bus {
   status: 'active' | 'maintenance' | 'inactive';
 }
 
+export type TripDirection = 'manolo_to_agora' | 'agora_to_manolo';
+
+export interface FareMatrixEntry {
+  id?: string;
+  route_from: string;
+  route_to: string;
+  km_distance: number | null;
+  regular_fare: number;
+  discounted_fare: number;
+  direction?: TripDirection;
+}
+
 export interface Trip {
   id: string;
   bus_id: string;
@@ -39,6 +51,10 @@ export interface Trip {
   current_lng?: number;
   gps_updated_at?: string;
   updated_at?: string;
+  starting_point?: string | null;
+  end_point?: string | null;
+  route?: string | null;
+  route_name?: string | null;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -240,14 +256,41 @@ export interface ProximityAlert {
 
 // ── Fare Irregularities ─────────────────────────────────────────────────────
 
+export type IrregularityType =
+  | 'double_scan'
+  | 'count_mismatch'
+  | 'fare_evasion'
+  | 'destination_overstay'
+  | 'missed_alighting'
+  | 'unauthorized_passenger'
+  | 'wrong_route'
+  | 'card_sharing'
+  | 'overshooting'
+  | 'underpayment'
+  | 'passenger_dispute'
+  | 'destination_mismatch'
+  | 'camera_malfunction'
+  | 'trip_duration'
+  | 'other';
+
 export interface FareIrregularity {
   id: string;
   trip_id: string;
-  type: 'double_scan' | 'count_mismatch' | 'fare_evasion' | 'other';
+  conductor_id?: string | null;
+  card_uid?: string | null;
+  passenger_id?: string | null;
+  type: IrregularityType;
   description: string;
   detected_at: string;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  boarding_stop?: string | null;
+  destination_stop?: string | null;
+  current_stop?: string | null;
+  distance_km?: number | null;
   resolved: boolean;
   resolved_by: string | null;
+  notes?: string | null;
 }
 
 // ── Theme ────────────────────────────────────────────────────────────────────

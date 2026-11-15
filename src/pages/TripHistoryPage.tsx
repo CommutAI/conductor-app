@@ -36,7 +36,7 @@ interface Trip {
   id: string;
   started_at: string;
   ended_at?: string;
-  status: 'completed' | 'cancelled';
+  status: 'completed' | 'cancelled' | 'in_progress';
   route: string;
   plate_number: string;
   starting_point?: string;
@@ -133,7 +133,7 @@ function loadTripDetailsCache(tripId: string): TripDetails | null {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const TripHistoryPage: React.FC = () => {
-  const [segment, setSegment] = useState<'all' | 'today'>('today');
+  const [segment, setSegment] = useState<'all' | 'today'>('all');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFromCache, setIsFromCache] = useState(false);
@@ -167,24 +167,20 @@ const TripHistoryPage: React.FC = () => {
 
     // ── Online: fetch from Supabase then cache ────────────────────────────
     try {
-      // FIX 1: Fetch trips without JOIN to avoid FK ambiguity errors
-      // FIX 2: Filter to completed/cancelled only — in_progress trips belong in the
-      // active trip view, not history.
+      // Fetch conductor trips (completed, cancelled, and active in_progress trips)
       let query = supabase
         .from('trips')
         .select(`id, started_at, ended_at, status, starting_point, end_point, bus_id`)
         .eq('conductor_id', profile.id)
-        .in('status', ['completed', 'cancelled'])
+        .in('status', ['completed', 'cancelled', 'in_progress'])
         .order('started_at', { ascending: false });
 
       if (segment === 'today') {
-        // FIX 4: Build the date range in UTC so it matches how Supabase stores timestamps,
-        // regardless of the device's local timezone (e.g. UTC+8 Philippines).
-        const now = new Date();
-        const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-        const tomorrowUTC = new Date(todayUTC);
-        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
-        query = query.gte('started_at', todayUTC.toISOString()).lt('started_at', tomorrowUTC.toISOString());
+        // Build the date range matching the device's local calendar day.
+        // Include trips started today, ended today, or currently active (in_progress).
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        query = query.or(`started_at.gte.${startOfToday.toISOString()},status.eq.in_progress,ended_at.gte.${startOfToday.toISOString()}`);
       }
 
       const { data, error: tripsError } = await query;
@@ -388,33 +384,26 @@ const TripHistoryPage: React.FC = () => {
           ? supabase.from('qr_cards').select('id, card_uid').in('id', cardIds)
           : Promise.resolve({ data: [] }),
         ticketIds.length > 0
-          ? supabase.from('temporary_tickets').select('id, ticket_uid').in('id', ticketIds)
+          ? supabase.from('temporary_tickets').select('id, ticket_uid, fare_amount').in('id', ticketIds)
           : Promise.resolve({ data: [] }),
       ]);
 
       const cardUidMap: Record<string, string> = {};
       (cardRows || []).forEach((c: any) => { cardUidMap[c.id] = c.card_uid; });
-      (ticketRows || []).forEach((t: any) => { cardUidMap[t.id] = t.ticket_uid; });
+      const ticketMap: Record<string, any> = {};
+      (ticketRows || []).forEach((t: any) => { ticketMap[t.id] = t; });
 
-      const passengersWithFare = (passengers || []).map((passenger: any, idx: number) => {
-        // Match transaction by card_id only (temp_ticket_id doesn't exist in transactions table)
-        const passengerTx = (transactions || []).find(tx =>
-          passenger.card_id && tx.card_id === passenger.card_id
-        );
+      const passengersWithFare = (passengers || []).map((passenger: any) => {
+        // Match transaction by card_id
+        const passengerTx = passenger.card_id
+          ? (transactions || []).find(tx => tx.card_id === passenger.card_id)
+          : null;
 
-        // Debug: log first 3 passengers to see why matching fails
-        if (idx < 3) {
-          console.log(`[TripDetails] Passenger ${idx}:`, {
-            card_id: passenger.card_id,
-            temp_ticket_id: passenger.temp_ticket_id,
-            payment_method: passenger.payment_method,
-            matched_tx: passengerTx ? { id: passengerTx.id, amount: passengerTx.amount, card_id: passengerTx.card_id } : 'NO MATCH'
-          });
-        }
+        const ticketData = passenger.temp_ticket_id ? ticketMap[passenger.temp_ticket_id] : null;
 
         const cardUid =
           (passenger.card_id && cardUidMap[passenger.card_id]) ||
-          (passenger.temp_ticket_id && cardUidMap[passenger.temp_ticket_id]) ||
+          (passenger.temp_ticket_id && ticketData?.ticket_uid) ||
           passenger.card_id ||
           passenger.temp_ticket_id ||
           null;
@@ -422,7 +411,7 @@ const TripHistoryPage: React.FC = () => {
         return {
           ...passenger,
           card_uid: cardUid,
-          fare: passengerTx?.amount || 0,
+          fare: passengerTx?.amount || ticketData?.fare_amount || 0,
           baggage_fee: passengerTx?.baggage_fee || 0,
           payment_method: passenger.payment_method || passengerTx?.payment_method || passengerTx?.channel || 'qr_card',
           boarding_stop: passenger.boarding_stop || null,
@@ -463,14 +452,16 @@ const TripHistoryPage: React.FC = () => {
 
   const filteredTrips = trips.filter(trip =>
     trip.route.toLowerCase().includes(searchText.toLowerCase()) ||
-    trip.plate_number.toLowerCase().includes(searchText.toLowerCase())
+    trip.plate_number.toLowerCase().includes(searchText.toLowerCase()) ||
+    (trip.starting_point && trip.starting_point.toLowerCase().includes(searchText.toLowerCase())) ||
+    (trip.end_point && trip.end_point.toLowerCase().includes(searchText.toLowerCase()))
   );
 
   const totalFareCollected = filteredTrips.reduce((sum, trip) => sum + trip.fare_collected, 0);
   const totalPassengers = filteredTrips.reduce((sum, trip) => sum + trip.passenger_count, 0);
 
   const statusVariant = (status: string) =>
-    status === 'completed' ? 'success' : 'danger';
+    status === 'completed' ? 'success' : status === 'in_progress' ? 'warning' : 'danger';
 
   return (
     <IonPage>
@@ -541,11 +532,15 @@ const TripHistoryPage: React.FC = () => {
             <LoadingSkeleton variant="card" count={3} />
           ) : filteredTrips.length === 0 ? (
             <EmptyState
-              title="No Trips Found"
+              title={searchText ? 'No Matching Trips' : segment === 'today' ? 'No Trips Today' : 'No Trips Found'}
               description={
-                isFromCache
-                  ? 'No cached trips available. Connect to the internet to load your history.'
-                  : segment === 'today' ? 'No trips today' : 'No trips found'
+                searchText
+                  ? `No trips match "${searchText}". Try searching another route or plate number.`
+                  : isFromCache
+                    ? 'No cached trips available. Connect to the internet to load your history.'
+                    : segment === 'today'
+                      ? 'No trips started or active today yet. Active trips will appear here.'
+                      : 'Trips will appear here once you start or complete them.'
               }
               icon={isFromCache ? WifiOff : Bus}
             />
@@ -632,19 +627,18 @@ const TripHistoryPage: React.FC = () => {
         isOpen={showTripDetails}
         onDidDismiss={() => setShowTripDetails(false)}
         className="trip-details-modal"
-        style={{ '--background': '#ffffff' }}
       >
         <IonHeader>
           <IonToolbar>
             <IonButtons slot="start">
               <IonButton onClick={() => setShowTripDetails(false)}>
-                <X size={20} />
+                <X size={20} color="var(--text-primary)" />
               </IonButton>
             </IonButtons>
             <IonTitle>Trip Details</IonTitle>
           </IonToolbar>
         </IonHeader>
-        <IonContent style={{ '--background': '#ffffff' }} className="app-page-bg trip-details-modal">
+        <IonContent className="app-page-bg trip-details-modal">
           <div className="page-content">
             {loadingDetails ? (
               <LoadingSkeleton variant="card" count={3} />
@@ -717,10 +711,22 @@ const TripHistoryPage: React.FC = () => {
                   }}>
                     {[
                       { icon: Users, value: selectedTripDetails.passengers.length, label: 'Passengers' },
-                      { icon: Wallet, value: `₱${selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(0)}`, label: 'Fare' },
-                      { icon: Clock, value: selectedTripDetails.ended_at ?
-                        `${Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000)}m` :
-                        'Active', label: 'Duration' },
+                      {
+                        icon: Wallet,
+                        value: `₱${(
+                          selectedTripDetails.transactions.length > 0
+                            ? selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0)
+                            : selectedTripDetails.passengers.reduce((sum, p) => sum + (p.fare || 0) + (p.baggage_fee || 0), 0)
+                        ).toFixed(0)}`,
+                        label: 'Fare',
+                      },
+                      {
+                        icon: Clock,
+                        value: selectedTripDetails.ended_at
+                          ? `${Math.max(1, Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000))}m`
+                          : 'Active',
+                        label: 'Duration',
+                      },
                     ].map(({ icon: Icon, value, label }) => (
                       <div key={label} style={{ textAlign: 'center' }}>
                         <Icon size={18} color="var(--color-primary)" />

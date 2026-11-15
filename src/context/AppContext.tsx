@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import { StorageService, CachedTripState } from '../services/storageService';
+import { setActiveTripDirection, loadFareMatrixFromDatabase } from '../services/fareService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,10 @@ interface Trip {
   current_lng?: number;
   gps_updated_at?: string;
   updated_at?: string;
+  starting_point?: string | null;
+  end_point?: string | null;
+  route?: string | null;
+  route_name?: string | null;
 }
 
 interface AppContextType {
@@ -446,6 +451,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentPassengersCount,
         fareCollected,
       });
+
+      // Synchronously switch and asynchronously sync directional fare matrix (171 rows)
+      setActiveTripDirection(currentTrip);
+      loadFareMatrixFromDatabase(currentTrip).catch((err) => {
+        console.warn('[AppContext] Failed to load directional fare matrix for trip:', err);
+      });
     }
   }, [currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected]);
 
@@ -526,6 +537,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     if (!trip) {
       StorageService.clearTripState();
+    } else {
+      setActiveTripDirection(trip);
+      loadFareMatrixFromDatabase(trip).catch(() => {});
     }
   }, []);
 
