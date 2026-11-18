@@ -1,0 +1,1370 @@
+[
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Dalirig",
+    "km_distance": null,
+    "regular_fare": 29,
+    "discounted_fare": 23,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 39,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 51,
+    "discounted_fare": 41,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 48,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 56,
+    "discounted_fare": 55,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 56,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 72,
+    "discounted_fare": 58,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 77,
+    "discounted_fare": 62,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 68,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 87,
+    "discounted_fare": 70,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 96,
+    "discounted_fare": 77,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 103,
+    "discounted_fare": 83,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 108,
+    "discounted_fare": 87,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 112,
+    "discounted_fare": 90,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 117,
+    "discounted_fare": 95,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 119,
+    "discounted_fare": 95,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 125,
+    "discounted_fare": 100,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maluko Manolo",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 135,
+    "discounted_fare": 108,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Tankulan",
+    "km_distance": null,
+    "regular_fare": 27,
+    "discounted_fare": 22,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 30,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 32,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 37,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 40,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 45,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 63,
+    "discounted_fare": 51,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 52,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 60,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 82,
+    "discounted_fare": 70,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 86,
+    "discounted_fare": 75,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 95,
+    "discounted_fare": 85,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 98,
+    "discounted_fare": 85,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 103,
+    "discounted_fare": 90,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dalirig",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 113,
+    "discounted_fare": 91,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Dicklum",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 16,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 32,
+    "discounted_fare": 27,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 29,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 35,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 37,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 63,
+    "discounted_fare": 51,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 67,
+    "discounted_fare": 54,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 71,
+    "discounted_fare": 57,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 76,
+    "discounted_fare": 61,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 63,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 84,
+    "discounted_fare": 67,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tankulan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 75,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "San Miguel",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 27,
+    "discounted_fare": 22,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 28,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 34,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 36,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 43,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 48,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 52,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 55,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 59,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 78,
+    "discounted_fare": 62,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 82,
+    "discounted_fare": 65,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Dicklum",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 73,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Cawayanon",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 17,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 22,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 27,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 32,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 35,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 52,
+    "discounted_fare": 41,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 47,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 51,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 67,
+    "discounted_fare": 54,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 72,
+    "discounted_fare": 58,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "San Miguel",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 82,
+    "discounted_fare": 66,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Lunocan",
+    "km_distance": null,
+    "regular_fare": 32,
+    "discounted_fare": 26,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 30,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 40,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 50,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 55,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 60,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 75,
+    "discounted_fare": 65,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 80,
+    "discounted_fare": 70,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 75,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 85,
+    "discounted_fare": 80,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 90,
+    "discounted_fare": 80,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cawayanon",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 92,
+    "discounted_fare": 82,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Alae Manolo",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 31,
+    "discounted_fare": 23,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 31,
+    "discounted_fare": 23,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 27,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 42,
+    "discounted_fare": 33,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 45,
+    "discounted_fare": 36,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 57,
+    "discounted_fare": 46,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 62,
+    "discounted_fare": 50,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Lunocan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 72,
+    "discounted_fare": 58,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Maitum",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 21,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 27,
+    "discounted_fare": 21,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 33,
+    "discounted_fare": 25,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 39,
+    "discounted_fare": 31,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 43,
+    "discounted_fare": 35,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 47,
+    "discounted_fare": 38,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 52,
+    "discounted_fare": 42,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 60,
+    "discounted_fare": 48,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Alae Manolo",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 70,
+    "discounted_fare": 56,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Balubal",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 27,
+    "discounted_fare": 22,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 27,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 38,
+    "discounted_fare": 31,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 42,
+    "discounted_fare": 34,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 47,
+    "discounted_fare": 38,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 50,
+    "discounted_fare": 40,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 55,
+    "discounted_fare": 44,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Maitum",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 65,
+    "discounted_fare": 52,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Mambatangan",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 27,
+    "discounted_fare": 21,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 24,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 28,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 32,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 42,
+    "discounted_fare": 34,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 48,
+    "discounted_fare": 39,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Balubal",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 57,
+    "discounted_fare": 46,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Bae Upper Puerto",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 28,
+    "discounted_fare": 23,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 33,
+    "discounted_fare": 27,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 38,
+    "discounted_fare": 30,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 32,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 46,
+    "discounted_fare": 37,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Mambatangan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 56,
+    "discounted_fare": 45,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Puerto",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 17,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 22,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 33,
+    "discounted_fare": 25,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 29,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 40,
+    "discounted_fare": 32,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Bae Upper Puerto",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 46,
+    "discounted_fare": 40,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Agusan",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 21,
+    "discounted_fare": 17,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 23,
+    "discounted_fare": 19,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 29,
+    "discounted_fare": 23,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Puerto",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 39,
+    "discounted_fare": 31,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tablon",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 17,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Agusan",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 35,
+    "discounted_fare": 28,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Tablon Baloi",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 20,
+    "discounted_fare": 16,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 30,
+    "discounted_fare": 25,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Cugman",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Tablon Baloi",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 25,
+    "discounted_fare": 20,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cugman",
+    "route_to": "Gusa",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Cugman",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 23,
+    "discounted_fare": 18,
+    "direction": "manolo_to_agora"
+  },
+  {
+    "route_from": "Gusa",
+    "route_to": "Agora",
+    "km_distance": null,
+    "regular_fare": 17,
+    "discounted_fare": 15,
+    "direction": "manolo_to_agora"
+  }
+]

@@ -36,7 +36,7 @@ interface Trip {
   id: string;
   started_at: string;
   ended_at?: string;
-  status: 'completed' | 'cancelled';
+  status: 'completed' | 'cancelled' | 'in_progress';
   route: string;
   plate_number: string;
   starting_point?: string;
@@ -133,7 +133,7 @@ function loadTripDetailsCache(tripId: string): TripDetails | null {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const TripHistoryPage: React.FC = () => {
-  const [segment, setSegment] = useState<'all' | 'today'>('today');
+  const [segment, setSegment] = useState<'all' | 'today'>('all');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFromCache, setIsFromCache] = useState(false);
@@ -167,44 +167,96 @@ const TripHistoryPage: React.FC = () => {
 
     // ── Online: fetch from Supabase then cache ────────────────────────────
     try {
+      // Fetch conductor trips (completed, cancelled, and active in_progress trips)
       let query = supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, bus_id`)
         .eq('conductor_id', profile.id)
+        .in('status', ['completed', 'cancelled', 'in_progress'])
         .order('started_at', { ascending: false });
 
       if (segment === 'today') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        query = query.gte('started_at', today.toISOString()).lt('started_at', tomorrow.toISOString());
+        // Build the date range matching the device's local calendar day.
+        // Include trips started today, ended today, or currently active (in_progress).
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        query = query.or(`started_at.gte.${startOfToday.toISOString()},status.eq.in_progress,ended_at.gte.${startOfToday.toISOString()}`);
       }
 
-      const { data } = await query;
+      const { data, error: tripsError } = await query;
+      if (tripsError) throw tripsError;
 
-      const tripsWithStats = await Promise.all(
-        (data || []).map(async (trip: any) => {
-          const { data: txData } = await supabase.from('transactions').select('amount').eq('trip_id', trip.id);
-          const fareCollected = txData?.reduce((sum, tx) => sum + tx.amount, 0) || 0;
-          const { data: passengerData } = await supabase.from('boarded_passengers').select('id').eq('trip_id', trip.id);
-          const { data: irregData } = await supabase.from('fare_irregularities').select('id').eq('trip_id', trip.id);
+      const trips = data || [];
 
-          return {
-            id: trip.id,
-            started_at: trip.started_at,
-            ended_at: trip.ended_at,
-            status: trip.status,
-            route: (trip.buses as any).route,
-            plate_number: (trip.buses as any).plate_number,
-            starting_point: trip.starting_point,
-            end_point: trip.end_point,
-            passenger_count: passengerData?.length || 0,
-            fare_collected: fareCollected,
-            irregularities: irregData?.length || 0,
-          };
-        })
-      );
+      if (trips.length === 0) {
+        setTrips([]);
+        setIsFromCache(false);
+        saveTripHistoryCache(segment, []);
+        return;
+      }
+
+      // FIX 3: Batch all queries by IDs instead of N+1 per trip
+      const tripIds = trips.map((t: any) => t.id);
+      const busIds = [...new Set(trips.map((t: any) => t.bus_id).filter(Boolean))];
+
+      const [
+        { data: txRows, error: txError }, 
+        { data: passengerRows, error: passError }, 
+        { data: irregRows, error: irregError },
+        { data: busRows, error: busError }
+      ] = await Promise.all([
+        supabase.from('transactions').select('trip_id, amount').in('trip_id', tripIds),
+        supabase.from('boarded_passengers').select('id, trip_id').in('trip_id', tripIds),
+        supabase.from('fare_irregularities').select('id, trip_id').in('trip_id', tripIds),
+        busIds.length > 0 
+          ? supabase.from('buses').select('id, route, plate_number').in('id', busIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (txError) console.error('[TripHistory] Transaction query error:', txError);
+      if (passError) console.error('[TripHistory] Passenger query error:', passError);
+      if (irregError) console.error('[TripHistory] Irregularity query error:', irregError);
+      if (busError) console.error('[TripHistory] Bus query error:', busError);
+
+      console.log('[TripHistory] Fetched trips:', trips.length);
+      console.log('[TripHistory] Transactions fetched:', txRows?.length);
+      console.log('[TripHistory] Sample transaction:', txRows?.[0]);
+      console.log('[TripHistory] Passengers fetched:', passengerRows?.length);
+
+      // Build lookup maps for O(1) access per trip
+      const fareByTrip: Record<string, number> = {};
+      (txRows || []).forEach((tx: any) => {
+        fareByTrip[tx.trip_id] = (fareByTrip[tx.trip_id] || 0) + tx.amount;
+      });
+      const passengersByTrip: Record<string, number> = {};
+      (passengerRows || []).forEach((p: any) => {
+        passengersByTrip[p.trip_id] = (passengersByTrip[p.trip_id] || 0) + 1;
+      });
+      const irregsByTrip: Record<string, number> = {};
+      (irregRows || []).forEach((ir: any) => {
+        irregsByTrip[ir.trip_id] = (irregsByTrip[ir.trip_id] || 0) + 1;
+      });
+      const busById: Record<string, any> = {};
+      (busRows || []).forEach((b: any) => {
+        busById[b.id] = b;
+      });
+
+      const tripsWithStats = trips.map((trip: any) => {
+        const bus = busById[trip.bus_id];
+        return {
+          id: trip.id,
+          started_at: trip.started_at,
+          ended_at: trip.ended_at,
+          status: trip.status,
+          route: bus?.route ?? 'Unknown Route',
+          plate_number: bus?.plate_number ?? 'Unknown Plate',
+          starting_point: trip.starting_point,
+          end_point: trip.end_point,
+          passenger_count: passengersByTrip[trip.id] || 0,
+          fare_collected: fareByTrip[trip.id] || 0,
+          irregularities: irregsByTrip[trip.id] || 0,
+        };
+      });
 
       setTrips(tripsWithStats);
       setIsFromCache(false);
@@ -292,22 +344,37 @@ const TripHistoryPage: React.FC = () => {
     try {
       const { data: tripData } = await supabase
         .from('trips')
-        .select(`id, started_at, ended_at, status, starting_point, end_point, buses!inner(route, plate_number)`)
+        .select(`id, started_at, ended_at, status, starting_point, end_point, bus_id`)
         .eq('id', tripId)
         .single();
 
       if (!tripData) { setLoadingDetails(false); return; }
 
-      const { data: passengers } = await supabase
+      // Fetch bus info separately to avoid FK ambiguity
+      const { data: busData } = await supabase
+        .from('buses')
+        .select('route, plate_number')
+        .eq('id', tripData.bus_id)
+        .maybeSingle();
+
+      const { data: passengers, error: passError } = await supabase
         .from('boarded_passengers')
         .select('id, card_id, temp_ticket_id, boarded_at, alighted_at, payment_method, boarding_stop, destination_stop')
         .eq('trip_id', tripId);
 
-      const { data: transactions } = await supabase
+      const { data: transactions, error: txError } = await supabase
         .from('transactions')
-        .select('id, amount, channel, created_at, baggage_fee, card_id, temp_ticket_id, payment_method')
+        .select('id, amount, channel, created_at, baggage_fee, card_id, payment_method')
         .eq('trip_id', tripId)
         .order('created_at', { ascending: false });
+
+      if (passError) console.error('[TripDetails] Passenger query error:', passError);
+      if (txError) console.error('[TripDetails] Transaction query error:', txError);
+
+      console.log('[TripDetails] Trip:', tripId);
+      console.log('[TripDetails] Passengers fetched:', passengers?.length);
+      console.log('[TripDetails] Transactions fetched:', transactions?.length);
+      console.log('[TripDetails] Sample transaction:', transactions?.[0]);
 
       const cardIds = (passengers || []).map(p => p.card_id).filter(Boolean);
       const ticketIds = (passengers || []).map(p => p.temp_ticket_id).filter(Boolean);
@@ -317,23 +384,26 @@ const TripHistoryPage: React.FC = () => {
           ? supabase.from('qr_cards').select('id, card_uid').in('id', cardIds)
           : Promise.resolve({ data: [] }),
         ticketIds.length > 0
-          ? supabase.from('temporary_tickets').select('id, ticket_uid').in('id', ticketIds)
+          ? supabase.from('temporary_tickets').select('id, ticket_uid, fare_amount').in('id', ticketIds)
           : Promise.resolve({ data: [] }),
       ]);
 
       const cardUidMap: Record<string, string> = {};
       (cardRows || []).forEach((c: any) => { cardUidMap[c.id] = c.card_uid; });
-      (ticketRows || []).forEach((t: any) => { cardUidMap[t.id] = t.ticket_uid; });
+      const ticketMap: Record<string, any> = {};
+      (ticketRows || []).forEach((t: any) => { ticketMap[t.id] = t; });
 
       const passengersWithFare = (passengers || []).map((passenger: any) => {
-        const passengerTx = (transactions || []).find(tx =>
-          (passenger.card_id && tx.card_id === passenger.card_id) ||
-          (passenger.temp_ticket_id && tx.temp_ticket_id === passenger.temp_ticket_id)
-        );
+        // Match transaction by card_id
+        const passengerTx = passenger.card_id
+          ? (transactions || []).find(tx => tx.card_id === passenger.card_id)
+          : null;
+
+        const ticketData = passenger.temp_ticket_id ? ticketMap[passenger.temp_ticket_id] : null;
 
         const cardUid =
           (passenger.card_id && cardUidMap[passenger.card_id]) ||
-          (passenger.temp_ticket_id && cardUidMap[passenger.temp_ticket_id]) ||
+          (passenger.temp_ticket_id && ticketData?.ticket_uid) ||
           passenger.card_id ||
           passenger.temp_ticket_id ||
           null;
@@ -341,7 +411,7 @@ const TripHistoryPage: React.FC = () => {
         return {
           ...passenger,
           card_uid: cardUid,
-          fare: passengerTx?.amount || 0,
+          fare: passengerTx?.amount || ticketData?.fare_amount || 0,
           baggage_fee: passengerTx?.baggage_fee || 0,
           payment_method: passenger.payment_method || passengerTx?.payment_method || passengerTx?.channel || 'qr_card',
           boarding_stop: passenger.boarding_stop || null,
@@ -354,8 +424,8 @@ const TripHistoryPage: React.FC = () => {
         started_at: tripData.started_at,
         ended_at: tripData.ended_at,
         status: tripData.status,
-        route: (tripData.buses as any).route,
-        plate_number: (tripData.buses as any).plate_number,
+        route: busData?.route ?? 'Unknown Route',
+        plate_number: busData?.plate_number ?? 'Unknown Plate',
         starting_point: tripData.starting_point,
         end_point: tripData.end_point,
         passengers: passengersWithFare,
@@ -382,14 +452,16 @@ const TripHistoryPage: React.FC = () => {
 
   const filteredTrips = trips.filter(trip =>
     trip.route.toLowerCase().includes(searchText.toLowerCase()) ||
-    trip.plate_number.toLowerCase().includes(searchText.toLowerCase())
+    trip.plate_number.toLowerCase().includes(searchText.toLowerCase()) ||
+    (trip.starting_point && trip.starting_point.toLowerCase().includes(searchText.toLowerCase())) ||
+    (trip.end_point && trip.end_point.toLowerCase().includes(searchText.toLowerCase()))
   );
 
   const totalFareCollected = filteredTrips.reduce((sum, trip) => sum + trip.fare_collected, 0);
   const totalPassengers = filteredTrips.reduce((sum, trip) => sum + trip.passenger_count, 0);
 
   const statusVariant = (status: string) =>
-    status === 'completed' ? 'success' : 'danger';
+    status === 'completed' ? 'success' : status === 'in_progress' ? 'warning' : 'danger';
 
   return (
     <IonPage>
@@ -460,11 +532,15 @@ const TripHistoryPage: React.FC = () => {
             <LoadingSkeleton variant="card" count={3} />
           ) : filteredTrips.length === 0 ? (
             <EmptyState
-              title="No Trips Found"
+              title={searchText ? 'No Matching Trips' : segment === 'today' ? 'No Trips Today' : 'No Trips Found'}
               description={
-                isFromCache
-                  ? 'No cached trips available. Connect to the internet to load your history.'
-                  : segment === 'today' ? 'No trips today' : 'No trips found'
+                searchText
+                  ? `No trips match "${searchText}". Try searching another route or plate number.`
+                  : isFromCache
+                    ? 'No cached trips available. Connect to the internet to load your history.'
+                    : segment === 'today'
+                      ? 'No trips started or active today yet. Active trips will appear here.'
+                      : 'Trips will appear here once you start or complete them.'
               }
               icon={isFromCache ? WifiOff : Bus}
             />
@@ -551,19 +627,18 @@ const TripHistoryPage: React.FC = () => {
         isOpen={showTripDetails}
         onDidDismiss={() => setShowTripDetails(false)}
         className="trip-details-modal"
-        style={{ '--background': '#ffffff' }}
       >
         <IonHeader>
           <IonToolbar>
             <IonButtons slot="start">
               <IonButton onClick={() => setShowTripDetails(false)}>
-                <X size={20} />
+                <X size={20} color="var(--text-primary)" />
               </IonButton>
             </IonButtons>
             <IonTitle>Trip Details</IonTitle>
           </IonToolbar>
         </IonHeader>
-        <IonContent style={{ '--background': '#ffffff' }} className="app-page-bg trip-details-modal">
+        <IonContent className="app-page-bg trip-details-modal">
           <div className="page-content">
             {loadingDetails ? (
               <LoadingSkeleton variant="card" count={3} />
@@ -636,10 +711,22 @@ const TripHistoryPage: React.FC = () => {
                   }}>
                     {[
                       { icon: Users, value: selectedTripDetails.passengers.length, label: 'Passengers' },
-                      { icon: Wallet, value: `₱${selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0).toFixed(0)}`, label: 'Fare' },
-                      { icon: Clock, value: selectedTripDetails.ended_at ?
-                        `${Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000)}m` :
-                        'Active', label: 'Duration' },
+                      {
+                        icon: Wallet,
+                        value: `₱${(
+                          selectedTripDetails.transactions.length > 0
+                            ? selectedTripDetails.transactions.reduce((sum, tx) => sum + tx.amount, 0)
+                            : selectedTripDetails.passengers.reduce((sum, p) => sum + (p.fare || 0) + (p.baggage_fee || 0), 0)
+                        ).toFixed(0)}`,
+                        label: 'Fare',
+                      },
+                      {
+                        icon: Clock,
+                        value: selectedTripDetails.ended_at
+                          ? `${Math.max(1, Math.round((new Date(selectedTripDetails.ended_at).getTime() - new Date(selectedTripDetails.started_at).getTime()) / 60000))}m`
+                          : 'Active',
+                        label: 'Duration',
+                      },
                     ].map(({ icon: Icon, value, label }) => (
                       <div key={label} style={{ textAlign: 'center' }}>
                         <Icon size={18} color="var(--color-primary)" />

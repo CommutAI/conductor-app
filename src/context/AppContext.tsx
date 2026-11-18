@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import { StorageService, CachedTripState } from '../services/storageService';
+import { setActiveTripDirection, loadFareMatrixFromDatabase } from '../services/fareService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,10 @@ interface Trip {
   current_lng?: number;
   gps_updated_at?: string;
   updated_at?: string;
+  starting_point?: string | null;
+  end_point?: string | null;
+  route?: string | null;
+  route_name?: string | null;
 }
 
 interface AppContextType {
@@ -118,6 +123,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (showLoading) {
       setIsRestoringTrip(true);
     }
+    // Safety timer: prevent isRestoringTrip from hanging indefinitely
+    const safetyTimer = setTimeout(() => {
+      setIsRestoringTrip(false);
+    }, 4000);
+
     const freshCached = StorageService.loadTripState();
 
     try {
@@ -151,27 +161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         _setFareCollected(0);
       }
 
+      let activeTrip: Trip | null = null;
+
       console.log('[AppContext] Searching for active trip with conductor_id:', profile.id);
-
-      // Debug: Fetch all in_progress trips to see what's in the database
-      const { data: allTrips, error: allTripsError } = await supabase
-        .from('trips')
-        .select('id, conductor_id, driver_id, status, started_at')
-        .eq('status', 'in_progress')
-        .order('started_at', { ascending: false });
-
-      if (allTripsError) {
-        console.error('[AppContext] Error fetching all trips:', allTripsError);
-      } else {
-        console.log('[AppContext] All in_progress trips in DB:', allTrips);
-        if (allTrips && allTrips.length > 0) {
-          allTrips.forEach(trip => {
-            console.log(`[AppContext] Trip ${trip.id}: conductor_id=${trip.conductor_id}, driver_id=${trip.driver_id}`);
-          });
-        }
-      }
-
-      const { data: activeTrip, error: tripError } = await supabase
+      const { data: conductorTrip, error: tripError } = await supabase
         .from('trips')
         .select('*')
         .eq('conductor_id', profile.id)
@@ -181,7 +174,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (tripError) {
-        console.error('[AppContext] Error fetching active trip:', tripError);
+        console.error('[AppContext] Error fetching active trip by conductor_id:', tripError);
+      }
+
+      if (conductorTrip) {
+        activeTrip = conductorTrip;
+      } else if (profile.bus_id) {
+        console.log('[AppContext] No direct conductor trip, searching for active trip on bus:', profile.bus_id);
+        const { data: busTrip, error: busTripError } = await supabase
+          .from('trips')
+          .select('*')
+          .eq('bus_id', profile.bus_id)
+          .eq('status', 'in_progress')
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (busTripError) {
+          console.error('[AppContext] Error fetching active trip by bus_id:', busTripError);
+        }
+
+        if (busTrip) {
+          console.log('[AppContext] Found active trip on assigned bus:', busTrip.id);
+          activeTrip = busTrip;
+
+          // If this trip has no conductor_id yet, claim/associate it with this conductor
+          if (!busTrip.conductor_id) {
+            console.log('[AppContext] Linking conductor to trip:', busTrip.id);
+            const { error: updateErr } = await supabase
+              .from('trips')
+              .update({ conductor_id: profile.id })
+              .eq('id', busTrip.id);
+            if (updateErr) {
+              console.warn('[AppContext] Could not link conductor_id to trip:', updateErr);
+            } else {
+              activeTrip = { ...busTrip, conductor_id: profile.id };
+            }
+          }
+        }
       }
 
       if (activeTrip) {
@@ -228,6 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[AppContext] Error validating trip with DB:', err);
     } finally {
+      clearTimeout(safetyTimer);
       if (showLoading) {
         setIsRestoringTrip(false);
       }
@@ -339,12 +370,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Only restore session on initial mount, not on network changes
     let hasMounted = false;
 
+    // Safety fallback: ensure loading is false within 3.5s even if getSession() hangs
+    const initTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3500);
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(initTimer);
       if (!hasMounted) {
         hasMounted = true;
         await applySession(session);
         setLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(initTimer);
+      setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -411,6 +451,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentPassengersCount,
         fareCollected,
       });
+
+      // Synchronously switch and asynchronously sync directional fare matrix (171 rows)
+      setActiveTripDirection(currentTrip);
+      loadFareMatrixFromDatabase(currentTrip).catch((err) => {
+        console.warn('[AppContext] Failed to load directional fare matrix for trip:', err);
+      });
     }
   }, [currentTrip, currentBus, validatedCount, currentPassengersCount, fareCollected]);
 
@@ -455,7 +501,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ email: email.trim(), profile: p }));
 
     setSession(data.session);
+    setUser(data.user);
     setProfile(p);
+    setLoading(false);
     return { error: null };
   }
 
@@ -471,54 +519,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   // ── Trip Functions ──────────────────────────────────────────────────────────
-  function setCurrentTrip(trip: Trip | null) {
-    _setCurrentTrip(trip);
+  const setCurrentTrip = useCallback((trip: Trip | null) => {
+    _setCurrentTrip((prev) => {
+      if (!prev && !trip) return null;
+      if (
+        prev &&
+        trip &&
+        prev.id === trip.id &&
+        prev.status === trip.status &&
+        prev.started_at === trip.started_at &&
+        prev.conductor_id === trip.conductor_id &&
+        prev.bus_id === trip.bus_id
+      ) {
+        return prev;
+      }
+      return trip;
+    });
     if (!trip) {
       StorageService.clearTripState();
+    } else {
+      setActiveTripDirection(trip);
+      loadFareMatrixFromDatabase(trip).catch(() => {});
     }
-  }
+  }, []);
 
-  function setCurrentBus(bus: Bus | null) {
-    _setCurrentBus(bus);
-  }
+  const setCurrentBus = useCallback((bus: Bus | null) => {
+    _setCurrentBus((prev) => {
+      if (!prev && !bus) return null;
+      if (prev && bus && prev.id === bus.id && prev.plate_number === bus.plate_number) {
+        return prev;
+      }
+      return bus;
+    });
+  }, []);
 
-  function setValidatedCount(n: number) {
+  const setValidatedCount = useCallback((n: number) => {
     _setValidatedCount(n);
-  }
+  }, []);
 
-  function setCurrentPassengersCount(n: number) {
+  const setCurrentPassengersCount = useCallback((n: number) => {
     _setCurrentPassengersCount(n);
-  }
+  }, []);
 
-  function incrementCurrentPassengers() {
+  const incrementCurrentPassengers = useCallback(() => {
     _setCurrentPassengersCount((c) => c + 1);
-  }
+  }, []);
 
-  function decrementCurrentPassengers() {
+  const decrementCurrentPassengers = useCallback(() => {
     _setCurrentPassengersCount((c) => Math.max(0, c - 1));
-  }
+  }, []);
 
-  function setFareCollected(n: number) {
+  const setFareCollected = useCallback((n: number) => {
     _setFareCollected(n);
-  }
+  }, []);
 
-  function incrementValidated(fare: number) {
+  const incrementValidated = useCallback((fare: number) => {
     _setValidatedCount((c) => c + 1);
     _setFareCollected((f) => f + fare);
-  }
+  }, []);
 
-  function clearTrip() {
+  const clearTrip = useCallback(() => {
     _setCurrentTrip(null);
     _setCurrentBus(null);
     _setValidatedCount(0);
     _setFareCollected(0);
     StorageService.clearTripState();
-  }
+  }, []);
 
-  async function refreshTrip() {
+  const refreshTrip = useCallback(async () => {
     console.log('[AppContext] Manual trip refresh requested');
     await validateTripWithDatabase(true);
-  }
+  }, [validateTripWithDatabase]);
 
   // ── Theme Functions ─────────────────────────────────────────────────────────
   const setTheme = (t: Theme) => setThemeState(t);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { IonPage, IonContent } from '@ionic/react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useIonViewWillLeave } from '@ionic/react';
@@ -8,12 +8,26 @@ import {
   MapPin, AlertTriangle, X, CreditCard,
   XCircle, Navigation, ChevronRight, Package, Loader,
   LogIn, LogOut as AlightIcon,
-  Smartphone, Banknote, Maximize2, QrCode,
+  Smartphone, Banknote, Maximize2, QrCode, ChevronDown,
 } from 'lucide-react';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { useApp } from '../context/AppContext';
 import { useNetwork } from '../context/NetworkContext';
-import { processScan, ScanResult, calculateFare, getFareFromMatrix, PassengerType as FarePassengerType } from '../services/fareService';
+import {
+  processScan,
+  ScanResult,
+  calculateFare,
+  getFareFromMatrix,
+  normalizeStopName,
+  PassengerType as FarePassengerType,
+  determineTripDirection,
+  getStopsForDirection,
+  setActiveTripDirection,
+  loadFareMatrixFromDatabase,
+  getValidDestinations,
+  getValidBoardingPoints,
+  isValidStopCombination,
+} from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
 import { offlineQueueService } from '../services/offlineQueueService';
@@ -29,12 +43,12 @@ import PageHeader from '../components/layout/PageHeader';
 import {
   SoftCard, PrimaryButton,
   StatusBadge, AnimatedIllustration,
+  ScanFrame,
 } from '../components/ui';
 import AnimatedModal from '../components/ui/AnimatedModal';
 import QRCardCanvas from '../components/ui/QRCardCanvas';
 import BaggageFeeSelector from '../components/ui/BaggageFeeSelector';
 import type { BaggageSelection } from '../types';
-import fareMatrixData from '../data/fareMatrix.json';
 import busStopsData from '../data/busStops.json';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -170,14 +184,16 @@ const COMMON_BOARDING_POINTS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_FARE = 12;
+const DEFAULT_FARE = 15;
 
 function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string | undefined, toStop?: string | undefined, isTicket: boolean = false): number {
   const type = passengerType || 'regular';
 
   // Use fare matrix if both stops are provided
   if (fromStop && toStop) {
-    const matrixFare = getFareFromMatrix(fromStop, toStop, type);
+    const normalizedFrom = normalizeStopName(fromStop);
+    const normalizedTo = normalizeStopName(toStop);
+    const matrixFare = getFareFromMatrix(normalizedFrom, normalizedTo, type);
     if (matrixFare !== null) {
       return matrixFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
     }
@@ -187,8 +203,32 @@ function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string
   return calculateFare(DEFAULT_FARE, type).finalFare + (isTicket ? TEMPORARY_TICKET_SERVICE_FEE : 0);
 }
 
-/** Get all unique destinations from bus stops */
-function getAvailableDestinations(): string[] {
+/** Get destinations for dropdown, ordered in the direction of the active trip and filtered by boarding point */
+function getAvailableDestinations(tripDirection?: any, boardingPoint?: string): string[] {
+  if (tripDirection) {
+    // If boarding point is provided, filter to only show valid destinations after it
+    if (boardingPoint) {
+      return getValidDestinations(boardingPoint, tripDirection);
+    }
+    // Otherwise return all stops in direction
+    return getStopsForDirection(tripDirection);
+  }
+  return busStopsData
+    .filter(stop => stop.status === 'active')
+    .map(stop => stop.name)
+    .sort();
+}
+
+/** Get boarding points for dropdown, ordered in the direction of the active trip and filtered by destination */
+function getAvailableBoardingPoints(tripDirection?: any, destination?: string): string[] {
+  if (tripDirection) {
+    // If destination is provided, filter to only show valid boarding points before it
+    if (destination) {
+      return getValidBoardingPoints(destination, tripDirection);
+    }
+    // Otherwise return all stops in direction
+    return getStopsForDirection(tripDirection);
+  }
   return busStopsData
     .filter(stop => stop.status === 'active')
     .map(stop => stop.name)
@@ -197,13 +237,9 @@ function getAvailableDestinations(): string[] {
 
 /** Get fare from offline fare matrix */
 function getOfflineFare(from: string, to: string, type: FarePassengerType): number | null {
-  const fareEntry = fareMatrixData.find(
-    item => item.route_from === from && item.route_to === to
-  );
-  if (fareEntry) {
-    return type === 'regular' ? fareEntry.regular_fare ?? null : fareEntry.discounted_fare ?? null;
-  }
-  return null;
+  const normalizedFrom = normalizeStopName(from);
+  const normalizedTo = normalizeStopName(to);
+  return getFareFromMatrix(normalizedFrom, normalizedTo, type);
 }
 
 const ScanPage: React.FC = () => {
@@ -271,12 +307,26 @@ const ScanPage: React.FC = () => {
   const lastScanCodeRef = useRef('');
   const offlineQueueCleanupRef = useRef<(() => void) | null>(null);
 
+  const tripDirection = determineTripDirection(currentTrip);
+
+  useEffect(() => {
+    if (currentTrip) {
+      setActiveTripDirection(currentTrip);
+      loadFareMatrixFromDatabase(currentTrip).catch(() => {});
+    }
+  }, [currentTrip?.id, currentTrip?.starting_point, currentTrip?.end_point]);
+
   const routeStops = currentBus ? getRouteStops(currentBus.route) : [];
-  // Use database stops with GPS coordinates for manual selection
-  const displayStops = busStopsData
-    .filter(stop => stop.status === 'active')
-    .sort((a, b) => a.sequence_order - b.sequence_order)
-    .map(stop => stop.name);
+  // Use stops in directional order matching the active trip
+  const displayStops = useMemo<string[]>(() => {
+    if (tripDirection) {
+      return getStopsForDirection(tripDirection);
+    }
+    return busStopsData
+      .filter(stop => stop.status === 'active')
+      .sort((a, b) => a.sequence_order - b.sequence_order)
+      .map(stop => stop.name);
+  }, [tripDirection]);
 
   useEffect(() => {
     if (!isRestoringTrip && (!currentTrip || !currentBus)) {
@@ -436,11 +486,15 @@ const ScanPage: React.FC = () => {
       const qrCode = new Html5Qrcode('qr-reader');
       scannerRef.current = qrCode;
       
-      // Add qrbox for better detection - define scan area
+      // Define card-proportioned scan area matching the QR card frame (aspect ratio ~1.586)
       const config = {
         fps: 10,
         aspectRatio: 1.0,
-        qrbox: { width: 250, height: 250 },
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const w = Math.min(Math.max(Math.round(viewfinderWidth * 0.78), 220), 290);
+          const h = Math.min(Math.round(w / 1.586), Math.round(viewfinderHeight * 0.7));
+          return { width: w, height: h };
+        },
       };
 
       await qrCode.start(
@@ -557,7 +611,7 @@ const ScanPage: React.FC = () => {
     if (!currentTrip) return false;
 
     const passengerType = detectedType.passengerType;
-    const fromStop = selectedBoardingPoint || currentStopName || undefined;
+    const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
     const toStop = selectedDestination || undefined;
     const estimatedFare = estimateOfflineFare(passengerType as FarePassengerType, fromStop, toStop, detectedType.isTicket);
 
@@ -684,17 +738,33 @@ const ScanPage: React.FC = () => {
   useEffect(() => {
     if (scanState !== 'pick_destination' || !pendingScan) return;
 
-    const fromStop = selectedBoardingPoint || currentStopName || undefined;
+    const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
     const toStop = selectedDestination || pendingScan.cardDestination || undefined;
     const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
 
     if (fromStop && toStop) {
-      const mFare = getFareFromMatrix(fromStop, toStop, pType);
+      const normalizedFrom = normalizeStopName(fromStop);
+      const normalizedTo = normalizeStopName(toStop);
+
+      // Validate that the combination is valid for the current direction
+      const isValid = isValidStopCombination(normalizedFrom, normalizedTo, tripDirection || undefined);
+
+      if (!isValid) {
+        console.warn('[ScanPage] Invalid stop combination for direction:', {
+          from: fromStop,
+          to: toStop,
+          direction: tripDirection
+        });
+        setPendingScan(prev => prev ? { ...prev, fare: 0 } : null);
+        return;
+      }
+
+      const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
       if (mFare !== null) {
         setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
       }
     }
-  }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan]);
+  }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan, tripDirection]);
 
   /** For onboarding: auto-confirm boarding with card destination or default */
   async function handleOnboardingPreScan(scannedCode: string) {
@@ -866,8 +936,10 @@ const ScanPage: React.FC = () => {
         console.log('Card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
         const presetCardDest = card.destination || '';
-        const fromStop = selectedBoardingPoint || currentStopName || undefined;
-        const matrixFare = presetCardDest ? getFareFromMatrix(fromStop, presetCardDest, passengerType) : null;
+        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+        const normalizedFrom = normalizeStopName(fromStop);
+        const normalizedDest = normalizeStopName(presetCardDest);
+        const matrixFare = presetCardDest ? getFareFromMatrix(normalizedFrom, normalizedDest, passengerType) : null;
         const initialFare = matrixFare !== null ? matrixFare : DEFAULT_FARE;
 
         setPendingScan({
@@ -891,6 +963,23 @@ const ScanPage: React.FC = () => {
 
       setFailedMsg(`QR code not recognised`);
       setScanState('failed');
+
+      // Automated System Trigger: unrecognized QR scanned during active trip
+      if (currentTrip && profile?.id && scannedCode) {
+        supabase.from('fare_irregularities').insert({
+          trip_id: currentTrip.id,
+          conductor_id: profile.id,
+          card_uid: scannedCode,
+          type: 'unauthorized_passenger',
+          description: `Unauthorized passenger attempt: Unrecognized QR code "${scannedCode}" scanned during active trip.`,
+          detected_at: new Date().toISOString(),
+          location_lat: currentCoordinates?.lat,
+          location_lng: currentCoordinates?.lng,
+          notes: 'Automated real-time scan detection: unrecognized QR code',
+        }).then(({ error }) => {
+          if (error) console.error('[ScanPage] Error logging unrecognized QR irregularity:', error);
+        });
+      }
     } catch (err) {
       console.error('Scan processing error:', err);
       if (isLikelyNetworkError(err)) {
@@ -941,9 +1030,11 @@ const ScanPage: React.FC = () => {
       if (pendingScan.isTicket) {
         effectivePaymentMethod = 'cash';
       } else {
-        const fromStop = selectedBoardingPoint || currentStopName || undefined;
+        const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
         const passengerType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-        const matrixFare = getFareFromMatrix(fromStop, destination, passengerType);
+        const normalizedFrom = normalizeStopName(fromStop);
+        const normalizedDest = normalizeStopName(destination);
+        const matrixFare = getFareFromMatrix(normalizedFrom, normalizedDest, passengerType);
         const finalFare = matrixFare !== null ? matrixFare : (pendingScan.fare || 0);
         const totalFare = finalFare + (baggageSelection?.fee || 0);
         effectivePaymentMethod = pendingScan.balance >= totalFare ? 'qr_card' : 'cash';
@@ -996,10 +1087,12 @@ const ScanPage: React.FC = () => {
       console.log('Is online:', isOnline);
 
       // Calculate fare using matrix
-      const fromStop = boardingPoint || selectedBoardingPoint || currentStopName || undefined;
-      const toStop = destination || undefined;
+      const fromStop = boardingPoint || selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+      const toStop = destination || '';
       const passengerType = (pendingScan?.passengerType || 'regular') as FarePassengerType;
-      const matrixFare = getFareFromMatrix(fromStop, toStop, passengerType);
+      const normalizedFrom = normalizeStopName(fromStop);
+      const normalizedTo = normalizeStopName(toStop);
+      const matrixFare = getFareFromMatrix(normalizedFrom, normalizedTo, passengerType);
 
       // Use matrix fare if available, otherwise use pending scan fare
       const finalFare = matrixFare !== null ? matrixFare : (pendingScan?.fare || 0);
@@ -1201,7 +1294,7 @@ const ScanPage: React.FC = () => {
           setSelectedDestination('');
           setSelectedPaymentMethod('');
           
-          // Log irregularity for duplicate boarding attempt
+          // Log irregularity for duplicate boarding attempt (card sharing / double scan)
           if (currentTrip && profile?.id && result.uid) {
             // Try to get passenger_id from boarded_passengers
             supabase
@@ -1220,8 +1313,8 @@ const ScanPage: React.FC = () => {
                   conductor_id: profile.id,
                   card_uid: result.uid,
                   passenger_id: passenger?.id,
-                  type: 'double_scan',
-                  description: `Duplicate boarding attempt detected. Card/ticket "${result.uid}" attempted to board again on the same trip. Type: ${result.type}`,
+                  type: 'card_sharing',
+                  description: `Duplicate boarding / card sharing attempt detected. Card/ticket "${result.uid}" attempted to board again on the same trip while already marked onboard. Type: ${result.type}`,
                   detected_at: new Date().toISOString(),
                   location_lat: currentCoordinates?.lat,
                   location_lng: currentCoordinates?.lng,
@@ -1230,9 +1323,9 @@ const ScanPage: React.FC = () => {
               })
               .then(({ error }) => {
                 if (error) {
-                  console.error('[ScanPage] Error logging duplicate scan irregularity:', error);
+                  console.error('[ScanPage] Error logging duplicate scan / card sharing irregularity:', error);
                 } else {
-                  console.log('[ScanPage] Duplicate scan irregularity logged for:', result.uid);
+                  console.log('[ScanPage] Duplicate scan / card sharing irregularity logged for:', result.uid);
                 }
               });
           }
@@ -1248,42 +1341,156 @@ const ScanPage: React.FC = () => {
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: unauthorized_passenger (inactive/suspended card)
+          if (currentTrip && profile?.id) {
+            const cardUid = result.uid || pendingScan?.cardUid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: cardUid,
+              type: 'unauthorized_passenger',
+              description: `Unauthorized passenger attempt: Inactive or suspended card "${cardUid}" presented for boarding.`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: inactive card',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging inactive card irregularity:', error);
+              else console.log('[ScanPage] Unauthorized passenger irregularity logged for inactive card:', cardUid);
+            });
+          }
           break;
         case 'qr_wrong_trip':
           setFailedMsg(`Wrong route. Card is for: ${result.expectedRoute}`);
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: wrong_route
+          if (currentTrip && profile?.id) {
+            const cardUid = result.uid || pendingScan?.cardUid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: cardUid,
+              type: 'wrong_route',
+              description: `Wrong route attempted: Card is for "${result.expectedRoute}", but active bus route is "${currentBus?.route || 'Unknown'}".`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: card route mismatch',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging wrong_route irregularity:', error);
+              else console.log('[ScanPage] Wrong route irregularity logged for:', cardUid);
+            });
+          }
           break;
         case 'qr_fake':
           setFailedMsg(`Invalid QR: ${result.reason}`);
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: unauthorized_passenger / fake QR
+          if (currentTrip && profile?.id) {
+            const cardUid = result.uid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: cardUid,
+              type: 'unauthorized_passenger',
+              description: `Unauthorized passenger attempt: Invalid or forged QR format (${result.reason}). Scanned value: "${cardUid}".`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: invalid QR format',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging fake QR irregularity:', error);
+              else console.log('[ScanPage] Fake QR irregularity logged:', cardUid);
+            });
+          }
           break;
         case 'ticket_already_used':
           setFailedMsg('Ticket already used');
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: fare_evasion (reused ticket)
+          if (currentTrip && profile?.id) {
+            const ticketUid = result.uid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: ticketUid,
+              type: 'fare_evasion',
+              description: `Fare evasion attempt: Already used or validated ticket "${ticketUid}" presented for boarding.`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: reused ticket',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging ticket_already_used irregularity:', error);
+              else console.log('[ScanPage] Ticket already used irregularity logged:', ticketUid);
+            });
+          }
           break;
         case 'ticket_expired':
           setFailedMsg('Ticket expired');
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: unauthorized_passenger (expired ticket)
+          if (currentTrip && profile?.id) {
+            const ticketUid = result.uid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: ticketUid,
+              type: 'unauthorized_passenger',
+              description: `Unauthorized passenger attempt: Expired ticket "${ticketUid}" presented for boarding.`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: expired ticket',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging ticket_expired irregularity:', error);
+              else console.log('[ScanPage] Ticket expired irregularity logged:', ticketUid);
+            });
+          }
           break;
         case 'ticket_wrong_trip':
           setFailedMsg(`Wrong route. Ticket is for: ${result.expectedRoute}`);
           setScanState('failed');
           setBaggageSelection(null);
           setSelectedDestination('');
-    setSelectedPaymentMethod('');
+          setSelectedPaymentMethod('');
+
+          // Automated System Trigger: wrong_route (ticket route mismatch)
+          if (currentTrip && profile?.id) {
+            const ticketUid = result.uid || 'Unknown';
+            supabase.from('fare_irregularities').insert({
+              trip_id: currentTrip.id,
+              conductor_id: profile.id,
+              card_uid: ticketUid,
+              type: 'wrong_route',
+              description: `Wrong route attempted: Ticket is for "${result.expectedRoute}", but active bus route is "${currentBus?.route || 'Unknown'}".`,
+              detected_at: new Date().toISOString(),
+              location_lat: currentCoordinates?.lat,
+              location_lng: currentCoordinates?.lng,
+              notes: 'Automated real-time scan detection: ticket route mismatch',
+            }).then(({ error }) => {
+              if (error) console.error('[ScanPage] Error logging ticket_wrong_trip irregularity:', error);
+              else console.log('[ScanPage] Ticket wrong trip irregularity logged:', ticketUid);
+            });
+          }
           break;
         case 'error':
           setFailedMsg(result.message || 'An error occurred');
@@ -1700,10 +1907,13 @@ const ScanPage: React.FC = () => {
             const passengerType = (card.passenger_type || 'regular') as FarePassengerType;
 
             // Calculate original fare (boarding stop to destination)
-            const originalFare = getFareFromMatrix(actualBoardingStop, storedDestination, passengerType) || 0;
+            const normalizedBoarding = normalizeStopName(actualBoardingStop);
+            const normalizedStoredDest = normalizeStopName(storedDestination);
+            const originalFare = getFareFromMatrix(normalizedBoarding, normalizedStoredDest, passengerType) || 0;
 
             // Calculate actual fare (boarding stop to actual alighting location)
-            const actualFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType) || 0;
+            const normalizedAlighting = normalizeStopName(actualAlightingStop);
+            const actualFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType) || 0;
 
             const fareDifference = actualFare - originalFare;
 
@@ -1738,7 +1948,9 @@ const ScanPage: React.FC = () => {
       if (gpsResult && gpsResult.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
         const actualBoardingStop = actualBoardedPassenger.boarding_stop;
         const actualAlightingStop = gpsResult.nearestStop;
-        const adjustedBaseFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType);
+        const normalizedBoarding = normalizeStopName(actualBoardingStop);
+        const normalizedAlighting = normalizeStopName(actualAlightingStop);
+        const adjustedBaseFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType);
 
         if (adjustedBaseFare !== null && adjustedBaseFare > baseFare) {
           baseFare = adjustedBaseFare;
@@ -1949,7 +2161,9 @@ const ScanPage: React.FC = () => {
       const passengerType = pendingAlighting.passengerType || 'regular';
 
       // Calculate fare for actual route (boarding to actual alighting location)
-      const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+      const normalizedBoarding = normalizeStopName(actualBoardingStop);
+      const normalizedAlighting = normalizeStopName(actualAlightingStop);
+      const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
 
       if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
         // Charge additional fare for the longer route
@@ -2061,7 +2275,9 @@ const ScanPage: React.FC = () => {
           const actualBoardingStop = pendingAlighting.boardingPoint;
           const actualAlightingStop = gpsResult.nearestStop;
           const passengerType = pendingAlighting.passengerType || 'regular';
-          const actualRouteFare = getFareFromMatrix(actualBoardingStop, actualAlightingStop, passengerType as FarePassengerType);
+          const normalizedBoarding = normalizeStopName(actualBoardingStop);
+          const normalizedAlighting = normalizeStopName(actualAlightingStop);
+          const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
           if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
             fallbackAdjustedFare = actualRouteFare;
           }
@@ -2124,7 +2340,8 @@ const ScanPage: React.FC = () => {
 
   const isActiveView = scanState !== 'idle';
   const shortEdge = Math.min(window.innerWidth, window.innerHeight);
-  const boxSize = Math.min(Math.round(shortEdge * 0.7), 280);
+  const cardWidth = Math.min(Math.max(Math.round(shortEdge * 0.74), 220), 280);
+  const cardHeight = Math.round(cardWidth / 1.586);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -2193,6 +2410,25 @@ const ScanPage: React.FC = () => {
                     ? (scanType === 'onboarding' ? 'Scan card → pick destination' : 'Scan card → fare auto-deducted')
                     : `Scans sync when online${pendingCount > 0 ? ` (${pendingCount} queued)` : ''}`}
                 </p>
+
+                {(currentTrip?.starting_point || currentTrip?.end_point) && (
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginTop: 8,
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    color: '#3b82f6',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                  }}>
+                    <Navigation size={12} />
+                    <span>{currentTrip.starting_point || 'Start'} → {currentTrip.end_point || 'End'}</span>
+                  </div>
+                )}
               </SoftCard>
 
               {/* Mode selector card */}
@@ -2397,97 +2633,15 @@ const ScanPage: React.FC = () => {
                     }}
                   />
 
-                  {/* ── Scan-box animation overlay ── */}
+                  {/* ── QR Card Scan Frame Overlay (for Onboarding & Alighting) ── */}
                   {scanState === 'scanning' && (
-                    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                      {/* The scan-box frame */}
-                      <div style={{ position: 'relative', width: boxSize, height: boxSize, flexShrink: 0 }}>
-                        {/* Corner brackets */}
-                        {(['tl','tr','bl','br'] as const).map(pos => (
-                          <div key={pos} style={{
-                            position: 'absolute',
-                            width: Math.round(boxSize * 0.14),
-                            height: Math.round(boxSize * 0.14),
-                            top: pos.startsWith('t') ? 0 : undefined,
-                            bottom: pos.startsWith('b') ? 0 : undefined,
-                            left: pos.endsWith('l') ? 0 : undefined,
-                            right: pos.endsWith('r') ? 0 : undefined,
-                            borderColor: '#22C55E',
-                            borderStyle: 'solid',
-                            borderWidth: pos === 'tl' ? '3px 0 0 3px' : pos === 'tr' ? '3px 3px 0 0' : pos === 'bl' ? '0 0 3px 3px' : '0 3px 3px 0',
-                            borderRadius: pos === 'tl' ? '6px 0 0 0' : pos === 'tr' ? '0 6px 0 0' : pos === 'bl' ? '0 0 0 6px' : '0 0 6px 0',
-                          }} />
-                        ))}
-                        {/* Scan beam */}
-                        <motion.div
-                          style={{
-                            position: 'absolute', left: 0, right: 0, height: 3,
-                            background: 'linear-gradient(90deg, transparent, #22C55E, transparent)',
-                            boxShadow: '0 0 10px 3px rgba(34,197,94,0.8)',
-                            top: 0,
-                          }}
-                          animate={{ top: ['0px', `${boxSize}px`, '0px'] }}
-                          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                        />
-                      </div>
-
-                      {/* Stability meter */}
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '8px 16px',
-                        background: 'rgba(0, 0, 0, 0.7)',
-                        borderRadius: 20,
-                        backdropFilter: 'blur(8px)',
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          width: boxSize * 0.8,
-                        }}>
-                          <motion.div
-                            style={{
-                              flex: 1,
-                              height: 6,
-                              background: 'rgba(255, 255, 255, 0.2)',
-                              borderRadius: 3,
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <motion.div
-                              style={{
-                                height: '100%',
-                                background: stabilityProgress >= 100 ? '#22C55E' : stabilityProgress >= 60 ? '#EAB308' : '#EF4444',
-                                borderRadius: 3,
-                              }}
-                              animate={{ width: `${stabilityProgress}%` }}
-                              transition={{ duration: 0.1 }}
-                            />
-                          </motion.div>
-                          <span style={{
-                            color: 'white',
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            minWidth: 50,
-                            textAlign: 'right',
-                          }}>
-                            {stabilityProgress >= 100 ? 'READY' : `${stabilityProgress}%`}
-                          </span>
-                        </div>
-                        <span style={{
-                          color: 'rgba(255, 255, 255, 0.9)',
-                          fontSize: '0.65rem',
-                          fontWeight: 600,
-                          letterSpacing: '0.5px',
-                          textTransform: 'uppercase',
-                        }}>
-                          {stabilityProgress >= 100 ? 'Stable - Ready to scan' : 'Hold steady...'}
-                        </span>
-                      </div>
-                    </div>
+                    <ScanFrame
+                      mode={scanType}
+                      active={true}
+                      stabilityProgress={stabilityProgress}
+                      cardWidth={cardWidth}
+                      cardHeight={cardHeight}
+                    />
                   )}
 
                   {/* ── Detected animation ── */}
@@ -2496,22 +2650,74 @@ const ScanPage: React.FC = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      style={{ position: 'absolute', inset: 0, background: 'rgba(34,197,94,0.3)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 220, padding: '20px' }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: scanType === 'alighting' ? 'rgba(245, 158, 11, 0.35)' : 'rgba(34, 197, 94, 0.35)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        minHeight: 220,
+                        padding: '20px',
+                        zIndex: 20,
+                      }}
                     >
                       <motion.div
                         animate={{ scale: [1, 1.2, 1], opacity: [0.8, 1, 0.8] }}
                         transition={{ duration: 0.5, repeat: 2 }}
                       >
-                        <CheckCircle size={64} color="#22C55E" strokeWidth={3} />
+                        <CheckCircle
+                          size={64}
+                          color={scanType === 'alighting' ? '#F59E0B' : '#22C55E'}
+                          strokeWidth={3}
+                        />
                       </motion.div>
-                      <span style={{ color: '#22C55E', fontWeight: 800, fontSize: '1.1rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-                        QR Code Detected!
+                      <span
+                        style={{
+                          color: scanType === 'alighting' ? '#F59E0B' : '#22C55E',
+                          fontWeight: 800,
+                          fontSize: '1.1rem',
+                          textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        {scanType === 'alighting' ? 'Alighting QR Card Detected!' : 'Onboarding QR Card Detected!'}
                       </span>
                       {/* Display scanned QR code in detected state */}
                       {debugScannedCode && (
-                        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.9)', borderRadius: 8, maxWidth: '100%', overflow: 'hidden' }}>
-                          <span style={{ color: '#22C55E', fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>SCANNED QR:</span>
-                          <span style={{ color: '#1a1a1a', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 500, wordBreak: 'break-all' }}>{debugScannedCode}</span>
+                        <div
+                          style={{
+                            marginTop: 8,
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.92)',
+                            borderRadius: 8,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: scanType === 'alighting' ? '#D97706' : '#16A34A',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              display: 'block',
+                              marginBottom: 4,
+                            }}
+                          >
+                            SCANNED QR:
+                          </span>
+                          <span
+                            style={{
+                              color: '#1a1a1a',
+                              fontSize: '0.8rem',
+                              fontFamily: 'monospace',
+                              fontWeight: 600,
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {debugScannedCode}
+                          </span>
                         </div>
                       )}
                     </motion.div>
@@ -2560,7 +2766,7 @@ const ScanPage: React.FC = () => {
                         <span style={{ color: 'white', fontWeight: 800, fontSize: '0.9rem' }}>Success!</span>
                       </div>
                       <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: '0.7rem', background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '2px 8px' }}>
-                        {passengerTypeLabel(successPassengerType)} {successIsTicket ? 'Ticket' : 'Card'}
+                        {passengerTypeLabel(successPassengerType)} {successIsTicket ? 'Temp QR Card' : 'QR Card'}
                       </span>
                       <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '0.75rem', textAlign: 'center' }}>{successMsg}</span>
 
@@ -2767,151 +2973,140 @@ const ScanPage: React.FC = () => {
 
                     {/* Destination picker + GPS + Baggage + Fare — all in one card */}
                     <SoftCard variant="glass" style={{ marginBottom: 14 }}>
-                      {/* From (current GPS stop or boarding point selection for offline) */}
-                      {!isOnline ? (
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+                      {/* From (current GPS stop or boarding point selection via dropdown) */}
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
                             <MapPin size={16} color="var(--color-success)" />
                           </div>
                           <div style={{ flex: 1 }}>
-                            <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
-                            <div style={{ position: 'relative', marginBottom: 8 }}>
-                              <input
-                                type="text"
-                                placeholder="Search stop…"
-                                value={boardingSearch}
-                                onChange={e => setBoardingSearch(e.target.value)}
-                                style={{
-                                  width: '100%', padding: '8px 12px 8px 32px', borderRadius: 8,
-                                  border: '1.5px solid var(--glass-border)', background: 'var(--bg-tertiary)',
-                                  color: 'var(--text-primary)', fontSize: '0.88rem', outline: 'none',
-                                  boxSizing: 'border-box',
-                                }}
-                              />
-                              <MapPin size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                              {displayStops
-                                .filter(s => s.toLowerCase().includes(boardingSearch.toLowerCase()))
-                                .map(stop => (
-                                  <button
-                                    key={stop}
-                                    type="button"
-                                    onClick={() => { setSelectedBoardingPoint(stop); setBoardingSearch(''); }}
-                                    style={{
-                                      padding: '6px 12px', borderRadius: 20, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
-                                      border: selectedBoardingPoint === stop ? '2px solid var(--color-success)' : '1.5px solid var(--glass-border)',
-                                      background: selectedBoardingPoint === stop ? 'var(--color-success)' : 'var(--bg-tertiary)',
-                                      color: selectedBoardingPoint === stop ? 'white' : 'var(--text-primary)',
-                                      transition: 'all 0.15s',
-                                    }}
-                                  >
-                                    {stop}
-                                  </button>
-                                ))}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--color-success-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
-                              <MapPin size={16} color="var(--color-success)" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Boarding From</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowManualBoardingStopPicker(!showManualBoardingStopPicker)}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--color-primary)',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    padding: '0 4px',
-                                  }}
-                                >
-                                  {showManualBoardingStopPicker ? 'Close Stops' : 'Change Stop'}
-                                </button>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
-                                  {selectedBoardingPoint || currentStopName || (locationStatus === 'requesting' ? 'Locating GPS…' : 'Tap to set boarding stop')}
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={refreshBoardingLocation}
-                                  title="Refresh GPS"
-                                  style={{
-                                    background: 'var(--bg-tertiary)',
-                                    border: '1px solid var(--glass-border)',
-                                    borderRadius: 6,
-                                    padding: '3px 8px',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600,
-                                    color: 'var(--text-secondary)',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                  }}
-                                >
-                                  <RefreshCw size={11} className={locationStatus === 'requesting' ? 'primary-btn__spinner' : ''} />
-                                  GPS
-                                </button>
-                              </div>
-                              {currentCoordinates && !selectedBoardingPoint && (
-                                <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-                                  GPS Fix: {currentCoordinates.lat.toFixed(5)}, {currentCoordinates.lng.toFixed(5)}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Quick Boarding Stop Picker in Online Mode */}
-                          {showManualBoardingStopPicker && (
-                            <div style={{ marginTop: 8, paddingLeft: 40 }}>
-                              <p style={{ margin: '0 0 6px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                Tap a stop to override current boarding terminal:
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Boarding From {!isOnline ? '(Offline)' : ''}
                               </p>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 100, overflowY: 'auto' }}>
-                                {displayStops.map(stop => (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {isOnline && selectedBoardingPoint && selectedBoardingPoint !== currentStopName && (
                                   <button
-                                    key={stop}
                                     type="button"
                                     onClick={() => {
-                                      setSelectedBoardingPoint(stop);
-                                      setShowManualBoardingStopPicker(false);
+                                      setSelectedBoardingPoint(currentStopName || '');
                                       if (pendingScan.cardDestination && pendingScan) {
                                         const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                                        const mFare = getFareFromMatrix(stop, pendingScan.cardDestination, pType);
+                                        const normalizedCurrent = normalizeStopName(currentStopName || '');
+                                        const normalizedDest = normalizeStopName(pendingScan.cardDestination);
+                                        const mFare = getFareFromMatrix(normalizedCurrent, normalizedDest, pType);
                                         if (mFare !== null) {
                                           setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
                                         }
                                       }
                                     }}
                                     style={{
-                                      padding: '5px 10px',
-                                      borderRadius: 14,
-                                      fontSize: '0.74rem',
-                                      fontWeight: (selectedBoardingPoint || currentStopName) === stop ? 700 : 500,
-                                      border: (selectedBoardingPoint || currentStopName) === stop ? '1.5px solid var(--color-success)' : '1px solid var(--glass-border)',
-                                      background: (selectedBoardingPoint || currentStopName) === stop ? 'var(--color-success)' : 'var(--bg-tertiary)',
-                                      color: (selectedBoardingPoint || currentStopName) === stop ? 'white' : 'var(--text-primary)',
+                                      background: 'none',
+                                      border: 'none',
+                                      color: 'var(--color-primary)',
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
                                       cursor: 'pointer',
+                                      padding: '0 2px',
                                     }}
                                   >
-                                    {(selectedBoardingPoint || currentStopName) === stop ? '✓ ' : ''}{stop}
+                                    Reset to GPS
                                   </button>
-                                ))}
+                                )}
+                                {isOnline && (
+                                  <button
+                                    type="button"
+                                    onClick={refreshBoardingLocation}
+                                    title="Refresh GPS"
+                                    style={{
+                                      background: 'var(--bg-tertiary)',
+                                      border: '1px solid var(--glass-border)',
+                                      borderRadius: 6,
+                                      padding: '2px 8px',
+                                      fontSize: '0.68rem',
+                                      fontWeight: 600,
+                                      color: 'var(--text-secondary)',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                    }}
+                                  >
+                                    <RefreshCw size={10} className={locationStatus === 'requesting' ? 'primary-btn__spinner' : ''} />
+                                    GPS
+                                  </button>
+                                )}
                               </div>
                             </div>
-                          )}
+
+                            {/* Dropdown for Boarding Stop / Change Stop */}
+                            <div style={{ position: 'relative', width: '100%', marginTop: 2 }}>
+                              <select
+                                value={selectedBoardingPoint || currentStopName || ''}
+                                onChange={(e) => {
+                                  const stop = e.target.value;
+                                  setSelectedBoardingPoint(stop);
+                                  if (pendingScan?.cardDestination && pendingScan) {
+                                    const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+                                    const normalizedStop = normalizeStopName(stop);
+                                    const normalizedDest = normalizeStopName(pendingScan.cardDestination);
+                                    const mFare = getFareFromMatrix(normalizedStop, normalizedDest, pType);
+                                    if (mFare !== null) {
+                                      setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  appearance: 'none',
+                                  WebkitAppearance: 'none',
+                                  padding: '8px 36px 8px 12px',
+                                  borderRadius: 10,
+                                  border: '1.5px solid var(--glass-border)',
+                                  background: 'var(--bg-tertiary)',
+                                  color: 'var(--text-primary)',
+                                  fontWeight: 700,
+                                  fontSize: '0.88rem',
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  boxSizing: 'border-box',
+                                }}
+                              >
+                                {!selectedBoardingPoint && !currentStopName && (
+                                  <option value="" disabled>Select boarding stop…</option>
+                                )}
+                                {currentStopName && !displayStops.includes(currentStopName) && (
+                                  <option value={currentStopName} style={{ background: '#1e293b', color: '#ffffff' }}>
+                                    📍 {currentStopName} (GPS)
+                                  </option>
+                                )}
+                                {getAvailableBoardingPoints(tripDirection, selectedDestination).map(stop => (
+                                  <option key={stop} value={stop} style={{ background: '#1e293b', color: '#ffffff' }}>
+                                    {stop === currentStopName ? `📍 ${stop} (Current GPS)` : stop}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown
+                                size={16}
+                                color="var(--text-secondary)"
+                                style={{
+                                  position: 'absolute',
+                                  right: 12,
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  pointerEvents: 'none',
+                                }}
+                              />
+                            </div>
+
+                            {currentCoordinates && !selectedBoardingPoint && (
+                              <p style={{ margin: '3px 0 0', fontSize: '0.68rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                                GPS Fix: {currentCoordinates.lat.toFixed(5)}, {currentCoordinates.lng.toFixed(5)}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      )}
+                      </div>
 
                       {/* Divider with route line */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingLeft: 12 }}>
@@ -2932,9 +3127,11 @@ const ScanPage: React.FC = () => {
                             value={selectedDestination || pendingScan.cardDestination || ''}
                             onChange={(e) => {
                               setSelectedDestination(e.target.value);
-                              const fromStop = selectedBoardingPoint || currentStopName || undefined;
+                              const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
                               const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                              const mFare = getFareFromMatrix(fromStop, e.target.value, pType);
+                              const normalizedFrom = normalizeStopName(fromStop);
+                              const normalizedTo = normalizeStopName(e.target.value);
+                              const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
                               if (mFare !== null) {
                                 setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
                               }
@@ -2953,13 +3150,13 @@ const ScanPage: React.FC = () => {
                             }}
                           >
                             <option value="">Select destination...</option>
-                            {getAvailableDestinations().map(dest => (
+                            {getAvailableDestinations(tripDirection, selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '')).map(dest => (
                               <option key={dest} value={dest}>{dest}</option>
                             ))}
                           </select>
                           {pendingScan.cardDestination && (
                             <p style={{ margin: '4px 0 0', fontSize: '0.68rem', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                              Pre-selected from card/ticket
+                              Pre-selected from QR card
                             </p>
                           )}
                         </div>
@@ -3345,9 +3542,16 @@ const ScanPage: React.FC = () => {
                         <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
                           <PrimaryButton
                             onClick={retryCamera}
-                            variant="ghost"
-                            icon={<RefreshCw size={15} />}
-                            style={{ flex: 1 }}
+                            variant="danger"
+                            icon={<X size={16} />}
+                            style={{
+                              flex: 1,
+                              background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              border: '1.5px solid #EF4444',
+                              boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
+                            }}
                           >
                             Cancel
                           </PrimaryButton>
@@ -3446,7 +3650,7 @@ const ScanPage: React.FC = () => {
                                 <ChevronRight size={18} color="var(--text-tertiary)" />
                               </div>
                               <div style={{ flex: 1, textAlign: 'right' }}>
-                                <span style={{ fontSize: '0.66rem', color: 'var(--text-tertiary)', display: 'block', fontWeight: 600 }}>TICKETED STOP</span>
+                                <span style={{ fontSize: '0.66rem', color: 'var(--text-tertiary)', display: 'block', fontWeight: 600 }}>DESTINATION STOP</span>
                                 <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-primary)' }}>
                                   {pendingAlighting.destination || 'Open Stop'}
                                 </span>
@@ -3616,9 +3820,16 @@ const ScanPage: React.FC = () => {
                                 setGpsResult(null);
                                 setScanState('scanning');
                               }}
-                              variant="ghost"
-                              icon={<X size={15} />}
-                              style={{ flex: 1 }}
+                              variant="danger"
+                              icon={<X size={16} />}
+                              style={{
+                                flex: 1,
+                                background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                                color: '#ffffff',
+                                fontWeight: 700,
+                                border: '1.5px solid #EF4444',
+                                boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)',
+                              }}
                             >
                               Cancel
                             </PrimaryButton>

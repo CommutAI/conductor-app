@@ -138,16 +138,25 @@ export interface StopCoords {
 // ── Known stop coordinates (Manolo Fortich – Agora Terminal route) ────────────
 // Coordinates sourced from OpenStreetMap for Bukidnon / Cagayan de Oro area.
 export const ROUTE_STOPS: StopCoords[] = [
-  { name: 'Agora Terminal',   lat: 8.4796,  lng: 124.6508, radiusKm: 0.4 },
-  { name: 'Puerto',           lat: 8.4701,  lng: 124.6392, radiusKm: 0.35 },
-  { name: 'Ba-e',             lat: 8.4550,  lng: 124.6100, radiusKm: 0.35 },
-  { name: 'Mambatangan',      lat: 8.4380,  lng: 124.5850, radiusKm: 0.35 },
-  { name: 'Maitom',           lat: 8.4210,  lng: 124.5620, radiusKm: 0.35 },
-  { name: 'Ala-e',            lat: 8.4040,  lng: 124.5390, radiusKm: 0.35 },
-  { name: 'Lonocan',          lat: 8.3860,  lng: 124.5150, radiusKm: 0.35 },
-  { name: 'San Miguel',       lat: 8.3680,  lng: 124.4900, radiusKm: 0.35 },
-  { name: 'Diclum',           lat: 8.3500,  lng: 124.4650, radiusKm: 0.35 },
-  { name: 'Manolo Fortich',   lat: 8.3695,  lng: 124.8600, radiusKm: 0.5  },
+  { name: 'Maluko Manolo',    lat: 8.3950,  lng: 124.9450, radiusKm: 0.5 },
+  { name: 'Dalirig',          lat: 8.3820,  lng: 124.9120, radiusKm: 0.4 },
+  { name: 'Tankulan',         lat: 8.3688,  lng: 124.8641, radiusKm: 0.4 },
+  { name: 'Dicklum',          lat: 8.3740,  lng: 124.8480, radiusKm: 0.35 },
+  { name: 'San Miguel',       lat: 8.3890,  lng: 124.8332, radiusKm: 0.35 },
+  { name: 'Cawayanon',        lat: 8.4000,  lng: 124.8280, radiusKm: 0.35 },
+  { name: 'Lunocan',          lat: 8.4143,  lng: 124.8231, radiusKm: 0.35 },
+  { name: 'Alae Manolo',      lat: 8.4244,  lng: 124.8128, radiusKm: 0.35 },
+  { name: 'Maitum',           lat: 8.4260,  lng: 124.8200, radiusKm: 0.35 },
+  { name: 'Balubal',          lat: 8.4280,  lng: 124.8180, radiusKm: 0.35 },
+  { name: 'Mambatangan',      lat: 8.4300,  lng: 124.8150, radiusKm: 0.35 },
+  { name: 'Bae Upper Puerto', lat: 8.4264,  lng: 124.8092, radiusKm: 0.35 },
+  { name: 'Puerto',           lat: 8.5010,  lng: 124.7505, radiusKm: 0.35 },
+  { name: 'Agusan',           lat: 8.4886,  lng: 124.7382, radiusKm: 0.35 },
+  { name: 'Tablon',           lat: 8.4819,  lng: 124.7286, radiusKm: 0.35 },
+  { name: 'Tablon Baloi',     lat: 8.4819,  lng: 124.7286, radiusKm: 0.35 },
+  { name: 'Cugman',           lat: 8.4780,  lng: 124.7050, radiusKm: 0.35 },
+  { name: 'Gusa',             lat: 8.4757,  lng: 124.6823, radiusKm: 0.35 },
+  { name: 'Agora',            lat: 8.48907482, lng: 124.65762898, radiusKm: 0.5 },
 ];
 
 // ── Haversine distance (km) ───────────────────────────────────────────────────
@@ -400,11 +409,8 @@ function decodeCoordinates(pos: GpsPosition): GpsLocationResult {
   }
 
   const stopMatch = nearestStop(pos.lat, pos.lng);
-  const locationName = stopMatch.isWithinRadius
-    ? stopMatch.stop.name
-    : `${stopMatch.stop.name} (${(stopMatch.distanceKm * 1000).toFixed(0)}m away)`;
-
-  const fullAddress = `${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}`;
+  const locationName = stopMatch.stop.name;
+  const fullAddress = `${stopMatch.stop.name} (${(stopMatch.distanceKm * 1000).toFixed(0)}m) - ${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`;
   gpsCache.cacheLocation(pos.lat, pos.lng, stopMatch.stop.name, fullAddress);
 
   return {
@@ -427,18 +433,8 @@ export async function getLocationAndDecode(): Promise<GpsLocationResult> {
       try {
         const geo = await reverseGeocode(pos.lat, pos.lng);
         if (geo) {
-          const preciseName =
-            geo.address.village ||
-            geo.address.suburb ||
-            geo.address.city_district ||
-            geo.address.town ||
-            geo.address.city ||
-            geo.display_name.split(',')[0];
-          if (preciseName) {
-            decoded.locationName = preciseName;
-            decoded.fullAddress = geo.display_name;
-            gpsCache.cacheLocation(pos.lat, pos.lng, preciseName, geo.display_name);
-          }
+          decoded.fullAddress = geo.display_name;
+          gpsCache.cacheLocation(pos.lat, pos.lng, decoded.locationName || '', geo.display_name);
         }
       } catch {
         /* keep stop-based name */
