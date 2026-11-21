@@ -63,23 +63,23 @@ import busStopsData from '../data/busStops.json';
  * trc = temporary regular card, tsc = temporary student card, tscc = temporary senior citizen card, tpc = temporary pwd card
  */
 function detectCardTypeFromPrefix(scannedCode: string): { isTicket: boolean; passengerType: FarePassengerType } {
-  const code = scannedCode.toLowerCase().trim();
-  const isTicket = code.startsWith('t') && !code.startsWith('tankulan');
-  const detected = detectPassengerTypeFromUid(code);
+  const code = scannedCode.toLowerCase().replace(/[\s-_]/g, '');
+  const isTicket = (code.startsWith('t') && !code.startsWith('tankulan')) || scannedCode.toLowerCase().trim().startsWith('t');
+  const detected = detectPassengerTypeFromUid(scannedCode);
   if (detected) {
     return { isTicket, passengerType: detected };
   }
 
-  // Temporary tickets (start with 't')
+  // Temporary tickets (check longer prefixes first)
+  if (code.startsWith('tscc')) return { isTicket: true, passengerType: 'senior_citizen' };
   if (code.startsWith('trc')) return { isTicket: true, passengerType: 'regular' };
   if (code.startsWith('tsc')) return { isTicket: true, passengerType: 'student' };
-  if (code.startsWith('tscc')) return { isTicket: true, passengerType: 'senior_citizen' };
   if (code.startsWith('tpc')) return { isTicket: true, passengerType: 'pwd' };
 
-  // Regular cards (no 't' prefix)
+  // Regular cards (check longer prefixes first)
+  if (code.startsWith('scc')) return { isTicket: false, passengerType: 'senior_citizen' };
   if (code.startsWith('rc')) return { isTicket: false, passengerType: 'regular' };
   if (code.startsWith('sc')) return { isTicket: false, passengerType: 'student' };
-  if (code.startsWith('scc')) return { isTicket: false, passengerType: 'senior_citizen' };
   if (code.startsWith('pc')) return { isTicket: false, passengerType: 'pwd' };
 
   // Default to regular card if no recognized prefix
@@ -1266,7 +1266,7 @@ const ScanPage: React.FC = () => {
         baggageSelection?.category,
         baggageSelection?.weight,
         paymentMethod === 'qr_card' ? 'card' : paymentMethod,
-        boardingPoint || selectedBoardingPoint || currentStopName || undefined,
+        fromStop || boardingPoint || selectedBoardingPoint || currentStopName || undefined,
         (pendingScan?.passengerType as FarePassengerType) || undefined,
       );
       console.log('Process scan result:', result);
@@ -1860,7 +1860,7 @@ const ScanPage: React.FC = () => {
           // Check if there's an active (unalighted) boarding for this ticket on this trip
           const { data: boardedTicket } = await supabase
             .from('boarded_passengers')
-            .select('id, alighted_at, boarding_stop')
+            .select('id, alighted_at, boarding_stop, destination_stop')
             .eq('trip_id', currentTrip.id)
             .eq('temp_ticket_id', ticket.id)
             .is('alighted_at', null)
@@ -1894,7 +1894,7 @@ const ScanPage: React.FC = () => {
           ) as FarePassengerType;
 
           const tBoardingPoint = boardedTicket?.boarding_stop || (displayStops.length > 0 ? displayStops[0] : '');
-          const tDestination = ticket.destination || '';
+          const tDestination = ticket.destination || (boardedTicket as any)?.destination_stop || (displayStops.length > 1 ? displayStops[displayStops.length - 1] : '');
           const tMatrixDetails = (tBoardingPoint && tDestination)
             ? getFareMatrixDetails(normalizeStopName(tBoardingPoint), normalizeStopName(tDestination), ticketPassengerType)
             : null;
@@ -1909,9 +1909,16 @@ const ScanPage: React.FC = () => {
             tRegularFare = tMatrixDetails.regularFare;
             tDiscountAmount = tMatrixDetails.discountAmount;
           } else if (ticketTx?.fare_amount !== undefined && ticketTx.fare_amount !== null) {
-            tBaseFare = ticketTx.fare_amount;
-            tDiscountAmount = ticketTx.discount_amount || 0;
-            tRegularFare = tBaseFare + tDiscountAmount;
+            if (ticketPassengerType !== 'regular' && (!ticketTx.discount_amount || ticketTx.discount_amount === 0)) {
+              const calc = calculateFare(ticketTx.fare_amount, ticketPassengerType);
+              tBaseFare = calc.finalFare;
+              tRegularFare = calc.baseFare;
+              tDiscountAmount = calc.discountAmount;
+            } else {
+              tBaseFare = ticketTx.fare_amount;
+              tDiscountAmount = ticketTx.discount_amount || 0;
+              tRegularFare = tBaseFare + tDiscountAmount;
+            }
           } else if (ticket.fare_amount) {
             tBaseFare = ticket.fare_amount;
             if (ticketPassengerType !== 'regular') {
@@ -2002,7 +2009,7 @@ const ScanPage: React.FC = () => {
       // Look for the most recent active (unalighted) boarding for this card on this trip
       let boardedPassenger = await supabase
         .from('boarded_passengers')
-        .select('id, alighted_at, boarded_at, boarding_stop')
+        .select('id, alighted_at, boarded_at, boarding_stop, destination_stop')
         .eq('trip_id', currentTrip.id)
         .eq('card_id', card.id)
         .is('alighted_at', null)
@@ -2015,7 +2022,7 @@ const ScanPage: React.FC = () => {
         console.log('[Alighting] Not found by card_id, trying temp_ticket_id lookup');
         boardedPassenger = await supabase
           .from('boarded_passengers')
-          .select('id, alighted_at, boarded_at, boarding_stop')
+          .select('id, alighted_at, boarded_at, boarding_stop, destination_stop')
           .eq('trip_id', currentTrip.id)
           .eq('temp_ticket_id', card.id)
           .is('alighted_at', null)
@@ -2102,7 +2109,7 @@ const ScanPage: React.FC = () => {
       console.log('Alighting card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
       const boardingPoint = actualBoardedPassenger?.boarding_stop || (displayStops.length > 0 ? displayStops[0] : '');
-      const destination = storedDestination || (actualBoardedPassenger as any)?.destination_stop || '';
+      const destination = storedDestination || (actualBoardedPassenger as any)?.destination_stop || (displayStops.length > 1 ? displayStops[displayStops.length - 1] : '');
       const matrixDetails = (boardingPoint && destination)
         ? getFareMatrixDetails(normalizeStopName(boardingPoint), normalizeStopName(destination), passengerType)
         : null;
@@ -2117,9 +2124,16 @@ const ScanPage: React.FC = () => {
         regularFare = matrixDetails.regularFare;
         discountAmount = matrixDetails.discountAmount;
       } else if (boardingTransaction?.fare_amount !== undefined && boardingTransaction.fare_amount !== null) {
-        baseFare = boardingTransaction.fare_amount;
-        discountAmount = boardingTransaction.discount_amount || 0;
-        regularFare = baseFare + discountAmount;
+        if (passengerType !== 'regular' && (!boardingTransaction.discount_amount || boardingTransaction.discount_amount === 0)) {
+          const calc = calculateFare(boardingTransaction.fare_amount, passengerType);
+          baseFare = calc.finalFare;
+          regularFare = calc.baseFare;
+          discountAmount = calc.discountAmount;
+        } else {
+          baseFare = boardingTransaction.fare_amount;
+          discountAmount = boardingTransaction.discount_amount || 0;
+          regularFare = baseFare + discountAmount;
+        }
       } else {
         const rawFare = boardingTransaction?.amount ? (boardingTransaction.amount - baggageFee) : DEFAULT_FARE;
         if (passengerType !== 'regular') {

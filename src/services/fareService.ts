@@ -624,7 +624,8 @@ export function getFareFromMatrix(
     return null;
   }
 
-  const isDiscounted = passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd';
+  const normType = normalizePassengerType(passengerType);
+  const isDiscounted = normType === 'student' || normType === 'senior_citizen' || normType === 'pwd';
   const fare = isDiscounted ? fareEntry.discounted_fare : fareEntry.regular_fare;
   console.log('[FareMatrix] Fare found:', { fareEntry, finalFare: fare, isDiscounted });
   return typeof fare === 'number' && !isNaN(fare) ? fare : Number(fare) || null;
@@ -671,7 +672,8 @@ export function getFareMatrixDetails(
 
   if (!fareEntry) return null;
 
-  const isDiscounted = passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd';
+  const normType = normalizePassengerType(passengerType);
+  const isDiscounted = normType === 'student' || normType === 'senior_citizen' || normType === 'pwd';
   const regularFare = Number(fareEntry.regular_fare);
   const discountedFare = Number(fareEntry.discounted_fare);
   const finalFare = isDiscounted ? discountedFare : regularFare;
@@ -689,9 +691,9 @@ export function getFareMatrixDetails(
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
 export function detectPassengerTypeFromUid(uid: string): PassengerType | null {
-  const code = uid.toLowerCase().trim();
-  if (code.startsWith('tsc') || code.startsWith('sc') || code.startsWith('stu')) return 'student';
+  const code = uid.toLowerCase().replace(/[\s-_]/g, '');
   if (code.startsWith('tscc') || code.startsWith('scc') || code.startsWith('snr') || code.startsWith('senior')) return 'senior_citizen';
+  if (code.startsWith('tsc') || code.startsWith('sc') || code.startsWith('stu')) return 'student';
   if (code.startsWith('tpc') || code.startsWith('pc') || code.startsWith('pwd')) return 'pwd';
   if (code.startsWith('trc') || code.startsWith('rc') || code.startsWith('reg')) return 'regular';
   return null;
@@ -699,10 +701,10 @@ export function detectPassengerTypeFromUid(uid: string): PassengerType | null {
 
 export function normalizePassengerType(type?: string | null): PassengerType {
   if (!type) return 'regular';
-  const lower = type.toLowerCase().trim();
+  const lower = type.toLowerCase().replace(/[\s-_]/g, '');
   if (lower.includes('student') || lower === 'sc' || lower === 'tsc') return 'student';
-  if (lower.includes('senior') || lower === 'scc' || lower === 'tscc' || lower === 'snr') return 'senior_citizen';
-  if (lower.includes('pwd') || lower === 'pc' || lower === 'tpc' || lower.includes('disabilit')) return 'pwd';
+  if (lower.includes('senior') || lower.includes('citizen') || lower === 'scc' || lower === 'tscc' || lower === 'snr' || lower.includes('elderly')) return 'senior_citizen';
+  if (lower.includes('pwd') || lower === 'pc' || lower === 'tpc' || lower.includes('disab')) return 'pwd';
   return 'regular';
 }
 
@@ -1122,17 +1124,31 @@ async function processQRCard(
   const prefixType = detectPassengerTypeFromUid(scannedUid) || detectPassengerTypeFromUid(card.card_uid);
   const effectivePassengerType: PassengerType = overridePassengerType || prefixType || normalizePassengerType(card.passenger_type);
 
+  // Fallback stops if missing
+  const resolvedBoardingStop = boardingStop || (trip as any)?.starting_point || (currentActiveDirection === 'agora_to_manolo' ? AGORA_TO_MANOLO_STOPS[0] : MANOLO_TO_AGORA_STOPS[0]);
+  const resolvedDestination = currentDestination || card.destination;
+
   // Calculate fare using matrix if boarding stop and destination are provided
   let fare = DEFAULT_FARE;
   let regularBaseFare = DEFAULT_FARE;
   let calculatedDiscountAmount = 0;
-  if (scanType === 'onboarding' && boardingStop && currentDestination) {
-    const details = getFareMatrixDetails(boardingStop, currentDestination, effectivePassengerType);
+  if (resolvedBoardingStop && resolvedDestination) {
+    const details = getFareMatrixDetails(resolvedBoardingStop, resolvedDestination, effectivePassengerType);
     if (details !== null) {
       fare = details.finalFare;
       regularBaseFare = details.regularFare;
       calculatedDiscountAmount = details.discountAmount;
+    } else {
+      const calc = calculateFare(DEFAULT_FARE, effectivePassengerType);
+      fare = calc.finalFare;
+      regularBaseFare = calc.baseFare;
+      calculatedDiscountAmount = calc.discountAmount;
     }
+  } else {
+    const calc = calculateFare(DEFAULT_FARE, effectivePassengerType);
+    fare = calc.finalFare;
+    regularBaseFare = calc.baseFare;
+    calculatedDiscountAmount = calc.discountAmount;
   }
   const totalFare = fare + (baggageFee || 0);
 
@@ -1381,14 +1397,25 @@ async function processTemporaryTicket(
     const prefixType = detectPassengerTypeFromUid(scannedUid) || detectPassengerTypeFromUid(ticket.ticket_uid);
     const effectivePassengerType: PassengerType = overridePassengerType || prefixType || normalizePassengerType(ticket.passenger_type);
 
+    const resolvedBoardingStop = boardingStop || (trip as any)?.starting_point || (currentActiveDirection === 'agora_to_manolo' ? AGORA_TO_MANOLO_STOPS[0] : MANOLO_TO_AGORA_STOPS[0]);
+    const resolvedDestination = currentDestination || ticket.destination;
+
     let baseFare = ticket.fare_amount || DEFAULT_FARE;
     let ticketDiscountAmount = 0;
-    if (boardingStop && currentDestination) {
-      const details = getFareMatrixDetails(boardingStop, currentDestination, effectivePassengerType);
+    if (resolvedBoardingStop && resolvedDestination) {
+      const details = getFareMatrixDetails(resolvedBoardingStop, resolvedDestination, effectivePassengerType);
       if (details !== null) {
         baseFare = details.finalFare;
         ticketDiscountAmount = details.discountAmount;
+      } else {
+        const calc = calculateFare(baseFare, effectivePassengerType);
+        baseFare = calc.finalFare;
+        ticketDiscountAmount = calc.discountAmount;
       }
+    } else {
+      const calc = calculateFare(baseFare, effectivePassengerType);
+      baseFare = calc.finalFare;
+      ticketDiscountAmount = calc.discountAmount;
     }
 
     // Add service fee for temporary tickets only during boarding
