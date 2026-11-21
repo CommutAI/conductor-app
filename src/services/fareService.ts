@@ -1476,6 +1476,7 @@ async function processTemporaryTicket(
     return {
       status: 'ticket_validated',
       fareAmount: 0,
+      totalFare: 0,
       destination: currentDestination || ticket.destination,
       passengerName: ticket.passenger_type || 'Passenger',
       boardingPoint: boardedData.boarding_stop,

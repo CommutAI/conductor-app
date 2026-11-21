@@ -275,8 +275,6 @@ const ScanPage: React.FC = () => {
   const [baggageSelection, setBaggageSelection] = useState<BaggageSelection | null>(null);
   const [showBaggageSelector, setShowBaggageSelector] = useState(false);
   const [pendingAlighting, setPendingAlighting] = useState<any | null>(null);
-  const [alightingBaggageSelection, setAlightingBaggageSelection] = useState<BaggageSelection | null>(null);
-  const [showAlightingBaggageSelector, setShowAlightingBaggageSelector] = useState(false);
 
 
   // Final result info
@@ -1851,7 +1849,7 @@ const ScanPage: React.FC = () => {
             profile!.id,
             currentBus?.route,
             'alighting',
-            undefined,
+            ticket.destination || currentStopName || 'Destination',
             0,
             undefined,
             undefined,
@@ -1971,28 +1969,12 @@ const ScanPage: React.FC = () => {
             nearestStop: gps.nearestStopName,
           });
 
-          // If GPS mismatch, recalculate fare from actual boarding to actual alighting location
-          if (gps.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
-            const actualBoardingStop = actualBoardedPassenger.boarding_stop;
+          // If GPS mismatch, notify location difference (purely informational — no additional fare charged)
+          if (gps.status === 'mismatch') {
             const actualAlightingStop = gps.nearestStopName;
-            const passengerType = (card.passenger_type || 'regular') as FarePassengerType;
-
-            // Calculate original fare (boarding stop to destination)
-            const normalizedBoarding = normalizeStopName(actualBoardingStop);
-            const normalizedStoredDest = normalizeStopName(storedDestination);
-            const originalFare = getFareFromMatrix(normalizedBoarding, normalizedStoredDest, passengerType) || 0;
-
-            // Calculate actual fare (boarding stop to actual alighting location)
-            const normalizedAlighting = normalizeStopName(actualAlightingStop);
-            const actualFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType) || 0;
-
-            const fareDifference = actualFare - originalFare;
-
             setGpsResult(prev => prev ? {
               ...prev,
-              message: fareDifference > 0
-                ? `Fare anomaly: Paid PHP${originalFare.toFixed(2)} for ${storedDestination}, but alighted at ${actualAlightingStop} (PHP${actualFare.toFixed(2)}). Additional fare: PHP${fareDifference.toFixed(2)}`
-                : `Location mismatch: Alighted at ${actualAlightingStop} instead of ${storedDestination}. Fare: PHP${actualFare.toFixed(2)}`,
+              message: `Alighting at ${actualAlightingStop || 'different stop'} (Card destination: ${storedDestination}). No additional charge.`,
             } : null);
           }
 
@@ -2012,22 +1994,8 @@ const ScanPage: React.FC = () => {
       // transaction.amount = totalFare (base + baggage) as stored by fareService
       const txAmount = boardingTransaction?.amount || 12;
       const baggageFee = boardingTransaction?.baggage_fee || 0;
-      let baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
-      let totalFare = txAmount;               // amount IS already the total — no re-addition needed
-
-      // Adjust fare if GPS mismatch detected
-      if (gpsResult && gpsResult.status === 'mismatch' && actualBoardedPassenger?.boarding_stop) {
-        const actualBoardingStop = actualBoardedPassenger.boarding_stop;
-        const actualAlightingStop = gpsResult.nearestStop;
-        const normalizedBoarding = normalizeStopName(actualBoardingStop);
-        const normalizedAlighting = normalizeStopName(actualAlightingStop);
-        const adjustedBaseFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType);
-
-        if (adjustedBaseFare !== null && adjustedBaseFare > baseFare) {
-          baseFare = adjustedBaseFare;
-          totalFare = baseFare + baggageFee;
-        }
-      }
+      const baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
+      const totalFare = txAmount;               // amount IS already the total — no re-addition needed
       
       setPendingAlighting({
         code: scannedCode,
@@ -2070,8 +2038,8 @@ const ScanPage: React.FC = () => {
       // Don't decrement validatedCount - it represents total validated passengers
       decrementCurrentPassengers();
       setAlightedCount(c => c + 1);
-      const totalFare = result.totalFare || result.fare;
-      if (totalFare > 0) setFareCollected(fareCollected + totalFare);
+      // Fare was already collected at onboarding — 0 additional fee at alighting
+      const totalFare = 0;
       
       // Queue SMS if passenger has contact number
       if (result.contactNumber && currentTrip) {
@@ -2079,7 +2047,7 @@ const ScanPage: React.FC = () => {
           route: currentBus?.route || 'Unknown',
           boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
           destination: result.destination || pendingAlighting?.destination || 'Unknown',
-          fare: totalFare
+          fare: pendingAlighting?.fare || 0
         };
         
         smsService.queueAlightingSMS(
@@ -2112,7 +2080,7 @@ const ScanPage: React.FC = () => {
             ? `Alighted @ ${result.destination}`
             : 'Alighted successfully')
       );
-      setSuccessAmount(totalFare);
+      setSuccessAmount(0);
       setSuccessBalance(result.newBalance);
       setSuccessPassengerType(pendingAlighting?.cardType || pendingAlighting?.passengerType || 'regular');
       setSuccessIsTicket(false);
@@ -2135,8 +2103,8 @@ const ScanPage: React.FC = () => {
       // Don't decrement validatedCount - it represents total validated passengers
       decrementCurrentPassengers();
       setAlightedCount(c => c + 1);
-      const totalFare = result.totalFare || result.fareAmount;
-      if (totalFare > 0) setFareCollected(fareCollected + totalFare);
+      // Fare was already collected at onboarding — 0 additional fee at alighting
+      const totalFare = 0;
       
       // Queue SMS if passenger has contact number
       if (result.contactNumber && currentTrip) {
@@ -2144,7 +2112,7 @@ const ScanPage: React.FC = () => {
           route: currentBus?.route || 'Unknown',
           boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
           destination: result.destination || pendingAlighting?.destination || 'Unknown',
-          fare: totalFare
+          fare: pendingAlighting?.fare || 0
         };
         
         smsService.queueAlightingSMS(
@@ -2172,7 +2140,7 @@ const ScanPage: React.FC = () => {
           ? `Alighted Early @ ${result.destination} (Ticket was ${result.expectedDestination})`
           : (result.destination ? `Alighted @ ${result.destination}` : 'Alighted successfully')
       );
-      setSuccessAmount(result.fareAmount);
+      setSuccessAmount(0);
       setSuccessBalance(null);
       setSuccessPassengerType(pendingAlighting?.passengerType || 'regular');
       setSuccessIsTicket(true);
@@ -2227,25 +2195,6 @@ const ScanPage: React.FC = () => {
 
     setScanState('processing');
 
-    // Check GPS location mismatch - recalculate fare if location doesn't match destination
-    let adjustedFare = pendingAlighting.fare;
-    if (gpsResult && gpsResult.status === 'mismatch' && pendingAlighting.boardingPoint) {
-      const actualBoardingStop = pendingAlighting.boardingPoint;
-      const actualAlightingStop = gpsResult.nearestStop;
-      const passengerType = pendingAlighting.passengerType || 'regular';
-
-      // Calculate fare for actual route (boarding to actual alighting location)
-      const normalizedBoarding = normalizeStopName(actualBoardingStop);
-      const normalizedAlighting = normalizeStopName(actualAlightingStop);
-      const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
-
-      if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
-        // Charge additional fare for the longer route
-        adjustedFare = actualRouteFare;
-        console.log(`[Alighting] Fare adjustment: PHP${pendingAlighting.fare} -> PHP${adjustedFare} (alighted at ${actualAlightingStop} instead of ${pendingAlighting.destination})`);
-      }
-    }
-
     try {
       console.log('[confirmAlighting] Processing alighting with data:', {
         code: pendingAlighting.code,
@@ -2283,8 +2232,8 @@ const ScanPage: React.FC = () => {
           boardingPoint: pendingAlighting.boardingPoint,
           tripId: currentTrip.id,
           destination: pendingAlighting.destination,
-          fare: adjustedFare, // Use adjusted fare if location mismatch
-          baggageFee: pendingAlighting.baggageInfo?.fee,
+          fare: 0,
+          baggageFee: 0,
           paymentMethod: pendingAlighting.paymentMethod,
         });
 
@@ -2320,8 +2269,8 @@ const ScanPage: React.FC = () => {
         profile.id,
         currentBus?.route,
         'alighting',
-        pendingAlighting.destination, // Pass the destination from pendingAlighting
-        adjustedFare, // Use adjusted fare if location mismatch
+        pendingAlighting.destination || currentStopName || 'Destination',
+        0, // 0 fee at alighting
         undefined,
         undefined,
         pendingAlighting.paymentMethod === 'qr_card' ? 'card' : pendingAlighting.paymentMethod,
@@ -2343,20 +2292,6 @@ const ScanPage: React.FC = () => {
         const cardUid = isTicket ? undefined : normalized.toUpperCase();
         const ticketUid = isTicket ? normalized.toUpperCase() : undefined;
 
-        // Recalculate adjusted fare for offline fallback
-        let fallbackAdjustedFare = pendingAlighting.fare;
-        if (gpsResult && gpsResult.status === 'mismatch' && pendingAlighting.boardingPoint) {
-          const actualBoardingStop = pendingAlighting.boardingPoint;
-          const actualAlightingStop = gpsResult.nearestStop;
-          const passengerType = pendingAlighting.passengerType || 'regular';
-          const normalizedBoarding = normalizeStopName(actualBoardingStop);
-          const normalizedAlighting = normalizeStopName(actualAlightingStop);
-          const actualRouteFare = getFareFromMatrix(normalizedBoarding, normalizedAlighting, passengerType as FarePassengerType);
-          if (actualRouteFare !== null && actualRouteFare > pendingAlighting.fare) {
-            fallbackAdjustedFare = actualRouteFare;
-          }
-        }
-
         offlineQueueService.addScan({
           type: 'alighting',
           cardUid,
@@ -2366,8 +2301,8 @@ const ScanPage: React.FC = () => {
           boardingPoint: pendingAlighting.boardingPoint,
           tripId: currentTrip.id,
           destination: pendingAlighting.destination,
-          fare: fallbackAdjustedFare, // Use adjusted fare if location mismatch
-          baggageFee: pendingAlighting.baggageInfo?.fee,
+          fare: 0,
+          baggageFee: 0,
           paymentMethod: pendingAlighting.paymentMethod,
         });
 
@@ -3972,16 +3907,30 @@ const ScanPage: React.FC = () => {
                             }}></div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 700 }}>
-                                Total Paid
+                                Total Paid at Boarding
                               </span>
-                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#16A34A' }}>
+                              <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#16A34A' }}>
                                 ₱{pendingAlighting.totalFare?.toFixed(2) || (pendingAlighting.fare + (pendingAlighting.baggageInfo?.fee || 0)).toFixed(2)}
+                              </span>
+                            </div>
+                            <div style={{
+                              height: 1,
+                              background: '#16A34A',
+                              opacity: 0.3,
+                              margin: '6px 0',
+                            }}></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800 }}>
+                                Additional Fee
+                              </span>
+                              <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#16A34A' }}>
+                                ₱0.00
                               </span>
                             </div>
                             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                               <CheckCircle size={14} color="#16A34A" />
                               <span style={{ fontSize: '0.72rem', color: '#16A34A', fontWeight: 600 }}>
-                                Paid at boarding — No additional charge
+                                Fully settled at boarding — No additional fee
                               </span>
                             </div>
                           </div>
@@ -4180,15 +4129,6 @@ const ScanPage: React.FC = () => {
           setShowBaggageSelector(false);
         }}
         onClose={() => setShowBaggageSelector(false)}
-      />
-
-      <BaggageFeeSelector
-        isOpen={showAlightingBaggageSelector}
-        onSelect={(selection) => {
-          setAlightingBaggageSelection(selection);
-          setShowAlightingBaggageSelector(false);
-        }}
-        onClose={() => setShowAlightingBaggageSelector(false)}
       />
     </IonPage>
   );
