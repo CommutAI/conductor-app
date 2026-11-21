@@ -8,6 +8,7 @@ export interface QueuedScan {
   cardUid?: string;
   ticketUid?: string;
   fare?: number;
+  discountAmount?: number;
   baggageFee?: number;
   paymentMethod?: string;
   destination?: string;
@@ -656,7 +657,7 @@ class OfflineQueueService {
           type: 'fare_validation',
           transaction_type: 'fare_validation',
           fare_amount: scan.fare || 0,
-          discount_amount: 0,
+          discount_amount: scan.discountAmount || 0,
           amount: totalAmount,
           final_amount: totalAmount,
           baggage_fee: scan.baggageFee || null,

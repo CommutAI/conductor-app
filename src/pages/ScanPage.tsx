@@ -18,6 +18,7 @@ import {
   ScanResult,
   calculateFare,
   getFareFromMatrix,
+  getFareMatrixDetails,
   normalizeStopName,
   PassengerType as FarePassengerType,
   determineTripDirection,
@@ -156,6 +157,8 @@ type PendingScan = {
   balance: number;       // current card balance (before deduction)
   cardDestination?: string; // destination already on the card (if any)
   fare: number;          // estimated fare
+  regularFare?: number;  // regular fare before discount
+  discountAmount?: number; // discount amount in pesos
   passengerType?: string; // passenger type (regular, student, senior_citizen, pwd)
   cardUid?: string;      // last 8 chars of the card UID for display
   isTicket?: boolean;    // true if this is a temporary ticket
@@ -185,20 +188,31 @@ const COMMON_BOARDING_POINTS = [
 const DEFAULT_FARE = 15;
 
 function estimateOfflineFare(passengerType: FarePassengerType, fromStop?: string | undefined, toStop?: string | undefined, isTicket: boolean = false): number {
+  return estimateOfflineFareDetails(passengerType, fromStop, toStop, isTicket).finalFare;
+}
+
+function estimateOfflineFareDetails(passengerType: FarePassengerType, fromStop?: string | undefined, toStop?: string | undefined, isTicket: boolean = false) {
   const type = passengerType || 'regular';
 
   // Use fare matrix if both stops are provided
   if (fromStop && toStop) {
     const normalizedFrom = normalizeStopName(fromStop);
     const normalizedTo = normalizeStopName(toStop);
-    const matrixFare = getFareFromMatrix(normalizedFrom, normalizedTo, type);
-    if (matrixFare !== null) {
-      return matrixFare;
+    const details = getFareMatrixDetails(normalizedFrom, normalizedTo, type);
+    if (details !== null) {
+      return details;
     }
   }
 
   // Fallback to default fare
-  return calculateFare(DEFAULT_FARE, type).finalFare;
+  const calc = calculateFare(DEFAULT_FARE, type);
+  return {
+    regularFare: calc.baseFare,
+    discountedFare: calc.finalFare,
+    finalFare: calc.finalFare,
+    isDiscounted: calc.discountPercentage > 0,
+    discountAmount: calc.discountAmount,
+  };
 }
 
 /** Get destinations for dropdown, ordered in the direction of the active trip and filtered by boarding point */
@@ -625,7 +639,8 @@ const ScanPage: React.FC = () => {
     const passengerType = detectedType.passengerType;
     const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : undefined);
     const toStop = selectedDestination || undefined;
-    const estimatedFare = estimateOfflineFare(passengerType as FarePassengerType, fromStop, toStop, detectedType.isTicket);
+    const estDetails = estimateOfflineFareDetails(passengerType as FarePassengerType, fromStop, toStop, detectedType.isTicket);
+    const estimatedFare = estDetails.finalFare;
 
     const cardUidNorm = detectedType.isTicket ? undefined : normalizedCode.toUpperCase();
     const ticketUidNorm = detectedType.isTicket ? normalizedCode.toUpperCase() : undefined;
@@ -655,6 +670,8 @@ const ScanPage: React.FC = () => {
           balance: cachedTicket.fare_amount,
           cardDestination: cachedTicket.destination || undefined,
           fare: cachedTicket.fare_amount,
+          regularFare: estDetails.regularFare,
+          discountAmount: estDetails.discountAmount,
           passengerType: cachedTicket.passenger_type || passengerType,
           cardUid: cachedTicket.ticket_uid.toUpperCase(),
           isTicket: true,
@@ -666,6 +683,8 @@ const ScanPage: React.FC = () => {
           code: scannedCode,
           balance: estimatedFare,
           fare: estimatedFare,
+          regularFare: estDetails.regularFare,
+          discountAmount: estDetails.discountAmount,
           passengerType,
           cardUid: normalizedCode.toUpperCase(),
           isTicket: true,
@@ -685,6 +704,8 @@ const ScanPage: React.FC = () => {
           balance: cachedCard.balance,
           cardDestination: cachedCard.destination || undefined,
           fare: estimatedFare,
+          regularFare: estDetails.regularFare,
+          discountAmount: estDetails.discountAmount,
           passengerType: cachedCard.passenger_type || passengerType,
           cardUid: cachedCard.card_uid.toUpperCase(),
           isTicket: false,
@@ -696,6 +717,8 @@ const ScanPage: React.FC = () => {
           code: scannedCode,
           balance: 999,
           fare: estimatedFare,
+          regularFare: estDetails.regularFare,
+          discountAmount: estDetails.discountAmount,
           passengerType,
           cardUid: normalizedCode.toUpperCase(),
           isTicket: false,
@@ -767,13 +790,28 @@ const ScanPage: React.FC = () => {
           to: toStop,
           direction: tripDirection
         });
-        setPendingScan(prev => prev ? { ...prev, fare: 0 } : null);
+        setPendingScan(prev => prev ? { ...prev, fare: 0, regularFare: 0, discountAmount: 0 } : null);
         return;
       }
 
-      const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
-      if (mFare !== null) {
-        setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+      const details = getFareMatrixDetails(normalizedFrom, normalizedTo, pType);
+      if (details !== null) {
+        setPendingScan(prev => {
+          if (!prev) return null;
+          if (
+            prev.fare === details.finalFare &&
+            prev.regularFare === details.regularFare &&
+            prev.discountAmount === details.discountAmount
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            fare: details.finalFare,
+            regularFare: details.regularFare,
+            discountAmount: details.discountAmount,
+          };
+        });
       }
     }
   }, [selectedDestination, selectedBoardingPoint, currentStopName, scanState, pendingScan, tripDirection]);
@@ -859,11 +897,21 @@ const ScanPage: React.FC = () => {
           }
 
           const presetTicketDest = ticket.destination || '';
+          const tFromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+          const tDetails = presetTicketDest ? getFareMatrixDetails(
+            normalizeStopName(tFromStop),
+            normalizeStopName(presetTicketDest),
+            detectedType.passengerType as FarePassengerType
+          ) : null;
+          const ticketFare = tDetails ? tDetails.finalFare : ticket.fare_amount;
+
           setPendingScan({
             code: scannedCode,
             balance: ticket.fare_amount,
             cardDestination: ticket.destination || undefined,
-            fare: ticket.fare_amount,
+            fare: ticketFare,
+            regularFare: tDetails ? tDetails.regularFare : ticket.fare_amount,
+            discountAmount: tDetails ? tDetails.discountAmount : 0,
             passengerType: detectedType.passengerType,
             cardUid: (ticket.ticket_uid || scannedCode).toUpperCase(),
             isTicket: true,
@@ -951,14 +999,16 @@ const ScanPage: React.FC = () => {
         const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
         const normalizedFrom = normalizeStopName(fromStop);
         const normalizedDest = normalizeStopName(presetCardDest);
-        const matrixFare = presetCardDest ? getFareFromMatrix(normalizedFrom, normalizedDest, passengerType) : null;
-        const initialFare = matrixFare !== null ? matrixFare : DEFAULT_FARE;
+        const matrixDetails = presetCardDest ? getFareMatrixDetails(normalizedFrom, normalizedDest, passengerType) : null;
+        const initialFare = matrixDetails ? matrixDetails.finalFare : DEFAULT_FARE;
 
         setPendingScan({
           code: scannedCode,
           balance: card.balance,
           cardDestination: card.destination || undefined,
           fare: initialFare,
+          regularFare: matrixDetails ? matrixDetails.regularFare : initialFare,
+          discountAmount: matrixDetails ? matrixDetails.discountAmount : 0,
           passengerType: passengerType,
           cardUid: (card.card_uid || scannedCode).toUpperCase(),
           isTicket: false,
@@ -1147,6 +1197,7 @@ const ScanPage: React.FC = () => {
           cardId,
           tempTicketId,
           fare: finalFare,
+          discountAmount: pendingScan?.discountAmount || 0,
           baggageFee: baggageSelection?.fee,
           paymentMethod,
           destination,
@@ -1550,6 +1601,7 @@ const ScanPage: React.FC = () => {
           cardId: pendingScan.cardId,
           tempTicketId: pendingScan.tempTicketId,
           fare: pendingScan.fare,
+          discountAmount: pendingScan.discountAmount || 0,
           baggageFee: baggageSelection?.fee,
           paymentMethod,
           destination,
@@ -3037,9 +3089,14 @@ const ScanPage: React.FC = () => {
                                         const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
                                         const normalizedCurrent = normalizeStopName(currentStopName || '');
                                         const normalizedDest = normalizeStopName(pendingScan.cardDestination);
-                                        const mFare = getFareFromMatrix(normalizedCurrent, normalizedDest, pType);
-                                        if (mFare !== null) {
-                                          setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                        const details = getFareMatrixDetails(normalizedCurrent, normalizedDest, pType);
+                                        if (details !== null) {
+                                          setPendingScan(prev => prev ? {
+                                            ...prev,
+                                            fare: details.finalFare,
+                                            regularFare: details.regularFare,
+                                            discountAmount: details.discountAmount,
+                                          } : null);
                                         }
                                       }
                                     }}
@@ -3093,9 +3150,14 @@ const ScanPage: React.FC = () => {
                                     const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
                                     const normalizedStop = normalizeStopName(stop);
                                     const normalizedDest = normalizeStopName(pendingScan.cardDestination);
-                                    const mFare = getFareFromMatrix(normalizedStop, normalizedDest, pType);
-                                    if (mFare !== null) {
-                                      setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                    const details = getFareMatrixDetails(normalizedStop, normalizedDest, pType);
+                                    if (details !== null) {
+                                      setPendingScan(prev => prev ? {
+                                        ...prev,
+                                        fare: details.finalFare,
+                                        regularFare: details.regularFare,
+                                        discountAmount: details.discountAmount,
+                                      } : null);
                                     }
                                   }
                                 }}
@@ -3181,9 +3243,14 @@ const ScanPage: React.FC = () => {
                               const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
                               const normalizedFrom = normalizeStopName(fromStop);
                               const normalizedTo = normalizeStopName(e.target.value);
-                              const mFare = getFareFromMatrix(normalizedFrom, normalizedTo, pType);
-                              if (mFare !== null) {
-                                setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                              const details = getFareMatrixDetails(normalizedFrom, normalizedTo, pType);
+                              if (details !== null) {
+                                setPendingScan(prev => prev ? {
+                                  ...prev,
+                                  fare: details.finalFare,
+                                  regularFare: details.regularFare,
+                                  discountAmount: details.discountAmount,
+                                } : null);
                               }
                             }}
                             style={{
@@ -3216,9 +3283,14 @@ const ScanPage: React.FC = () => {
                                 setSelectedDestination(pendingScan.cardDestination || '');
                                 const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
                                 const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
-                                const mFare = getFareFromMatrix(normalizeStopName(fromStop), normalizeStopName(pendingScan.cardDestination || ''), pType);
-                                if (mFare !== null) {
-                                  setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                const details = getFareMatrixDetails(normalizeStopName(fromStop), normalizeStopName(pendingScan.cardDestination || ''), pType);
+                                if (details !== null) {
+                                  setPendingScan(prev => prev ? {
+                                    ...prev,
+                                    fare: details.finalFare,
+                                    regularFare: details.regularFare,
+                                    discountAmount: details.discountAmount,
+                                  } : null);
                                 }
                               }}
                               style={{
@@ -3551,13 +3623,18 @@ const ScanPage: React.FC = () => {
                         const serviceFee = pendingScan.isTicket ? 2.00 : 0;
                         const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0) + serviceFee;
                         const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
+                        const isDiscountedPassenger = pendingScan.passengerType === 'student' ||
+                                                      pendingScan.passengerType === 'senior_citizen' ||
+                                                      pendingScan.passengerType === 'pwd';
+                        const regularFare = pendingScan.regularFare ?? (pendingScan.fare + (pendingScan.discountAmount || 0));
+                        const discountAmt = pendingScan.discountAmount ?? Math.max(0, regularFare - pendingScan.fare);
 
                         return (
                           <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Passenger Type</span>
-                                {pendingScan.passengerType && pendingScan.passengerType !== 'regular' && (
+                                {isDiscountedPassenger && (
                                   <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#16A34A', background: 'rgba(34, 197, 94, 0.12)', padding: '1px 6px', borderRadius: 6 }}>
                                     20% Discount
                                   </span>
@@ -3567,9 +3644,30 @@ const ScanPage: React.FC = () => {
                                 {passengerTypeLabel(pendingScan.passengerType || 'regular')}
                               </span>
                             </div>
+
+                            {/* Show Regular Fare & Discount breakdown if passenger is eligible */}
+                            {isDiscountedPassenger && regularFare > pendingScan.fare && (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Regular Fare</span>
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textDecoration: 'line-through' }}>
+                                    ₱{regularFare.toFixed(2)}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <span style={{ fontSize: '0.78rem', color: '#16A34A', fontWeight: 600 }}>Discount (20%)</span>
+                                  <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 700 }}>
+                                    -₱{discountAmt.toFixed(2)}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Base Fare</span>
-                              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                {isDiscountedPassenger ? 'Discounted Base Fare' : 'Base Fare'}
+                              </span>
+                              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isDiscountedPassenger ? '#16A34A' : 'var(--text-primary)' }}>
                                 ₱{pendingScan.fare.toFixed(2)}
                               </span>
                             </div>

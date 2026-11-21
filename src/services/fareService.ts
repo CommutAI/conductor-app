@@ -630,6 +630,62 @@ export function getFareFromMatrix(
   return typeof fare === 'number' && !isNaN(fare) ? fare : Number(fare) || null;
 }
 
+/**
+ * Get comprehensive fare details from matrix (regular fare, discounted fare, discount amount).
+ */
+export function getFareMatrixDetails(
+  fromStop: string | undefined,
+  toStop: string | undefined,
+  passengerType: PassengerType = 'regular'
+): { regularFare: number; discountedFare: number; finalFare: number; isDiscounted: boolean; discountAmount: number } | null {
+  if (!fromStop || !toStop) return null;
+
+  const normalizedFrom = normalizeStopName(fromStop);
+  const normalizedTo = normalizeStopName(toStop);
+  const fromCandidates = getStopCandidates(normalizedFrom);
+  const toCandidates = getStopCandidates(normalizedTo);
+
+  let fareEntry: FareMatrixEntry | undefined;
+  for (const f of fromCandidates) {
+    for (const t of toCandidates) {
+      fareEntry = activeFareMatrix.find(
+        (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
+      );
+      if (fareEntry) break;
+    }
+    if (fareEntry) break;
+  }
+
+  if (!fareEntry) {
+    const bundledData = getBundledFareMatrixForDirection(currentActiveDirection);
+    for (const f of fromCandidates) {
+      for (const t of toCandidates) {
+        fareEntry = bundledData.find(
+          (item) => item.route_from.toLowerCase() === f && item.route_to.toLowerCase() === t
+        );
+        if (fareEntry) break;
+      }
+      if (fareEntry) break;
+    }
+  }
+
+  if (!fareEntry) return null;
+
+  const isDiscounted = passengerType === 'student' || passengerType === 'senior_citizen' || passengerType === 'pwd';
+  const regularFare = Number(fareEntry.regular_fare);
+  const discountedFare = Number(fareEntry.discounted_fare);
+  const finalFare = isDiscounted ? discountedFare : regularFare;
+  const discountAmount = isDiscounted ? Math.max(0, regularFare - discountedFare) : 0;
+
+  return {
+    regularFare,
+    discountedFare,
+    finalFare,
+    isDiscounted,
+    discountAmount,
+  };
+}
+
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
 function normalizeQrCode(scannedUid: string): string {
@@ -710,16 +766,16 @@ export function calculateFare(
 ): FareCalculationResult {
   // Use fare matrix if both stops are provided
   if (fromStop && toStop) {
-    const matrixFare = getFareFromMatrix(fromStop, toStop, passengerType);
-    if (matrixFare !== null) {
+    const details = getFareMatrixDetails(fromStop, toStop, passengerType);
+    if (details !== null) {
       const baggageFee = baggageSelection?.fee || 0;
-      const totalFare = matrixFare + baggageFee;
+      const totalFare = details.finalFare + baggageFee;
 
       return {
-        baseFare: matrixFare,
-        discountPercentage: passengerType === 'regular' ? 0 : 0.20,
-        discountAmount: passengerType === 'regular' ? 0 : matrixFare * 0.20,
-        finalFare: matrixFare,
+        baseFare: details.regularFare,
+        discountPercentage: details.isDiscounted ? 0.20 : 0,
+        discountAmount: details.discountAmount,
+        finalFare: details.finalFare,
         passengerType,
         baggageFee,
         totalFare
@@ -1044,10 +1100,14 @@ async function processQRCard(
 
   // Calculate fare using matrix if boarding stop and destination are provided
   let fare = DEFAULT_FARE;
+  let regularBaseFare = DEFAULT_FARE;
+  let calculatedDiscountAmount = 0;
   if (scanType === 'onboarding' && boardingStop && currentDestination) {
-    const matrixFare = getFareFromMatrix(boardingStop, currentDestination, card.passenger_type);
-    if (matrixFare !== null) {
-      fare = matrixFare;
+    const details = getFareMatrixDetails(boardingStop, currentDestination, card.passenger_type);
+    if (details !== null) {
+      fare = details.finalFare;
+      regularBaseFare = details.regularFare;
+      calculatedDiscountAmount = details.discountAmount;
     }
   }
   const totalFare = fare + (baggageFee || 0);
@@ -1086,7 +1146,7 @@ async function processQRCard(
         type: 'fare_validation',
         transaction_type: 'fare_validation',
         fare_amount: fare,
-        discount_amount: card.passenger_type === 'student' || card.passenger_type === 'senior_citizen' || card.passenger_type === 'pwd' ? fare * 0.20 : 0,
+        discount_amount: calculatedDiscountAmount,
         amount: totalFare,
         final_amount: totalFare,
         channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
