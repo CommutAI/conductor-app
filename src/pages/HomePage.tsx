@@ -31,6 +31,7 @@ import { supabase } from '../supabaseClient';
 import { realtimeService } from '../services/realtimeService';
 import { isLikelyNetworkError } from '../utils/networkUtils';
 import { useDestinationAlerts } from '../hooks/useDestinationAlerts';
+import { INFO_MESSAGES } from '../constants/messages';
 import ProfileAvatar from '../components/ProfileAvatar';
 import BottomNav from '../components/layout/BottomNav';
 import PageHeader from '../components/layout/PageHeader';
@@ -689,7 +690,7 @@ const HomePage: React.FC = () => {
                 animation: gpsStatus === 'searching' ? 'pulse 1.5s infinite' : 'none',
               }} />
               <span style={{ fontSize: '0.7rem', fontWeight: 600, color: gpsStatus === 'active' ? '#10b981' : gpsStatus === 'inactive' ? '#ef4444' : '#f59e0b' }}>
-                {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'inactive' ? 'No GPS' : 'GPS...'}
+                {gpsStatus === 'active' ? INFO_MESSAGES.GPS_ACTIVE : gpsStatus === 'inactive' ? INFO_MESSAGES.GPS_INACTIVE : INFO_MESSAGES.GPS_SEARCHING}
               </span>
             </div>
             <div

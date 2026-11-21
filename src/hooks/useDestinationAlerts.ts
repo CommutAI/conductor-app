@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { calculateDistance } from '../services/locationService';
 import { BUS_STOP_LOCATIONS, PROXIMITY_THRESHOLD_KM } from '../config/busStops';
+import { Geolocation } from '@capacitor/geolocation';
 
 /**
  * Hook to monitor passengers' destination stops and log fare irregularities
@@ -34,6 +35,7 @@ export function useDestinationAlerts(
   const alertedStopsRef = useRef<Set<string>>(new Set());
   const passedStopsRef = useRef<Map<string, IrregularityLog[]>>(new Map()); // Track passengers who passed their stops
   const lastCheckRef = useRef<number>(0);
+  const [gpsPermission, setGpsPermission] = useState<boolean>(true);
 
   // Load boarded passengers
   useEffect(() => {
@@ -47,6 +49,26 @@ export function useDestinationAlerts(
 
     return () => clearInterval(interval);
   }, [tripId, isOnline]);
+
+  // Monitor GPS permissions
+  useEffect(() => {
+    if (!tripId) return;
+
+    const checkPermissions = async () => {
+      try {
+        const status = await Geolocation.checkPermissions();
+        setGpsPermission(status.location === 'granted');
+      } catch (err) {
+        console.error('[useDestinationAlerts] GPS permission check failed:', err);
+        setGpsPermission(false);
+      }
+    };
+
+    checkPermissions();
+    const interval = setInterval(checkPermissions, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [tripId]);
 
   async function loadBoardedPassengers() {
     if (!tripId) return;
@@ -110,7 +132,7 @@ export function useDestinationAlerts(
 
   // Check proximity to destination stops
   useEffect(() => {
-    if (!currentLocation || !tripId || boardedPassengers.length === 0) return;
+    if (!currentLocation || !tripId || boardedPassengers.length === 0 || !gpsPermission) return;
 
     // Throttle checks to every 10 seconds
     const now = Date.now();

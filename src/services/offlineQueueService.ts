@@ -36,6 +36,7 @@ export interface QueuedSMS {
 const QUEUE_STORAGE_KEY = 'offline_scan_queue';
 const SMS_QUEUE_STORAGE_KEY = 'offline_sms_queue';
 const MAX_RETRY_COUNT = 3;
+const MAX_QUEUE_SIZE = 100;
 
 class OfflineQueueService {
   private queue: QueuedScan[] = [];
@@ -256,6 +257,11 @@ class OfflineQueueService {
    * Add a scan to the offline queue with atomic operation
    */
   addScan(scan: Omit<QueuedScan, 'id' | 'timestamp' | 'status' | 'retryCount'>): string {
+    if (this.queue.length >= MAX_QUEUE_SIZE) {
+      console.warn('[OfflineQueue] Queue full, cannot add scan. Size:', this.queue.length);
+      throw new Error('Offline queue is full. Please sync data first.');
+    }
+
     const queuedScan: QueuedScan = {
       ...scan,
       id: `queue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -334,7 +340,25 @@ class OfflineQueueService {
         scan.tripId === tripId &&
         (scan.status === 'pending' || scan.status === 'syncing') &&
         ((normalizedCard && scan.cardUid?.toUpperCase() === normalizedCard) ||
-          (normalizedTicket && scan.ticketUid?.toUpperCase() === normalizedTicket)),
+          (normalizedTicket && scan.ticketUid?.toUpperCase() === normalizedTicket))
+    );
+  }
+
+  /**
+   * Check if there's a corresponding boarding record for alighting.
+   */
+  hasPendingBoardingForAlighting(tripId: string, cardUid?: string, ticketUid?: string): boolean {
+    const normalizedCard = cardUid?.toUpperCase();
+    const normalizedTicket = ticketUid?.toUpperCase();
+    if (!normalizedCard && !normalizedTicket) return false;
+
+    return this.queue.some(
+      (scan) =>
+        scan.type === 'boarding' &&
+        scan.tripId === tripId &&
+        (scan.status === 'pending' || scan.status === 'syncing') &&
+        ((normalizedCard && scan.cardUid?.toUpperCase() === normalizedCard) ||
+          (normalizedTicket && scan.ticketUid?.toUpperCase() === normalizedTicket))
     );
   }
 

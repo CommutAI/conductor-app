@@ -13,6 +13,10 @@ import fareMatrixAgoraToManolo from '../data/fareMatrixAgoraToManolo.json';
 import busStopsData from '../data/busStops.json';
 import { Trip, TripDirection, FareMatrixEntry } from '../types';
 
+// Cache TTL constants for freshness
+const CARD_CACHE_TTL = 60000; // 1 minute
+const TICKET_CACHE_TTL = 30000; // 30 seconds
+
 export type { TripDirection, FareMatrixEntry };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -770,7 +774,7 @@ export async function processScan(
       owner_name: card.owner_name,
       contact_number: card.contact_number,
     };
-    cache.set(CacheKeys.card(normalizedUid), cardData, CacheTTL.MEDIUM);
+    cache.set(CacheKeys.card(normalizedUid), cardData, CARD_CACHE_TTL);
     return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
@@ -998,7 +1002,8 @@ async function processQRCard(
     const updatePayload: Record<string, unknown> = {};
     if (currentDestination) updatePayload.destination = currentDestination;
 
-    // Only deduct balance for card payments
+    // Only deduct balance for card payments with rollback support
+    const oldBalance = card.balance;
     if (isCardPayment) {
       updatePayload.balance = card.balance - totalFare;
     }
@@ -1032,6 +1037,11 @@ async function processQRCard(
       baggage_fee: baggageFee || null,
     });
     if (txErr) {
+      // Rollback balance update on transaction failure
+      if (isCardPayment) {
+        await supabase.from('qr_cards').update({ balance: oldBalance }).eq('id', card.id);
+        cache.delete(CacheKeys.card(card.card_uid));
+      }
       return { status: 'error', message: `Failed to create boarding transaction: ${txErr.message}` };
     }
 
@@ -1044,6 +1054,12 @@ async function processQRCard(
       destination_stop: currentDestination || null,
     });
     if (boardErr) {
+      // Rollback transaction and balance on boarding failure
+      await supabase.from('transactions').delete().eq('trip_id', tripId).eq('card_id', card.id).order('created_at', { ascending: false }).limit(1);
+      if (isCardPayment) {
+        await supabase.from('qr_cards').update({ balance: oldBalance }).eq('id', card.id);
+        cache.delete(CacheKeys.card(card.card_uid));
+      }
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
     }
 
@@ -1195,6 +1211,7 @@ async function processTemporaryTicket(
       return { status: 'duplicate_scan', type: 'temp_ticket', uid: scannedUid };
     }
 
+    // Atomic ticket validation with rollback support
     const { error: updateErr } = await supabase
       .from('temporary_tickets')
       .update({
@@ -1213,7 +1230,9 @@ async function processTemporaryTicket(
     console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
 
     const baseFare = ticket.fare_amount || DEFAULT_FARE;
-    const totalFare = baseFare + (baggageFee || 0);
+    // Add service fee for temporary tickets only during boarding
+    const serviceFee = 2.00;
+    const totalFare = baseFare + serviceFee + (baggageFee || 0);
 
     const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
     const txPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'cash';
@@ -1235,6 +1254,9 @@ async function processTemporaryTicket(
     });
 
     if (txErr) {
+      // Rollback ticket status on transaction failure
+      await supabase.from('temporary_tickets').update({ status: 'issued', validated_at: null, trip_id: null }).eq('id', ticket.id);
+      cache.delete(CacheKeys.ticket(ticket.ticket_uid));
       return { status: 'error', message: `Failed to create transaction: ${txErr.message}` };
     }
 
@@ -1249,6 +1271,10 @@ async function processTemporaryTicket(
     });
 
     if (boardErr) {
+      // Rollback transaction and ticket status on boarding failure
+      await supabase.from('transactions').delete().eq('trip_id', tripId).eq('temp_ticket_id', ticket.id).order('created_at', { ascending: false }).limit(1);
+      await supabase.from('temporary_tickets').update({ status: 'issued', validated_at: null, trip_id: null }).eq('id', ticket.id);
+      cache.delete(CacheKeys.ticket(ticket.ticket_uid));
       return { status: 'error', message: `Failed to record boarding: ${boardErr.message}` };
     }
 

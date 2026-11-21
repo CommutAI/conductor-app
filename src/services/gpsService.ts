@@ -68,9 +68,18 @@ class GPSService {
       const data = await response.json();
 
       if (data.lat && data.lng) {
+        const lat = parseFloat(data.lat);
+        const lng = parseFloat(data.lng);
+
+        // Validate coordinates are reasonable
+        if (!this.isValidCoordinate(lat, lng)) {
+          console.warn('[GPS] Invalid coordinates from Pi GPS:', lat, lng);
+          return null;
+        }
+
         return {
-          lat: parseFloat(data.lat),
-          lng: parseFloat(data.lng),
+          lat,
+          lng,
           accuracy: data.accuracy ? parseFloat(data.accuracy) : undefined,
           altitude: data.altitude ? parseFloat(data.altitude) : undefined,
           speed: data.speed ? parseFloat(data.speed) : undefined,
@@ -85,6 +94,20 @@ class GPSService {
       console.error('[GPS] Pi GPS error:', error);
       return null;
     }
+  }
+
+  /**
+   * Validate GPS coordinates are reasonable
+   */
+  private isValidCoordinate(lat: number, lng: number): boolean {
+    // Latitude: -90 to 90, Longitude: -180 to 180
+    // For Philippines: Lat ~5-20, Lng ~115-130
+    return (
+      !isNaN(lat) && !isNaN(lng) &&
+      lat >= -90 && lat <= 90 &&
+      lng >= -180 && lng <= 180 &&
+      Math.abs(lat) < 90 && Math.abs(lng) < 180
+    );
   }
 
   /**
