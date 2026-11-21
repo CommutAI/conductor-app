@@ -688,6 +688,24 @@ export function getFareMatrixDetails(
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
+export function detectPassengerTypeFromUid(uid: string): PassengerType | null {
+  const code = uid.toLowerCase().trim();
+  if (code.startsWith('tsc') || code.startsWith('sc') || code.startsWith('stu')) return 'student';
+  if (code.startsWith('tscc') || code.startsWith('scc') || code.startsWith('snr') || code.startsWith('senior')) return 'senior_citizen';
+  if (code.startsWith('tpc') || code.startsWith('pc') || code.startsWith('pwd')) return 'pwd';
+  if (code.startsWith('trc') || code.startsWith('rc') || code.startsWith('reg')) return 'regular';
+  return null;
+}
+
+export function normalizePassengerType(type?: string | null): PassengerType {
+  if (!type) return 'regular';
+  const lower = type.toLowerCase().trim();
+  if (lower.includes('student') || lower === 'sc' || lower === 'tsc') return 'student';
+  if (lower.includes('senior') || lower === 'scc' || lower === 'tscc' || lower === 'snr') return 'senior_citizen';
+  if (lower.includes('pwd') || lower === 'pc' || lower === 'tpc' || lower.includes('disabilit')) return 'pwd';
+  return 'regular';
+}
+
 function normalizeQrCode(scannedUid: string): string {
   return scannedUid
     .replace(/[\u2013\u2014\u2015\u2212\uFF0D]/g, '-'); // en dash, em dash, horizontal bar, minus sign, fullwidth hyphen-minus
@@ -828,8 +846,9 @@ export async function processScan(
   baggageWeight?: number,
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
+  overridePassengerType?: PassengerType,
 ): Promise<ScanResult> {
-  console.log('[FareService] processScan called with boardingStop:', boardingStop, 'currentDestination:', currentDestination);
+  console.log('[FareService] processScan called with boardingStop:', boardingStop, 'currentDestination:', currentDestination, 'overridePassengerType:', overridePassengerType);
 
   // ── Entry Point Validations ──────────────────────────────────────────────────
   if (!scannedUid || scannedUid.trim().length === 0) {
@@ -865,7 +884,7 @@ export async function processScan(
   const cachedCard = cache.get<QRCard>(CacheKeys.card(normalizedUid));
   if (cachedCard && (!isOnline || scanType !== 'onboarding')) {
     console.log('[FareService] Cache hit for card:', normalizedUid);
-    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop, overridePassengerType);
   }
 
   // Check for QR card from database
@@ -885,20 +904,20 @@ export async function processScan(
       contact_number: card.contact_number,
     };
     cache.set(CacheKeys.card(normalizedUid), cardData, CARD_CACHE_TTL);
-    return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+    return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop, overridePassengerType);
   }
 
   // Fallback to cached card if online lookup failed due to network error
   if (cardFetchError && cachedCard) {
     console.warn('[FareService] Database card lookup failed, using cached card fallback:', cardFetchError);
-    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop, overridePassengerType);
   }
 
   // Check cache for temporary ticket
   const cachedTicket = cache.get<any>(CacheKeys.ticket(normalizedUid));
   if (cachedTicket) {
     console.log('[FareService] Cache hit for ticket:', normalizedUid);
-    return processTemporaryTicket(cachedTicket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+    return processTemporaryTicket(cachedTicket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop, overridePassengerType);
   }
 
   // Check for temporary ticket from database
@@ -911,7 +930,7 @@ export async function processScan(
   if (ticket) {
     // Cache the ticket data
     cache.set(CacheKeys.ticket(normalizedUid), ticket, CacheTTL.SHORT);
-    return processTemporaryTicket(ticket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+    return processTemporaryTicket(ticket, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop, overridePassengerType);
   }
 
   return { status: 'not_found' };
@@ -930,6 +949,7 @@ async function processQRCard(
   baggageWeight?: number,
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'qr_card',
   boardingStop?: string,
+  overridePassengerType?: PassengerType,
 ): Promise<ScanResult> {
   // ── Basic QR Format Validation ───────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 8) {
@@ -1098,12 +1118,16 @@ async function processQRCard(
     }
   }
 
+  // Resolve effective passenger type (from override, UID prefix, or card attribute)
+  const prefixType = detectPassengerTypeFromUid(scannedUid) || detectPassengerTypeFromUid(card.card_uid);
+  const effectivePassengerType: PassengerType = overridePassengerType || prefixType || normalizePassengerType(card.passenger_type);
+
   // Calculate fare using matrix if boarding stop and destination are provided
   let fare = DEFAULT_FARE;
   let regularBaseFare = DEFAULT_FARE;
   let calculatedDiscountAmount = 0;
   if (scanType === 'onboarding' && boardingStop && currentDestination) {
-    const details = getFareMatrixDetails(boardingStop, currentDestination, card.passenger_type);
+    const details = getFareMatrixDetails(boardingStop, currentDestination, effectivePassengerType);
     if (details !== null) {
       fare = details.finalFare;
       regularBaseFare = details.regularFare;
@@ -1259,6 +1283,7 @@ async function processTemporaryTicket(
   baggageWeight?: number,
   paymentMethod: 'card' | 'qr_card' | 'cash' | 'gcash' = 'cash',
   boardingStop?: string,
+  overridePassengerType?: PassengerType,
 ): Promise<ScanResult> {
   // ── Basic Ticket Format Validation ────────────────────────────────────────────
   if (!scannedUid || scannedUid.length < 4) {
@@ -1353,7 +1378,19 @@ async function processTemporaryTicket(
     cache.delete(CacheKeys.ticket(ticket.ticket_uid));
     console.log('[FareService] Cache invalidated for ticket:', ticket.ticket_uid);
 
-    const baseFare = ticket.fare_amount || DEFAULT_FARE;
+    const prefixType = detectPassengerTypeFromUid(scannedUid) || detectPassengerTypeFromUid(ticket.ticket_uid);
+    const effectivePassengerType: PassengerType = overridePassengerType || prefixType || normalizePassengerType(ticket.passenger_type);
+
+    let baseFare = ticket.fare_amount || DEFAULT_FARE;
+    let ticketDiscountAmount = 0;
+    if (boardingStop && currentDestination) {
+      const details = getFareMatrixDetails(boardingStop, currentDestination, effectivePassengerType);
+      if (details !== null) {
+        baseFare = details.finalFare;
+        ticketDiscountAmount = details.discountAmount;
+      }
+    }
+
     // Add service fee for temporary tickets only during boarding
     const serviceFee = 2.00;
     const totalFare = baseFare + serviceFee + (baggageFee || 0);
@@ -1366,7 +1403,7 @@ async function processTemporaryTicket(
         type: 'fare_validation',
         transaction_type: 'fare_validation',
         fare_amount: baseFare,
-        discount_amount: 0,
+        discount_amount: ticketDiscountAmount,
         amount: totalFare,
         final_amount: totalFare,
         channel: txChannel,

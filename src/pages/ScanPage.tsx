@@ -28,6 +28,8 @@ import {
   getValidDestinations,
   getValidBoardingPoints,
   isValidStopCombination,
+  detectPassengerTypeFromUid,
+  normalizePassengerType,
 } from '../services/fareService';
 import { StorageService } from '../services/storageService';
 import { validateAlightingLocation, getLocationAndDecode } from '../services/geoService';
@@ -62,6 +64,11 @@ import busStopsData from '../data/busStops.json';
  */
 function detectCardTypeFromPrefix(scannedCode: string): { isTicket: boolean; passengerType: FarePassengerType } {
   const code = scannedCode.toLowerCase().trim();
+  const isTicket = code.startsWith('t') && !code.startsWith('tankulan');
+  const detected = detectPassengerTypeFromUid(code);
+  if (detected) {
+    return { isTicket, passengerType: detected };
+  }
 
   // Temporary tickets (start with 't')
   if (code.startsWith('trc')) return { isTicket: true, passengerType: 'regular' };
@@ -1260,6 +1267,7 @@ const ScanPage: React.FC = () => {
         baggageSelection?.weight,
         paymentMethod === 'qr_card' ? 'card' : paymentMethod,
         boardingPoint || selectedBoardingPoint || currentStopName || undefined,
+        (pendingScan?.passengerType as FarePassengerType) || undefined,
       );
       console.log('Process scan result:', result);
       console.log('Result status:', result.status);
@@ -1704,14 +1712,33 @@ const ScanPage: React.FC = () => {
     const baggageFee = boardingScan?.baggageFee;
     const destination = boardingScan?.destination;
 
+    const cachedTicket = detectedType.isTicket ? StorageService.getCachedTicket(normalizedCode) : null;
+    const cachedCard = !detectedType.isTicket ? StorageService.getCachedCard(normalizedCode) : null;
+    const pType = (
+      detectedType.passengerType ||
+      detectPassengerTypeFromUid(scannedCode) ||
+      normalizePassengerType(cachedTicket?.passenger_type || cachedCard?.passenger_type) ||
+      'regular'
+    ) as FarePassengerType;
+    const dest = destination || cachedTicket?.destination || cachedCard?.destination || '';
+    const details = (boardingPoint && dest) ? getFareMatrixDetails(boardingPoint, dest, pType) : null;
+    const resolvedFare = boardingScan?.fare ?? (details ? details.finalFare : (cachedTicket?.fare_amount ?? DEFAULT_FARE));
+    const regularFare = details?.regularFare ?? (resolvedFare + (details?.discountAmount ?? 0));
+    const discountAmount = details?.discountAmount ?? (regularFare - resolvedFare);
+    const baggageFeeAmount = baggageFee || 0;
+    const totalFare = resolvedFare + baggageFeeAmount;
+
     if (detectedType.isTicket) {
-      const cachedTicket = StorageService.getCachedTicket(normalizedCode);
       if (cachedTicket) {
         setPendingAlighting({
           code: scannedCode,
-          destination: destination || cachedTicket.destination,
-          fare: cachedTicket.fare_amount,
-          passengerType: cachedTicket.passenger_type || detectedType.passengerType,
+          destination: dest,
+          fare: resolvedFare,
+          regularFare: regularFare,
+          discountAmount: discountAmount,
+          totalFare: totalFare,
+          passengerType: pType,
+          cardType: pType,
           tempTicketId: cachedTicket.id,
           boardingPoint,
           route: currentBus?.route || '',
@@ -1722,7 +1749,6 @@ const ScanPage: React.FC = () => {
         return;
       }
     } else {
-      const cachedCard = StorageService.getCachedCard(normalizedCode);
       if (cachedCard) {
         if (cachedCard.status !== 'active') {
           setFailedMsg(ERROR_MESSAGES.CARD_INACTIVE);
@@ -1731,9 +1757,13 @@ const ScanPage: React.FC = () => {
         }
         setPendingAlighting({
           code: scannedCode,
-          destination: destination || cachedCard.destination,
-          fare: DEFAULT_FARE,
-          passengerType: cachedCard.passenger_type || detectedType.passengerType,
+          destination: dest,
+          fare: resolvedFare,
+          regularFare: regularFare,
+          discountAmount: discountAmount,
+          totalFare: totalFare,
+          passengerType: pType,
+          cardType: pType,
           cardId: cachedCard.id,
           boardingPoint,
           route: currentBus?.route || '',
@@ -1747,9 +1777,13 @@ const ScanPage: React.FC = () => {
 
     setPendingAlighting({
       code: scannedCode,
-      destination: destination,
-      fare: DEFAULT_FARE,
-      passengerType: detectedType.passengerType,
+      destination: dest,
+      fare: resolvedFare,
+      regularFare: regularFare,
+      discountAmount: discountAmount,
+      totalFare: totalFare,
+      passengerType: pType,
+      cardType: pType,
       boardingPoint,
       route: currentBus?.route || '',
       paymentMethod,
@@ -1826,7 +1860,7 @@ const ScanPage: React.FC = () => {
           // Check if there's an active (unalighted) boarding for this ticket on this trip
           const { data: boardedTicket } = await supabase
             .from('boarded_passengers')
-            .select('id, alighted_at')
+            .select('id, alighted_at, boarding_stop')
             .eq('trip_id', currentTrip.id)
             .eq('temp_ticket_id', ticket.id)
             .is('alighted_at', null)
@@ -1842,22 +1876,81 @@ const ScanPage: React.FC = () => {
             return;
           }
 
-          // Process ticket alighting
-          const result = await processScan(
-            scannedCode,
-            currentTrip.id,
-            profile!.id,
-            currentBus?.route,
-            'alighting',
-            ticket.destination || currentStopName || 'Destination',
-            0,
-            undefined,
-            undefined,
-            'card',
-            currentStopName || undefined,
-          );
+          // Fetch boarding transaction for ticket
+          const { data: ticketTx } = await supabase
+            .from('transactions')
+            .select('amount, fare_amount, discount_amount, baggage_category, baggage_weight, baggage_fee, channel')
+            .eq('temp_ticket_id', ticket.id)
+            .eq('trip_id', currentTrip.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-          handleAlightingResult(result);
+          const ticketPassengerType = (
+            detectedType.passengerType ||
+            detectPassengerTypeFromUid(scannedCode) ||
+            normalizePassengerType(ticket.passenger_type) ||
+            'regular'
+          ) as FarePassengerType;
+
+          const tBoardingPoint = boardedTicket?.boarding_stop || (displayStops.length > 0 ? displayStops[0] : '');
+          const tDestination = ticket.destination || '';
+          const tMatrixDetails = (tBoardingPoint && tDestination)
+            ? getFareMatrixDetails(normalizeStopName(tBoardingPoint), normalizeStopName(tDestination), ticketPassengerType)
+            : null;
+
+          const tBaggageFee = ticketTx?.baggage_fee || 0;
+          let tBaseFare: number;
+          let tRegularFare: number;
+          let tDiscountAmount: number;
+
+          if (tMatrixDetails !== null) {
+            tBaseFare = tMatrixDetails.finalFare;
+            tRegularFare = tMatrixDetails.regularFare;
+            tDiscountAmount = tMatrixDetails.discountAmount;
+          } else if (ticketTx?.fare_amount !== undefined && ticketTx.fare_amount !== null) {
+            tBaseFare = ticketTx.fare_amount;
+            tDiscountAmount = ticketTx.discount_amount || 0;
+            tRegularFare = tBaseFare + tDiscountAmount;
+          } else if (ticket.fare_amount) {
+            tBaseFare = ticket.fare_amount;
+            if (ticketPassengerType !== 'regular') {
+              const calc = calculateFare(tBaseFare, ticketPassengerType);
+              tBaseFare = calc.finalFare;
+              tRegularFare = calc.baseFare;
+              tDiscountAmount = calc.discountAmount;
+            } else {
+              tRegularFare = tBaseFare;
+              tDiscountAmount = 0;
+            }
+          } else {
+            tBaseFare = DEFAULT_FARE;
+            tRegularFare = DEFAULT_FARE;
+            tDiscountAmount = 0;
+          }
+
+          setPendingAlighting({
+            code: scannedCode,
+            tempTicketId: ticket.id,
+            destination: tDestination,
+            fare: tBaseFare,
+            regularFare: tRegularFare,
+            discountAmount: tDiscountAmount,
+            totalFare: tBaseFare + tBaggageFee,
+            route: currentBus?.route || '',
+            cardType: ticketPassengerType,
+            passengerType: ticketPassengerType,
+            ticketUid: ticket.ticket_uid,
+            isTicket: true,
+            paymentMethod: ticketTx?.channel || 'cash',
+            baggageInfo: ticketTx ? {
+              category: ticketTx.baggage_category,
+              weight: ticketTx.baggage_weight,
+              fee: ticketTx.baggage_fee,
+            } : null,
+            boardingPoint: tBoardingPoint,
+          });
+          setScanState('confirm_alighting');
           return;
         }
       }
@@ -1934,14 +2027,26 @@ const ScanPage: React.FC = () => {
       const actualBoardedPassenger = boardedPassenger.data;
 
       // Fetch fare and baggage info from boarding transaction
-      const { data: boardingTransaction } = await supabase
+      let { data: boardingTransaction } = await supabase
         .from('transactions')
-        .select('amount, baggage_category, baggage_weight, baggage_fee, channel')
+        .select('amount, fare_amount, discount_amount, baggage_category, baggage_weight, baggage_fee, channel')
         .eq('card_id', card.id)
         .eq('trip_id', currentTrip.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      if (!boardingTransaction && card.id) {
+        const { data: ticketTx } = await supabase
+          .from('transactions')
+          .select('amount, fare_amount, discount_amount, baggage_category, baggage_weight, baggage_fee, channel')
+          .eq('temp_ticket_id', card.id)
+          .eq('trip_id', currentTrip.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        boardingTransaction = ticketTx;
+      }
 
       console.log('[Alighting] Boarding transaction result:', boardingTransaction);
 
@@ -1987,25 +2092,62 @@ const ScanPage: React.FC = () => {
       }
 
       // Step 4 — Show confirmation with trip summary before processing
-      // Use prefix detection as primary source for QR cards since database may have incorrect values
-      const passengerType = detectedType.passengerType;
+      // Priority: prefix detection -> UID detection -> DB passenger_type
+      const passengerType = (
+        detectedType.passengerType ||
+        detectPassengerTypeFromUid(scannedCode) ||
+        normalizePassengerType(card.passenger_type) ||
+        'regular'
+      ) as FarePassengerType;
       console.log('Alighting card type determination', { prefixType: detectedType.passengerType, dbType: card.passenger_type, finalType: passengerType });
 
-      // transaction.amount = totalFare (base + baggage) as stored by fareService
-      const txAmount = boardingTransaction?.amount || 12;
+      const boardingPoint = actualBoardedPassenger?.boarding_stop || (displayStops.length > 0 ? displayStops[0] : '');
+      const destination = storedDestination || (actualBoardedPassenger as any)?.destination_stop || '';
+      const matrixDetails = (boardingPoint && destination)
+        ? getFareMatrixDetails(normalizeStopName(boardingPoint), normalizeStopName(destination), passengerType)
+        : null;
+
       const baggageFee = boardingTransaction?.baggage_fee || 0;
-      const baseFare = txAmount - baggageFee;   // strip out baggage to get the true base fare
-      const totalFare = txAmount;               // amount IS already the total — no re-addition needed
+      let baseFare: number;
+      let regularFare: number;
+      let discountAmount: number;
+
+      if (matrixDetails !== null) {
+        baseFare = matrixDetails.finalFare;
+        regularFare = matrixDetails.regularFare;
+        discountAmount = matrixDetails.discountAmount;
+      } else if (boardingTransaction?.fare_amount !== undefined && boardingTransaction.fare_amount !== null) {
+        baseFare = boardingTransaction.fare_amount;
+        discountAmount = boardingTransaction.discount_amount || 0;
+        regularFare = baseFare + discountAmount;
+      } else {
+        const rawFare = boardingTransaction?.amount ? (boardingTransaction.amount - baggageFee) : DEFAULT_FARE;
+        if (passengerType !== 'regular') {
+          const calc = calculateFare(rawFare, passengerType);
+          baseFare = calc.finalFare;
+          regularFare = calc.baseFare;
+          discountAmount = calc.discountAmount;
+        } else {
+          baseFare = rawFare;
+          regularFare = rawFare;
+          discountAmount = 0;
+        }
+      }
+
+      const totalFare = baseFare + baggageFee;
       
       setPendingAlighting({
         code: scannedCode,
         cardId: card.id,
-        destination: card.destination,
+        destination: destination,
         balance: card.balance,
         fare: baseFare,
+        regularFare: regularFare,
+        discountAmount: discountAmount,
         totalFare: totalFare,
         route: currentBus?.route || '',
         cardType: passengerType,
+        passengerType: passengerType,
         cardUid: card.card_uid,
         paymentMethod: boardingTransaction?.channel || 'qr_card',
         baggageInfo: boardingTransaction ? {
@@ -2013,7 +2155,7 @@ const ScanPage: React.FC = () => {
           weight: boardingTransaction.baggage_weight,
           fee: boardingTransaction.baggage_fee,
         } : null,
-        boardingPoint: actualBoardedPassenger?.boarding_stop,
+        boardingPoint: boardingPoint,
       });
       setScanState('confirm_alighting');
     } catch (err) {
@@ -2275,6 +2417,7 @@ const ScanPage: React.FC = () => {
         undefined,
         pendingAlighting.paymentMethod === 'qr_card' ? 'card' : pendingAlighting.paymentMethod,
         pendingAlighting.boardingPoint || currentStopName || undefined,
+        pendingAlighting.cardType || pendingAlighting.passengerType || undefined,
       );
 
       console.log('[confirmAlighting] Process scan result:', result);
@@ -3879,61 +4022,116 @@ const ScanPage: React.FC = () => {
                           </div>
 
                           {/* Fare Already Paid */}
-                          <div style={{ marginBottom: 12, padding: '12px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 10 }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Fare Already Paid</p>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 600 }}>
-                                Base Fare
-                              </span>
-                              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#16A34A' }}>
-                                ₱{pendingAlighting.fare.toFixed(2)}
-                              </span>
-                            </div>
-                            {pendingAlighting.baggageInfo && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                                <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 600 }}>
-                                  Baggage Fee
-                                </span>
-                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#16A34A' }}>
-                                  ₱{pendingAlighting.baggageInfo.fee?.toFixed(2) || '0.00'}
-                                </span>
+                          {(() => {
+                            const pType = pendingAlighting.cardType || pendingAlighting.passengerType || 'regular';
+                            const isDiscountedPassenger = pType === 'student' || pType === 'senior_citizen' || pType === 'pwd';
+                            const baseFare = pendingAlighting.fare || 0;
+                            const regFare = pendingAlighting.regularFare ?? (baseFare + (pendingAlighting.discountAmount || 0));
+                            const discAmt = pendingAlighting.discountAmount ?? Math.max(0, regFare - baseFare);
+                            const hasDiscount = isDiscountedPassenger && (discAmt > 0 || regFare > baseFare);
+                            const baggageFee = pendingAlighting.baggageInfo?.fee || 0;
+                            const totalPaid = pendingAlighting.totalFare ?? (baseFare + baggageFee);
+
+                            return (
+                              <div style={{ marginBottom: 12, padding: '12px 14px', background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    Fare Already Paid
+                                  </span>
+                                  {hasDiscount && (
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#16A34A', background: 'rgba(34, 197, 94, 0.15)', padding: '2px 7px', borderRadius: 6 }}>
+                                      20% Discount Applied
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Passenger Type display */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Passenger Type</span>
+                                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {passengerTypeLabel(pType)}
+                                  </span>
+                                </div>
+
+                                {/* Regular Fare & Discount breakdown if discounted */}
+                                {hasDiscount && (
+                                  <>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Regular Fare</span>
+                                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textDecoration: 'line-through' }}>
+                                        ₱{regFare.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                      <span style={{ fontSize: '0.78rem', color: '#16A34A', fontWeight: 600 }}>Discount (20%)</span>
+                                      <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 700 }}>
+                                        -₱{discAmt.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <span style={{ fontSize: '0.82rem', color: '#16A34A', fontWeight: 600 }}>
+                                    {hasDiscount ? 'Discounted Base Fare' : 'Base Fare'}
+                                  </span>
+                                  <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#16A34A' }}>
+                                    ₱{baseFare.toFixed(2)}
+                                  </span>
+                                </div>
+
+                                {baggageFee > 0 && (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <span style={{ fontSize: '0.82rem', color: '#16A34A', fontWeight: 600 }}>
+                                      Baggage Fee
+                                    </span>
+                                    <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#16A34A' }}>
+                                      ₱{baggageFee.toFixed(2)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div style={{
+                                  height: 1,
+                                  background: '#16A34A',
+                                  opacity: 0.25,
+                                  margin: '8px 0',
+                                }}></div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 700 }}>
+                                    Total Paid at Boarding
+                                  </span>
+                                  <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#16A34A' }}>
+                                    ₱{totalPaid.toFixed(2)}
+                                  </span>
+                                </div>
+
+                                <div style={{
+                                  height: 1,
+                                  background: '#16A34A',
+                                  opacity: 0.25,
+                                  margin: '8px 0',
+                                }}></div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800 }}>
+                                    Additional Fee
+                                  </span>
+                                  <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#16A34A' }}>
+                                    ₱0.00
+                                  </span>
+                                </div>
+
+                                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <CheckCircle size={14} color="#16A34A" />
+                                  <span style={{ fontSize: '0.72rem', color: '#16A34A', fontWeight: 600 }}>
+                                    Fully settled at boarding — No additional fee
+                                  </span>
+                                </div>
                               </div>
-                            )}
-                            <div style={{
-                              height: 1,
-                              background: '#16A34A',
-                              opacity: 0.3,
-                              margin: '6px 0',
-                            }}></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.85rem', color: '#16A34A', fontWeight: 700 }}>
-                                Total Paid at Boarding
-                              </span>
-                              <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#16A34A' }}>
-                                ₱{pendingAlighting.totalFare?.toFixed(2) || (pendingAlighting.fare + (pendingAlighting.baggageInfo?.fee || 0)).toFixed(2)}
-                              </span>
-                            </div>
-                            <div style={{
-                              height: 1,
-                              background: '#16A34A',
-                              opacity: 0.3,
-                              margin: '6px 0',
-                            }}></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800 }}>
-                                Additional Fee
-                              </span>
-                              <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#16A34A' }}>
-                                ₱0.00
-                              </span>
-                            </div>
-                            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <CheckCircle size={14} color="#16A34A" />
-                              <span style={{ fontSize: '0.72rem', color: '#16A34A', fontWeight: 600 }}>
-                                Fully settled at boarding — No additional fee
-                              </span>
-                            </div>
-                          </div>
+                            );
+                          })()}
 
                           {/* GPS Location Status */}
                           {gpsResult && (
