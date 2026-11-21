@@ -20,6 +20,7 @@ import { offlineQueueService } from '../services/offlineQueueService';
 import { realtimeService } from '../services/realtimeService';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants/messages';
 import PageHeader from '../components/layout/PageHeader';
+import OfflineBanner from '../components/OfflineBanner';
 import {
   SoftCard, StatusBadge, LoadingSkeleton, EmptyState, DashboardCard, PrimaryButton
 } from '../components/ui';
@@ -90,6 +91,8 @@ const PassengerListPage: React.FC = () => {
   const [destinationGroups, setDestinationGroups] = useState<DestinationGroup[]>([]);
   const [passengersList, setPassengersList] = useState<BoardedPassengerItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'qr_card' | 'cash' | 'gcash'>('all');
+  const [displayLimit, setDisplayLimit] = useState(25);
   const [loading, setLoading] = useState(true);
 
   // Manual alighting modal
@@ -528,13 +531,23 @@ const PassengerListPage: React.FC = () => {
 
   // Filter passengers currently on board
   const onboardPassengers = passengersList.filter(p => !p.alighted_at);
+  const qrOnboardCount = onboardPassengers.filter(p => p.payment_method === 'qr_card' || p.payment_method === 'card' || p.payment_method === 'ticket').length;
+  const cashOnboardCount = onboardPassengers.filter(p => p.payment_method === 'cash').length;
+  const gcashOnboardCount = onboardPassengers.filter(p => p.payment_method === 'gcash').length;
+
   const filteredOnboard = onboardPassengers.filter(p => {
+    if (paymentFilter !== 'all') {
+      const pm = p.payment_method === 'card' ? 'qr_card' : p.payment_method;
+      if (paymentFilter === 'qr_card' && pm !== 'qr_card' && pm !== 'ticket') return false;
+      if (paymentFilter !== 'qr_card' && pm !== paymentFilter) return false;
+    }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
       p.card_uid.toLowerCase().includes(q) ||
       (p.destination_stop && p.destination_stop.toLowerCase().includes(q)) ||
       (p.boarding_stop && p.boarding_stop.toLowerCase().includes(q)) ||
+      (p.owner_name && p.owner_name.toLowerCase().includes(q)) ||
       p.passenger_type.toLowerCase().includes(q) ||
       p.payment_method.toLowerCase().includes(q)
     );
@@ -549,6 +562,7 @@ const PassengerListPage: React.FC = () => {
         subtitle={currentBus?.plate_number}
         statusBadge={stats ? { label: `${stats.currentOnboard} on board`, variant: 'primary' } : undefined}
       />
+      <OfflineBanner />
 
       <IonContent className="app-page-bg">
         <div className="page-content page-content--no-nav">
@@ -708,6 +722,78 @@ const PassengerListPage: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Payment Method Filters */}
+                  <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentFilter('all')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 16,
+                        border: 'none',
+                        background: paymentFilter === 'all' ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                        color: paymentFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      All ({onboardPassengers.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentFilter('qr_card')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 16,
+                        border: 'none',
+                        background: paymentFilter === 'qr_card' ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                        color: paymentFilter === 'qr_card' ? '#fff' : 'var(--text-secondary)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      QR Card ({qrOnboardCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentFilter('cash')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 16,
+                        border: 'none',
+                        background: paymentFilter === 'cash' ? '#16A34A' : 'var(--bg-tertiary)',
+                        color: paymentFilter === 'cash' ? '#fff' : 'var(--text-secondary)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Cash ({cashOnboardCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentFilter('gcash')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 16,
+                        border: 'none',
+                        background: paymentFilter === 'gcash' ? '#007DFE' : 'var(--bg-tertiary)',
+                        color: paymentFilter === 'gcash' ? '#fff' : 'var(--text-secondary)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      GCash ({gcashOnboardCount})
+                    </button>
+                  </div>
+
                   {filteredOnboard.length === 0 ? (
                     <SoftCard variant="glass" style={{ textAlign: 'center', padding: '32px 18px' }}>
                       <Users size={36} color="var(--text-tertiary)" style={{ marginBottom: 10 }} />
@@ -719,175 +805,200 @@ const PassengerListPage: React.FC = () => {
                       </p>
                     </SoftCard>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {filteredOnboard.map((passenger, index) => {
-                        const isStudent = passenger.passenger_type === 'student';
-                        const isSenior = passenger.passenger_type === 'senior_citizen';
-                        const isPwd = passenger.passenger_type === 'pwd';
-                        const isDiscounted = isStudent || isSenior || isPwd;
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {filteredOnboard.slice(0, displayLimit).map((passenger, index) => {
+                          const isStudent = passenger.passenger_type === 'student';
+                          const isSenior = passenger.passenger_type === 'senior_citizen';
+                          const isPwd = passenger.passenger_type === 'pwd';
+                          const isDiscounted = isStudent || isSenior || isPwd;
 
-                        const isGcash = passenger.payment_method === 'gcash';
-                        const isCash = passenger.payment_method === 'cash';
+                          const isGcash = passenger.payment_method === 'gcash';
+                          const isCash = passenger.payment_method === 'cash';
 
-                        return (
-                          <motion.div
-                            key={passenger.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: Math.min(index * 0.03, 0.3) }}
-                          >
-                            <SoftCard
-                              variant="glass"
-                              style={{
-                                padding: '14px',
-                                border: '1px solid var(--glass-border)',
-                                position: 'relative',
-                              }}
+                          return (
+                            <motion.div
+                              key={passenger.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: Math.min(index * 0.03, 0.3) }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                    <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                              <SoftCard
+                                variant="glass"
+                                style={{
+                                  padding: '14px',
+                                  border: '1px solid var(--glass-border)',
+                                  position: 'relative',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+                                  <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                                      <span style={{ fontWeight: 800, fontSize: '0.96rem', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                                        {passenger.owner_name || (passenger.temp_ticket_id ? 'Temporary Ticket' : 'QR Card Passenger')}
+                                      </span>
+                                      <span style={{
+                                        fontSize: '0.66rem',
+                                        fontWeight: 700,
+                                        padding: '2px 7px',
+                                        borderRadius: 6,
+                                        background: isDiscounted ? 'rgba(34, 197, 94, 0.14)' : 'var(--bg-tertiary)',
+                                        color: isDiscounted ? '#16A34A' : 'var(--text-secondary)',
+                                      }}>
+                                        {passengerTypeLabel(passenger.passenger_type)}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.78rem', color: 'var(--text-tertiary)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: 4 }}>
                                       {passenger.card_uid}
                                     </span>
-                                    <span style={{
-                                      fontSize: '0.66rem',
-                                      fontWeight: 700,
-                                      padding: '2px 7px',
-                                      borderRadius: 6,
-                                      background: isDiscounted ? 'rgba(34, 197, 94, 0.14)' : 'var(--bg-tertiary)',
-                                      color: isDiscounted ? '#16A34A' : 'var(--text-secondary)',
-                                    }}>
-                                      {passengerTypeLabel(passenger.passenger_type)}
-                                    </span>
                                   </div>
-                                  {passenger.owner_name && (
-                                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                      {passenger.owner_name}
+
+                                  {/* Fare & Payment Badge */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                                    <span style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--color-primary)' }}>
+                                      ₱{(passenger.fare_amount || 0).toFixed(2)}
                                     </span>
-                                  )}
+                                    <div style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      background: isGcash ? 'rgba(0, 125, 254, 0.12)' : isCash ? 'rgba(34, 197, 94, 0.12)' : 'var(--color-primary-subtle)',
+                                      color: isGcash ? '#007DFE' : isCash ? '#16A34A' : 'var(--color-primary)',
+                                      padding: '3px 8px',
+                                      borderRadius: 8,
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                    }}>
+                                      {isGcash ? <Smartphone size={11} /> : isCash ? <Banknote size={11} /> : <CreditCard size={11} />}
+                                      <span>{isGcash ? 'GCash' : isCash ? 'Cash' : 'QR Card'}</span>
+                                    </div>
+                                  </div>
                                 </div>
 
-                                {/* Payment Badge */}
+                                {/* Route Stop Trajectory */}
                                 <div style={{
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: 4,
-                                  background: isGcash ? 'rgba(0, 125, 254, 0.12)' : isCash ? 'rgba(34, 197, 94, 0.12)' : 'var(--color-primary-subtle)',
-                                  color: isGcash ? '#007DFE' : isCash ? '#16A34A' : 'var(--color-primary)',
-                                  padding: '3px 8px',
-                                  borderRadius: 8,
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
+                                  gap: 8,
+                                  padding: '8px 10px',
+                                  background: 'var(--bg-tertiary)',
+                                  borderRadius: 10,
+                                  marginBottom: 10,
                                 }}>
-                                  {isGcash ? <Smartphone size={12} /> : isCash ? <Banknote size={12} /> : <CreditCard size={12} />}
-                                  <span>{isGcash ? 'GCash' : isCash ? 'Cash' : 'QR Card'}</span>
-                                </div>
-                              </div>
-
-                              {/* Route Stop Trajectory */}
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                padding: '8px 10px',
-                                background: 'var(--bg-tertiary)',
-                                borderRadius: 10,
-                                marginBottom: 10,
-                              }}>
-                                <div style={{ flex: 1 }}>
-                                  <span style={{ fontSize: '0.64rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block' }}>FROM</span>
-                                  <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-success)' }}>
-                                    {passenger.boarding_stop || 'Trip Origin'}
-                                  </span>
-                                </div>
-                                <Navigation size={14} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
-                                <div style={{ flex: 1, textAlign: 'right' }}>
-                                  <span style={{ fontSize: '0.64rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block' }}>DESTINATION</span>
-                                  <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                                    {passenger.destination_stop || 'Open Stop'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Footer with timestamp and Actions */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: '0.72rem' }}>
-                                  <Clock size={12} />
-                                  <span>{formatRelativeTime(passenger.boarded_at)}</span>
+                                  <div style={{ flex: 1 }}>
+                                    <span style={{ fontSize: '0.64rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block' }}>FROM</span>
+                                    <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                                      {passenger.boarding_stop || 'Trip Origin'}
+                                    </span>
+                                  </div>
+                                  <Navigation size={14} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
+                                  <div style={{ flex: 1, textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.64rem', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block' }}>DESTINATION</span>
+                                    <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                      {passenger.destination_stop || 'Open Stop'}
+                                    </span>
+                                  </div>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPassengerToReport(passenger)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      padding: '6px 14px',
-                                      borderRadius: 18,
-                                      border: '1.5px solid rgba(245, 158, 11, 0.4)',
-                                      background: 'rgba(245, 158, 11, 0.1)',
-                                      color: '#F59E0B',
-                                      fontSize: '0.78rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                  >
-                                    <AlertTriangle size={13} />
-                                    Report
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPassengerToCancel(passenger)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      padding: '6px 14px',
-                                      borderRadius: 18,
-                                      border: '1.5px solid rgba(239, 68, 68, 0.4)',
-                                      background: 'rgba(239, 68, 68, 0.1)',
-                                      color: '#EF4444',
-                                      fontSize: '0.78rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                  >
-                                    <RotateCcw size={13} />
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPassengerToAlight(passenger)}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      padding: '6px 14px',
-                                      borderRadius: 18,
-                                      border: '1.5px solid rgba(217, 119, 6, 0.4)',
-                                      background: 'rgba(217, 119, 6, 0.1)',
-                                      color: '#D97706',
-                                      fontSize: '0.78rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                  >
-                                    <AlightIcon size={13} />
-                                    Alight
-                                  </button>
+                                {/* Footer with timestamp and Actions */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: '0.72rem' }}>
+                                    <Clock size={12} />
+                                    <span>{formatRelativeTime(passenger.boarded_at)}</span>
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPassengerToReport(passenger)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        padding: '6px 14px',
+                                        borderRadius: 18,
+                                        border: '1.5px solid rgba(245, 158, 11, 0.4)',
+                                        background: 'rgba(245, 158, 11, 0.1)',
+                                        color: '#F59E0B',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <AlertTriangle size={13} />
+                                      Report
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPassengerToCancel(passenger)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        padding: '6px 14px',
+                                        borderRadius: 18,
+                                        border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        color: '#EF4444',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <RotateCcw size={13} />
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPassengerToAlight(passenger)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        padding: '6px 14px',
+                                        borderRadius: 18,
+                                        border: '1.5px solid rgba(217, 119, 6, 0.4)',
+                                        background: 'rgba(217, 119, 6, 0.1)',
+                                        color: '#D97706',
+                                        fontSize: '0.78rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <AlightIcon size={13} />
+                                      Alight
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            </SoftCard>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
+                              </SoftCard>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                      {filteredOnboard.length > displayLimit && (
+                        <div style={{ textAlign: 'center', marginTop: 14 }}>
+                          <button
+                            type="button"
+                            onClick={() => setDisplayLimit(prev => prev + 25)}
+                            style={{
+                              padding: '10px 24px',
+                              borderRadius: 24,
+                              background: 'var(--bg-tertiary)',
+                              border: '1.5px solid var(--glass-border)',
+                              color: 'var(--color-primary)',
+                              fontWeight: 700,
+                              fontSize: '0.84rem',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Show More ({filteredOnboard.length - displayLimit} remaining)
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}

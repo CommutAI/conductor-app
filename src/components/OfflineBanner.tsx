@@ -14,9 +14,9 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
 
   if (isSyncing) {
     return (
-      <div style={{ ...bannerBase, background: 'linear-gradient(135deg, #3B82F6, #60A5FA)', ...style }}>
-        <Loader2 size={16} color="white" style={{ animation: 'spin 0.8s linear infinite' }} />
-        <span style={textStyle}>Syncing {pendingCount} scan{pendingCount !== 1 ? 's' : ''}…</span>
+      <div style={{ ...bannerBase, background: 'linear-gradient(135deg, #2563EB, #3B82F6)', ...style }}>
+        <Loader2 size={16} color="white" style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+        <span style={{ ...textStyle, flex: 1 }}>Syncing {pendingCount} scan{pendingCount !== 1 ? 's' : ''} to cloud…</span>
       </div>
     );
   }
@@ -24,7 +24,7 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
   if (isOnline && pendingCount > 0) {
     return (
       <div
-        style={{ ...bannerBase, background: 'linear-gradient(135deg, #FACC15, #FDE047)', cursor: 'pointer', ...style }}
+        style={{ ...bannerBase, background: 'linear-gradient(135deg, #D97706, #F59E0B)', cursor: 'pointer', ...style }}
         onClick={async () => {
           try {
             await backgroundSyncService.manualSync();
@@ -36,20 +36,45 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ style }) => {
         role="button"
         aria-label="Sync pending scans"
       >
-        <RefreshCw size={16} color="#713F12" />
-        <span style={{ ...textStyle, color: '#713F12' }}>
-          {pendingCount} scan{pendingCount !== 1 ? 's' : ''} pending — Tap to sync
+        <RefreshCw size={16} color="white" style={{ flexShrink: 0 }} />
+        <span style={{ ...textStyle, color: 'white', flex: 1 }}>
+          {pendingCount} scan{pendingCount !== 1 ? 's' : ''} pending sync
+        </span>
+        <span style={{
+          background: 'rgba(255,255,255,0.25)',
+          padding: '2px 10px',
+          borderRadius: 12,
+          fontSize: '0.72rem',
+          fontWeight: 800,
+          color: 'white',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          Sync Now
         </span>
       </div>
     );
   }
 
   return (
-    <div style={{ ...bannerBase, background: 'linear-gradient(135deg, #EF4444, #F87171)', ...style }}>
-      <CloudOff size={16} color="white" />
-      <span style={textStyle}>
-        Offline mode{pendingCount > 0 ? ` — ${pendingCount} scan${pendingCount !== 1 ? 's' : ''} queued` : ''}
+    <div style={{ ...bannerBase, background: 'linear-gradient(135deg, #DC2626, #EF4444)', ...style }}>
+      <CloudOff size={16} color="white" style={{ flexShrink: 0 }} />
+      <span style={{ ...textStyle, flex: 1 }}>
+        Offline Mode{pendingCount > 0 ? ` — ${pendingCount} scan${pendingCount !== 1 ? 's' : ''} queued` : ' — Local caching active'}
       </span>
+      {pendingCount > 0 && (
+        <span style={{
+          background: 'rgba(0,0,0,0.2)',
+          padding: '2px 8px',
+          borderRadius: 12,
+          fontSize: '0.68rem',
+          fontWeight: 700,
+          color: 'white',
+        }}>
+          Auto-syncs online
+        </span>
+      )}
     </div>
   );
 };

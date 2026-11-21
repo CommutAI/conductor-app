@@ -2457,13 +2457,23 @@ const ScanPage: React.FC = () => {
               <SoftCard variant="glass" style={{ marginBottom: 12 }}>
                 <h4 className="heading-small" style={{ marginBottom: 8, textAlign: 'center' }}>Scan Mode</h4>
                 <div style={{ display: 'flex', gap: 10, marginBottom: scanType === 'alighting' && routeStops.length > 0 ? 12 : 0 }}>
-                  <button type="button" className={`scanner-type-btn ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`} onClick={() => switchScanType('onboarding')}>
-                    <span className="scanner-type-btn__icon"><LogIn size={16} /></span>
-                    Onboarding
+                  <button
+                    type="button"
+                    className={`scanner-type-btn scanner-type-btn--onboarding ${scanType === 'onboarding' ? 'scanner-type-btn--active' : ''}`}
+                    onClick={() => switchScanType('onboarding')}
+                  >
+                    <span className="scanner-type-btn__icon"><LogIn size={20} color={scanType === 'onboarding' ? '#16A34A' : 'var(--text-secondary)'} /></span>
+                    <span style={{ fontWeight: 800 }}>Onboarding</span>
+                    <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Board passengers</span>
                   </button>
-                  <button type="button" className={`scanner-type-btn ${scanType === 'alighting' ? 'scanner-type-btn--active' : ''}`} onClick={() => switchScanType('alighting')}>
-                    <span className="scanner-type-btn__icon"><AlightIcon size={16} /></span>
-                    Alighting
+                  <button
+                    type="button"
+                    className={`scanner-type-btn scanner-type-btn--alighting ${scanType === 'alighting' ? 'scanner-type-btn--active' : ''}`}
+                    onClick={() => switchScanType('alighting')}
+                  >
+                    <span className="scanner-type-btn__icon"><AlightIcon size={20} color={scanType === 'alighting' ? '#EA580C' : 'var(--text-secondary)'} /></span>
+                    <span style={{ fontWeight: 800 }}>Alighting</span>
+                    <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Verify drop-off</span>
                   </button>
                 </div>
 
@@ -2618,6 +2628,17 @@ const ScanPage: React.FC = () => {
                         Alighting
                       </button>
                     </div>
+                    <span style={{
+                      background: scanType === 'onboarding' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: scanType === 'onboarding' ? '#16A34A' : '#D97706',
+                      border: `1px solid ${scanType === 'onboarding' ? 'rgba(34, 197, 94, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
+                      borderRadius: 14,
+                      padding: '3px 8px',
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                    }}>
+                      {scanType === 'onboarding' ? 'BOARDING' : 'ALIGHTING'}
+                    </span>
                     {!isOnline && (
                       <span style={{
                         background: 'var(--color-danger-subtle)',
@@ -3144,7 +3165,14 @@ const ScanPage: React.FC = () => {
                           <Navigation size={16} color="var(--color-primary)" />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Destination</p>
+                            {pendingScan.cardDestination && (
+                              <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                PRESET ON CARD
+                              </span>
+                            )}
+                          </div>
                           <select
                             value={selectedDestination || pendingScan.cardDestination || ''}
                             onChange={(e) => {
@@ -3172,21 +3200,51 @@ const ScanPage: React.FC = () => {
                             }}
                           >
                             <option value="">Select destination...</option>
-                            {getAvailableDestinations(tripDirection, selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '')).map(dest => (
-                              <option key={dest} value={dest}>{dest}</option>
-                            ))}
+                            {getAvailableDestinations(tripDirection, selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '')).map(dest => {
+                              const isPreset = pendingScan.cardDestination && dest.toLowerCase() === pendingScan.cardDestination.toLowerCase();
+                              return (
+                                <option key={dest} value={dest}>
+                                  {isPreset ? `★ ${dest} (Card Preset)` : dest}
+                                </option>
+                              );
+                            })}
                           </select>
-                          {pendingScan.cardDestination && (
-                            <p style={{ margin: '4px 0 0', fontSize: '0.68rem', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                              Pre-selected from QR card
-                            </p>
+                          {pendingScan.cardDestination && selectedDestination && selectedDestination !== pendingScan.cardDestination && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDestination(pendingScan.cardDestination || '');
+                                const fromStop = selectedBoardingPoint || currentStopName || (displayStops.length > 0 ? displayStops[0] : '');
+                                const pType = (pendingScan.passengerType || 'regular') as FarePassengerType;
+                                const mFare = getFareFromMatrix(normalizeStopName(fromStop), normalizeStopName(pendingScan.cardDestination || ''), pType);
+                                if (mFare !== null) {
+                                  setPendingScan(prev => prev ? { ...prev, fare: mFare } : null);
+                                }
+                              }}
+                              style={{
+                                marginTop: 6,
+                                padding: '3px 8px',
+                                background: 'none',
+                                border: 'none',
+                                color: '#3B82F6',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              ↺ Reset to Card Preset ({pendingScan.cardDestination})
+                            </button>
                           )}
                         </div>
                       </div>
 
                       {/* Payment Method — Segmented selector */}
                       {(() => {
-                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0);
+                        const serviceFee = pendingScan.isTicket ? 2.00 : 0;
+                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0) + serviceFee;
                         const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
 
                         return (
@@ -3244,9 +3302,14 @@ const ScanPage: React.FC = () => {
                                     opacity: isLowBalance ? 0.65 : 1,
                                   }}
                                 >
+                                  {!isLowBalance && (
+                                    <span style={{ position: 'absolute', top: -7, right: -4, background: '#16A34A', color: '#fff', fontSize: '0.55rem', fontWeight: 800, padding: '1px 5px', borderRadius: 5, boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>
+                                      RECOMMENDED
+                                    </span>
+                                  )}
                                   <CreditCard size={18} color={selectedPaymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-secondary)'} />
                                   <span style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: 4, color: selectedPaymentMethod === 'qr_card' ? 'var(--color-primary)' : 'var(--text-primary)' }}>
-                                    Card
+                                    QR Card
                                   </span>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isLowBalance ? '#EF4444' : 'var(--text-secondary)' }}>
                                     ₱{pendingScan.balance.toFixed(2)}
@@ -3485,7 +3548,8 @@ const ScanPage: React.FC = () => {
 
                       {/* Fare breakdown */}
                       {(() => {
-                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0);
+                        const serviceFee = pendingScan.isTicket ? 2.00 : 0;
+                        const currentTotalFare = (pendingScan.fare || 0) + (baggageSelection?.fee || 0) + serviceFee;
                         const isLowBalance = !pendingScan.isTicket && pendingScan.balance < currentTotalFare;
 
                         return (
@@ -3509,6 +3573,14 @@ const ScanPage: React.FC = () => {
                                 ₱{pendingScan.fare.toFixed(2)}
                               </span>
                             </div>
+                            {pendingScan.isTicket && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Ticket Service Fee</span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  ₱2.00
+                                </span>
+                              </div>
+                            )}
                             {baggageSelection && (
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
@@ -3521,7 +3593,7 @@ const ScanPage: React.FC = () => {
                             )}
                             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.88rem', color: 'var(--color-primary)', fontWeight: 800 }}>Total</span>
+                              <span style={{ fontSize: '0.88rem', color: 'var(--color-primary)', fontWeight: 800 }}>Total Fare</span>
                               <span style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--color-primary)' }}>
                                 ₱{currentTotalFare.toFixed(2)}
                               </span>

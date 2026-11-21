@@ -27,6 +27,7 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   className = '',
   style,
 }) => {
+  const isDisabled = Boolean(disabled || loading);
   const variantClass = `primary-btn--${variant}`;
 
   return (
@@ -38,17 +39,18 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
         border: style?.border || (variant === 'ghost' ? '2px solid var(--border-medium)' : undefined),
         background: style?.background || undefined,
         color: style?.color || undefined,
-        opacity: (disabled || loading) ? 0.5 : style?.opacity || 1,
+        opacity: isDisabled ? 0.55 : style?.opacity || 1,
+        cursor: isDisabled ? 'not-allowed' : style?.cursor || 'pointer',
       }}
-      disabled={disabled || loading}
-      onClick={onClick}
-      whileTap={{ scale: disabled || loading ? 1 : 0.97 }}
-      whileHover={{ scale: disabled || loading ? 1 : 1.01 }}
+      disabled={isDisabled}
+      onClick={isDisabled ? undefined : onClick}
+      whileTap={{ scale: isDisabled ? 1 : 0.97 }}
+      whileHover={{ scale: isDisabled ? 1 : 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
     >
       <span className="primary-btn__ripple" aria-hidden="true" />
       {loading ? (
-        <Loader2 className="primary-btn__spinner" size={22} />
+        <Loader2 className="primary-btn__spinner" size={20} />
       ) : icon ? (
         <span className="primary-btn__icon">{icon}</span>
       ) : null}

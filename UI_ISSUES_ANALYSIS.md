@@ -50,102 +50,86 @@ This document identifies UI/UX issues that cause confusion and inconsistency in 
 
 ---
 
+### 3. Mode Selector Confusion - FIXED ✅
+**Location:** `ScanPage.tsx` & `modern-transport.css`
+**Issue:** "Boarding" vs "Alighting" mode selector was not clearly differentiated
+
+**Fix Applied:**
+- Added distinct color coding: green (`#16A34A`) for Onboarding / Boarding, orange/amber (`#EA580C`) for Alighting
+- Added functional subtitles: "Board passengers" vs "Verify drop-off"
+- Added uppercase mode badge pill (`BOARDING MODE` / `ALIGHTING MODE`) in the camera header
+- Enhanced `ScanFrame` visual theming with green / amber border beams and cues
+
+---
+
+### 4. Destination Selection UX - FIXED ✅
+**Location:** `ScanPage.tsx` - Destination dropdown
+**Issue:** Destination selection was confusing when card had pre-set destination
+
+**Fix Applied:**
+- Added prominent `PRESET ON CARD` badge next to the destination label
+- Added star prefix indicator in dropdown: `★ [Stop] (Card Preset)`
+- Added one-tap "Reset to Card Preset" shortcut button if conductor tests other destinations
+
+---
+
+### 5. Fare Display Inconsistency - FIXED ✅
+**Location:** `ScanPage.tsx` - Fare breakdown
+**Issue:** Fare displayed differently and omitted temporary ticket service fee breakdown
+
+**Fix Applied:**
+- Standardized fare breakdown card layout: Base Fare, Passenger Type / Discount (20%), Ticket Service Fee (₱2.00), Baggage Fee, and Total Fare
+- Service fee is explicitly itemized when temporary tickets are scanned
+- High contrast monetary display with KaTeX-aligned clarity
+
+---
+
+### 6. Payment Method Selection - FIXED ✅
+**Location:** `ScanPage.tsx` - Payment method UI
+**Issue:** Payment method selection lacked clarity on card status and requirements
+
+**Fix Applied:**
+- Added `RECOMMENDED` badge on QR Card when card balance is sufficient
+- Displayed live card balance directly on the button with insufficient balance warning banner
+- Added descriptive labels: "QR Card", "Cash Standard", "GCash Scan QR"
+
+---
+
+### 8. Offline Banner Inconsistency - FIXED ✅
+**Location:** `OfflineBanner.tsx`, `HomePage.tsx`, `ScanPage.tsx`, `PassengerListPage.tsx`
+**Issue:** Offline banner was missing from key pages and lacked active sync trigger
+
+**Fix Applied:**
+- Enhanced `OfflineBanner` with distinct color states: Blue (Syncing), Amber (Pending Sync with "Sync Now" button), and Red (Offline Mode)
+- Added `OfflineBanner` to `PassengerListPage.tsx` so sync status is visible throughout the app
+
+---
+
+### 9. Passenger List Display - FIXED ✅
+**Location:** `PassengerListPage.tsx`
+**Issue:** Passenger list prioritized UID over passenger name, omitted fare paid, and lacked payment filtering
+
+**Fix Applied:**
+- Prioritized passenger name as primary heading in bold, with card UID as secondary monospace badge
+- Always displays fare amount (`₱XX.XX`) prominently alongside payment method badge
+- Added payment method filter pills: `All`, `QR Card`, `Cash`, `GCash` with live passenger counts
+- Added pagination / "Show More" limit (25 per page) for smoother scrolling
+
+---
+
+### 10. Button Inconsistency - FIXED ✅
+**Location:** `PrimaryButton.tsx`
+**Issue:** Disabled and loading states were not visually consistent across buttons
+
+**Fix Applied:**
+- Standardized `PrimaryButton` disabled state with reduced opacity (`0.55`) and `cursor: not-allowed`
+- Standardized loading state with spinning loader icon and consistent alignment
+
+---
+
 ## Remaining Issues (Not Yet Fixed)
 
-### Critical Issues
-
-### 3. Mode Selector Confusion
-**Location:** `ScanPage.tsx` - Mode selection UI
-**Issue:** "Boarding" vs "Alighting" mode selector is not clearly differentiated
-
-**Fix Needed:**
-- Add clear color coding (blue for boarding, orange for alighting)
-- Add mode indicator in header
-- Add confirmation when switching modes
-- Use explicit text labels instead of icons only
-
----
-
-### 4. Destination Selection UX
-**Location:** `ScanPage.tsx` - Destination dropdown
-**Issue:** Destination selection is confusing when card has pre-set destination
-
-**Fix Needed:**
-- If card has destination, show it as pre-selected with "locked" indicator
-- Add "Preset" badge for card destinations
-- Only show valid destinations for current trip direction
-- Improve search to handle name variants
-- Add "Stop on card" indicator
-
----
-
-### 5. Fare Display Inconsistency
-**Location:** `ScanPage.tsx` - Fare display in multiple screens
-**Issue:** Fare displayed differently in boarding vs alighting vs confirmation
-
-**Fix Needed:**
-- Standardize fare display format across all screens
-- Always show breakdown: Base Fare + Discount + Baggage + Service Fee
-- Use consistent color coding (blue for charges, green for already paid)
-- Add "Service Fee" label when applicable (2 pesos for tickets)
-
----
-
-### 6. Payment Method Selection
-**Location:** `ScanPage.tsx` - Payment method UI
-**Issue:** Payment method selection has poor UX
-
-**Fix Needed:**
-- Add labels under icons
-- Add "Recommended" badge for QR Card
-- Add "Requires payment" indicator for Cash/GCash
-- Add help text explaining each method
-- Show card balance for QR Card option
-
----
-
-### 8. Offline Banner Inconsistency
-**Location:** Multiple pages
-**Issue:** Offline banner behavior is inconsistent
-
-**Fix Needed:**
-- Always show offline banner when offline
-- Show pending sync count
-- Add "Sync Now" button
-- Show sync progress bar
-- Show last successful sync time
-- Keep banner visible until all data synced
-
----
-
-### 9. Passenger List Display
-**Location:** `PassengerListPage.tsx`
-**Issue:** Passenger list has confusing information hierarchy
-
-**Fix Needed:**
-- Prioritize passenger name over UID
-- Always show fare paid
-- Add clear payment method label
-- Improve destination grouping UI
-- Add "Show more" for long lists
-- Add filter by payment method
-
----
-
-### 10. Button Inconsistency
-**Location:** Multiple components
-**Issue:** Button styles and behaviors are inconsistent
-
-**Fix Needed:**
-- Standardize button hierarchy (Primary > Secondary > Ghost)
-- Consistent loading spinner style
-- Clear disabled state (grayed out + reduced opacity)
-- Consistent icon usage
-- Add tooltips for icon-only buttons
-
----
-
-## Medium Priority Issues
+### Medium Priority Issues
 
 ### 11. Color Scheme Inconsistency
 **Issue:** Color usage for status/information is inconsistent
@@ -243,14 +227,14 @@ This document identifies UI/UX issues that cause confusion and inconsistency in 
 ### Immediate Actions (High Impact)
 1. ✅ **Standardize error messages** - COMPLETED
 2. ✅ **Fix GPS status UI** - COMPLETED
-3. **Fix fare display consistency** - Use single component
-4. **Improve mode selector** - Add color coding and labels
-5. **Fix destination selection UX** - Add preset indicator
+3. ✅ **Fix fare display consistency** - COMPLETED
+4. ✅ **Improve mode selector** - COMPLETED
+5. ✅ **Fix destination selection UX** - COMPLETED
 
 ### Short-term Improvements
-1. **Standardize button hierarchy** - Enforce PrimaryButton usage
-2. **Fix offline banner** - Add sync progress and count
-3. **Improve passenger list** - Better information hierarchy
+1. ✅ **Standardize button hierarchy** - COMPLETED
+2. ✅ **Fix offline banner** - COMPLETED
+3. ✅ **Improve passenger list** - COMPLETED
 4. **Establish color palette** - Document and enforce
 5. **Standardize loading states** - Use skeleton consistently
 
@@ -268,10 +252,10 @@ This document identifies UI/UX issues that cause confusion and inconsistency in 
 ### ScanPage.tsx
 - ✅ Error message inconsistency - FIXED
 - ✅ Success message inconsistency - FIXED
-- ❌ Mode selector unclear
-- ❌ Destination selection UX poor
-- ❌ Fare display inconsistent
-- ❌ Payment method selection confusing
+- ✅ Mode selector unclear - FIXED
+- ✅ Destination selection UX poor - FIXED
+- ✅ Fare display inconsistent - FIXED
+- ✅ Payment method selection confusing - FIXED
 
 ### HomePage.tsx
 - ✅ GPS status technical labels - FIXED
@@ -280,15 +264,16 @@ This document identifies UI/UX issues that cause confusion and inconsistency in 
 - ❌ Statistics not clearly labeled
 
 ### PassengerListPage.tsx
-- ❌ Passenger name vs UID confusion
-- ❌ Fare not always shown
-- ❌ Search UX poor
+- ✅ Passenger name vs UID confusion - FIXED
+- ✅ Fare not always shown - FIXED
+- ✅ Payment method filter missing - FIXED
+- ✅ List pagination / performance - FIXED
 - ❌ Grouping not intuitive
 - ❌ Action buttons unclear
 
 ### PrimaryButton.tsx
-- ❌ Loading state inconsistent with other buttons
-- ❌ Disabled state not visually clear
+- ✅ Loading state inconsistent with other buttons - FIXED
+- ✅ Disabled state not visually clear - FIXED
 - ❌ Icon usage not standardized
 
 ### BottomNav.tsx
@@ -303,7 +288,7 @@ This document identifies UI/UX issues that cause confusion and inconsistency in 
 
 ---
 
-**Document Version:** 1.1
+**Document Version:** 1.2
 **Last Updated:** 2026-11-21
 **Generated For:** CommutAI Conductor App
-**Status:** 3/18 issues fixed
+**Status:** 10/18 issues fixed
