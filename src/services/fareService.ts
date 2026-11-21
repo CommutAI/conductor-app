@@ -656,6 +656,49 @@ function normalizeRoute(route: string): string {
   return route.trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
 }
 
+// ── Baggage Validation ────────────────────────────────────────────────────────
+export const MAX_BAGGAGE_WEIGHT_KG = 50;
+
+export function validateBaggage(
+  baggageFee?: number,
+  baggageWeight?: number,
+  baggageCategory?: string
+): { isValid: boolean; error?: string } {
+  if (baggageFee !== undefined && (isNaN(baggageFee) || baggageFee < 0)) {
+    return { isValid: false, error: 'Baggage fee cannot be negative' };
+  }
+  if (baggageWeight !== undefined) {
+    if (isNaN(baggageWeight) || baggageWeight < 0) {
+      return { isValid: false, error: 'Baggage weight cannot be negative' };
+    }
+    if (baggageWeight > MAX_BAGGAGE_WEIGHT_KG) {
+      return { isValid: false, error: `Baggage weight exceeds maximum limit of ${MAX_BAGGAGE_WEIGHT_KG}kg` };
+    }
+  }
+  if (baggageCategory && baggageFee === undefined) {
+    return { isValid: false, error: 'Baggage fee required when baggage category is selected.' };
+  }
+  return { isValid: true };
+}
+
+// ── Transaction Retry Helper ──────────────────────────────────────────────────
+async function executeWithRetry<T>(
+  operation: () => PromiseLike<{ error: any; data?: T }>,
+  retries = 2,
+  delayMs = 300
+): Promise<{ error: any; data?: T }> {
+  let attempt = 0;
+  while (true) {
+    const result = await operation();
+    if (!result.error || attempt >= retries) {
+      return result;
+    }
+    attempt++;
+    console.warn(`[FareService] Supabase operation failed (attempt ${attempt}/${retries + 1}), retrying in ${delayMs}ms:`, result.error);
+    await new Promise((res) => setTimeout(res, delayMs * Math.pow(2, attempt - 1)));
+  }
+}
+
 // ── Fare Calculation ─────────────────────────────────────────────────────────
 
 export function calculateFare(
@@ -749,17 +792,28 @@ export async function processScan(
     return { status: 'error', message: 'Invalid scan type' };
   }
 
-  const normalizedUid = normalizeQrCode(scannedUid);
+  // Baggage validation
+  if (scanType === 'onboarding') {
+    const baggageValidation = validateBaggage(baggageFee, baggageWeight, baggageCategory);
+    if (!baggageValidation.isValid) {
+      return { status: 'error', message: baggageValidation.error || 'Invalid baggage data' };
+    }
+  }
 
-  // Check cache for QR card first
+  const normalizedUid = normalizeQrCode(scannedUid);
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+  // Check cache for QR card first.
+  // Note: For onboarding when online, we skip the memory cache and force-refresh
+  // from Supabase to prevent stale balances (e.g. recent external kiosk top-up).
   const cachedCard = cache.get<QRCard>(CacheKeys.card(normalizedUid));
-  if (cachedCard) {
+  if (cachedCard && (!isOnline || scanType !== 'onboarding')) {
     console.log('[FareService] Cache hit for card:', normalizedUid);
     return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   // Check for QR card from database
-  const { data: card } = await supabase
+  const { data: card, error: cardFetchError } = await supabase
     .from('qr_cards')
     .select('id, balance, status, allowed_routes, destination, passenger_type, card_uid, owner_name, contact_number')
     .eq('card_uid', normalizedUid)
@@ -776,6 +830,12 @@ export async function processScan(
     };
     cache.set(CacheKeys.card(normalizedUid), cardData, CARD_CACHE_TTL);
     return processQRCard(cardData, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
+  }
+
+  // Fallback to cached card if online lookup failed due to network error
+  if (cardFetchError && cachedCard) {
+    console.warn('[FareService] Database card lookup failed, using cached card fallback:', cardFetchError);
+    return processQRCard(cachedCard, scannedUid, tripId, conductorId, busRoute, scanType, currentDestination, baggageFee, baggageCategory, baggageWeight, paymentMethod, boardingStop);
   }
 
   // Check cache for temporary ticket
@@ -1019,23 +1079,25 @@ async function processQRCard(
       console.log('[FareService] Cache invalidated for card:', card.card_uid);
     }
 
-    const { error: txErr } = await supabase.from('transactions').insert({
-      card_id: card.id,
-      trip_id: tripId,
-      type: 'fare_validation',
-      transaction_type: 'fare_validation',
-      fare_amount: fare,
-      discount_amount: card.passenger_type === 'student' || card.passenger_type === 'senior_citizen' || card.passenger_type === 'pwd' ? fare * 0.20 : 0,
-      amount: totalFare,
-      final_amount: totalFare,
-      channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
-      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : paymentMethod === 'card' ? 'qr_card' : 'qr_card',
-      status: 'completed',
-      staff_id: conductorId,
-      baggage_category: baggageCategory || null,
-      baggage_weight: baggageWeight || null,
-      baggage_fee: baggageFee || null,
-    });
+    const { error: txErr } = await executeWithRetry(() =>
+      supabase.from('transactions').insert({
+        card_id: card.id,
+        trip_id: tripId,
+        type: 'fare_validation',
+        transaction_type: 'fare_validation',
+        fare_amount: fare,
+        discount_amount: card.passenger_type === 'student' || card.passenger_type === 'senior_citizen' || card.passenger_type === 'pwd' ? fare * 0.20 : 0,
+        amount: totalFare,
+        final_amount: totalFare,
+        channel: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
+        payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : paymentMethod === 'card' ? 'qr_card' : 'qr_card',
+        status: 'completed',
+        staff_id: conductorId,
+        baggage_category: baggageCategory || null,
+        baggage_weight: baggageWeight || null,
+        baggage_fee: baggageFee || null,
+      })
+    );
     if (txErr) {
       // Rollback balance update on transaction failure
       if (isCardPayment) {
@@ -1045,14 +1107,16 @@ async function processQRCard(
       return { status: 'error', message: `Failed to create boarding transaction: ${txErr.message}` };
     }
 
-    const { error: boardErr } = await supabase.from('boarded_passengers').insert({
-      trip_id: tripId,
-      card_id: card.id,
-      boarded_at: new Date().toISOString(),
-      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
-      boarding_stop: boardingStop || null,
-      destination_stop: currentDestination || null,
-    });
+    const { error: boardErr } = await executeWithRetry(() =>
+      supabase.from('boarded_passengers').insert({
+        trip_id: tripId,
+        card_id: card.id,
+        boarded_at: new Date().toISOString(),
+        payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'qr_card',
+        boarding_stop: boardingStop || null,
+        destination_stop: currentDestination || null,
+      })
+    );
     if (boardErr) {
       // Rollback transaction and balance on boarding failure
       await supabase.from('transactions').delete().eq('trip_id', tripId).eq('card_id', card.id).order('created_at', { ascending: false }).limit(1);
@@ -1236,22 +1300,24 @@ async function processTemporaryTicket(
 
     const txChannel = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'temp_ticket';
     const txPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'cash';
-    const { error: txErr } = await supabase.from('transactions').insert({
-      trip_id: tripId,
-      type: 'fare_validation',
-      transaction_type: 'fare_validation',
-      fare_amount: baseFare,
-      discount_amount: 0,
-      amount: totalFare,
-      final_amount: totalFare,
-      channel: txChannel,
-      payment_method: txPaymentMethod,
-      status: 'completed',
-      staff_id: conductorId,
-      baggage_category: baggageCategory || null,
-      baggage_weight: baggageWeight || null,
-      baggage_fee: baggageFee || null,
-    });
+    const { error: txErr } = await executeWithRetry(() =>
+      supabase.from('transactions').insert({
+        trip_id: tripId,
+        type: 'fare_validation',
+        transaction_type: 'fare_validation',
+        fare_amount: baseFare,
+        discount_amount: 0,
+        amount: totalFare,
+        final_amount: totalFare,
+        channel: txChannel,
+        payment_method: txPaymentMethod,
+        status: 'completed',
+        staff_id: conductorId,
+        baggage_category: baggageCategory || null,
+        baggage_weight: baggageWeight || null,
+        baggage_fee: baggageFee || null,
+      })
+    );
 
     if (txErr) {
       // Rollback ticket status on transaction failure
@@ -1261,14 +1327,16 @@ async function processTemporaryTicket(
     }
 
     const boardPaymentMethod = paymentMethod === 'cash' ? 'cash' : paymentMethod === 'gcash' ? 'gcash' : 'ticket';
-    const { error: boardErr } = await supabase.from('boarded_passengers').insert({
-      trip_id: tripId,
-      temp_ticket_id: ticket.id,
-      boarded_at: new Date().toISOString(),
-      payment_method: boardPaymentMethod,
-      boarding_stop: boardingStop || null,
-      destination_stop: currentDestination || ticket.destination || null,
-    });
+    const { error: boardErr } = await executeWithRetry(() =>
+      supabase.from('boarded_passengers').insert({
+        trip_id: tripId,
+        temp_ticket_id: ticket.id,
+        boarded_at: new Date().toISOString(),
+        payment_method: boardPaymentMethod,
+        boarding_stop: boardingStop || null,
+        destination_stop: currentDestination || ticket.destination || null,
+      })
+    );
 
     if (boardErr) {
       // Rollback transaction and ticket status on boarding failure

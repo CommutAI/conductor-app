@@ -17,6 +17,10 @@ interface GPSPosition {
 class GPSService {
   private piEndpoint: string;
   private usePiGPS: boolean;
+  private consecutivePiFailures = 0;
+  private piCircuitBreakerUntil = 0;
+  private readonly PI_FAILURE_THRESHOLD = 2;
+  private readonly PI_COOLDOWN_MS = 60000; // 60s circuit breaker cooldown
 
   constructor() {
     this.piEndpoint = import.meta.env.VITE_GPS_PI_ENDPOINT || 'http://commutai.local:5000/api/gps';
@@ -28,16 +32,25 @@ class GPSService {
    * Try to get GPS position from Raspberry Pi first, fallback to mobile GPS
    */
   async getCurrentPosition(): Promise<GPSPosition | null> {
-    if (this.usePiGPS) {
+    const now = Date.now();
+    const isCircuitOpen = now < this.piCircuitBreakerUntil;
+
+    if (this.usePiGPS && !isCircuitOpen) {
       try {
         const piPosition = await this.getPiGPSPosition();
         if (piPosition) {
+          this.consecutivePiFailures = 0;
           console.log('[GPS] Using Raspberry Pi GPS position');
           return piPosition;
+        } else {
+          this.handlePiFailure();
         }
       } catch (error) {
+        this.handlePiFailure();
         console.warn('[GPS] Raspberry Pi GPS unavailable, falling back to mobile GPS');
       }
+    } else if (this.usePiGPS && isCircuitOpen) {
+      console.log(`[GPS] Pi GPS circuit breaker active (${Math.ceil((this.piCircuitBreakerUntil - now) / 1000)}s remaining), using mobile GPS directly`);
     }
 
     // Fallback to mobile GPS
@@ -46,6 +59,14 @@ class GPSService {
       console.log('[GPS] Using mobile GPS position');
     }
     return mobilePosition;
+  }
+
+  private handlePiFailure() {
+    this.consecutivePiFailures++;
+    if (this.consecutivePiFailures >= this.PI_FAILURE_THRESHOLD) {
+      this.piCircuitBreakerUntil = Date.now() + this.PI_COOLDOWN_MS;
+      console.warn(`[GPS] Pi GPS failed ${this.consecutivePiFailures} times consecutively. Circuit breaker activated for ${this.PI_COOLDOWN_MS / 1000}s`);
+    }
   }
 
   /**

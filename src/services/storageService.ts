@@ -506,37 +506,51 @@ export class StorageService {
     }
   }
 
-  static async syncTripEndToDatabase(): Promise<boolean> {
+  static async syncTripEndToDatabase(maxRetries = 3): Promise<boolean> {
     const cached = this.loadTripState();
     if (!cached?.currentTrip || !cached.pendingTripEndSync) {
       return false;
     }
 
-    try {
-      await this.syncTripStateToDatabase();
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        await this.syncTripStateToDatabase();
 
-      const { error } = await supabase
-        .from('trips')
-        .update({
-          status: 'completed',
-          ended_at: cached.currentTrip.ended_at ?? new Date().toISOString(),
-          end_point: cached.endPoint ?? null,
-        })
-        .eq('id', cached.currentTrip.id);
+        const { error } = await supabase
+          .from('trips')
+          .update({
+            status: 'completed',
+            ended_at: cached.currentTrip.ended_at ?? new Date().toISOString(),
+            end_point: cached.endPoint ?? null,
+          })
+          .eq('id', cached.currentTrip.id);
 
-      if (error) {
-        console.error('[StorageService] Failed to sync trip end:', error);
+        if (error) {
+          console.error(`[StorageService] Failed to sync trip end (attempt ${attempt + 1}/${maxRetries}):`, error);
+          attempt++;
+          if (attempt < maxRetries) {
+            await new Promise((res) => setTimeout(res, 500 * Math.pow(2, attempt - 1)));
+            continue;
+          }
+          return false;
+        }
+
+        this.markTripHistorySynced(cached.currentTrip.id);
+        this.clearTripState();
+        console.log('[StorageService] Trip end synced to database');
+        return true;
+      } catch (err) {
+        console.error(`[StorageService] Error syncing trip end (attempt ${attempt + 1}/${maxRetries}):`, err);
+        attempt++;
+        if (attempt < maxRetries) {
+          await new Promise((res) => setTimeout(res, 500 * Math.pow(2, attempt - 1)));
+          continue;
+        }
         return false;
       }
-
-      this.markTripHistorySynced(cached.currentTrip.id);
-      this.clearTripState();
-      console.log('[StorageService] Trip end synced to database');
-      return true;
-    } catch (err) {
-      console.error('[StorageService] Error syncing trip end:', err);
-      return false;
     }
+    return false;
   }
 
   // ── Enhanced Sync Operations with Message Queue Patterns ─────────────────────

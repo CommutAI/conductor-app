@@ -304,6 +304,8 @@ const ScanPage: React.FC = () => {
   const lastScanTimeRef = useRef(0);
   const lastScanCodeRef = useRef('');
   const offlineQueueCleanupRef = useRef<(() => void) | null>(null);
+  const recentScanCooldownsRef = useRef<Map<string, number>>(new Map());
+  const SCAN_COOLDOWN_MS = 10000; // 10 seconds per card UID cooldown window
 
   const tripDirection = determineTripDirection(currentTrip);
 
@@ -588,6 +590,18 @@ const ScanPage: React.FC = () => {
    */
   async function handleRawScan(scannedCode: string) {
     if (!currentTrip || !profile) return;
+
+    // Check per-card rapid duplicate scan cooldown (10 seconds)
+    const normalized = normalizeQrCode(scannedCode).toUpperCase();
+    const now = Date.now();
+    const lastTap = recentScanCooldownsRef.current.get(normalized);
+    if (lastTap && (now - lastTap) < SCAN_COOLDOWN_MS) {
+      const waitSec = Math.ceil((SCAN_COOLDOWN_MS - (now - lastTap)) / 1000);
+      console.warn(`[ScanPage] Card ${normalized} scanned again within cooldown window (${waitSec}s remaining)`);
+      setFailedMsg(`Already scanned — please wait ${waitSec}s`);
+      setScanState('failed');
+      return;
+    }
 
     // Both online and offline go through the same full UX flow.
     // Offline: card lookup uses persistent cache / QR prefix fallback.
@@ -1076,6 +1090,7 @@ const ScanPage: React.FC = () => {
       return;
     }
     setScanState('committing');
+    recentScanCooldownsRef.current.set(normalizeQrCode(code).toUpperCase(), Date.now());
 
     try {
       console.log('Committing boarding with code:', code, 'destination:', destination, 'payment:', paymentMethod, 'boardingPoint:', boardingPoint);
@@ -2028,6 +2043,9 @@ const ScanPage: React.FC = () => {
       }
       
       if (currentTrip) {
+        if (pendingAlighting?.code) {
+          recentScanCooldownsRef.current.set(normalizeQrCode(pendingAlighting.code).toUpperCase(), Date.now());
+        }
         StorageService.markLocalAlighted(
           currentTrip.id,
           pendingAlighting?.cardUid || pendingAlighting?.code,
@@ -3668,7 +3686,7 @@ const ScanPage: React.FC = () => {
                           </div>
 
                           {/* Current Location */}
-                          {currentLocation && (
+                          {(currentCoordinates || currentStopName) && (
                             <div style={{ marginBottom: 12, padding: '12px 14px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 12 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                                 <MapPin size={16} color="#3B82F6" />
