@@ -2203,7 +2203,9 @@ const ScanPage: React.FC = () => {
           route: currentBus?.route || 'Unknown',
           boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
           destination: result.destination || pendingAlighting?.destination || 'Unknown',
-          fare: pendingAlighting?.fare || 0
+          fare: (pendingAlighting?.totalFare !== undefined && pendingAlighting?.totalFare !== null && pendingAlighting.totalFare > 0)
+            ? pendingAlighting.totalFare
+            : (pendingAlighting?.fare || 0)
         };
         
         smsService.queueAlightingSMS(
@@ -2268,7 +2270,9 @@ const ScanPage: React.FC = () => {
           route: currentBus?.route || 'Unknown',
           boardingPoint: pendingAlighting?.boardingPoint || result.boardingPoint || 'Unknown',
           destination: result.destination || pendingAlighting?.destination || 'Unknown',
-          fare: pendingAlighting?.fare || 0
+          fare: (pendingAlighting?.totalFare !== undefined && pendingAlighting?.totalFare !== null && pendingAlighting.totalFare > 0)
+            ? pendingAlighting.totalFare
+            : (pendingAlighting?.fare || 0)
         };
         
         smsService.queueAlightingSMS(

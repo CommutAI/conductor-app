@@ -6,7 +6,6 @@
 
 import { supabase } from '../supabaseClient';
 import { cache, CacheKeys, CacheTTL } from './cacheService';
-import { smsService } from './smsService';
 import fareMatrixData from '../data/fareMatrix.json';
 import fareMatrixManoloToAgora from '../data/fareMatrixManoloToAgora.json';
 import fareMatrixAgoraToManolo from '../data/fareMatrixAgoraToManolo.json';
@@ -1250,25 +1249,6 @@ async function processQRCard(
       return { status: 'error', message: `Failed to record alighting: ${alightErr.message}` };
     }
 
-    // Queue SMS notification if card has contact number
-    if (card.contact_number) {
-      try {
-        await smsService.queueAlightingSMS(card.contact_number, {
-          passengerName: card.owner_name || 'Passenger',
-          tripSummary: {
-            route: 'CommutAI Route',
-            boardingPoint: boardedData.boarding_stop || 'Unknown',
-            destination: currentDestination || card.destination || 'Unknown',
-            fare: 0, // Fare already paid at boarding
-          },
-          tripId: tripId,
-        });
-        console.log('[FareService] Alighting SMS queued for', card.contact_number);
-      } catch (smsError) {
-        console.error('[FareService] Failed to queue alighting SMS:', smsError);
-        // Don't fail the alighting if SMS fails
-      }
-    }
 
     return {
       status: 'qr_pass',
