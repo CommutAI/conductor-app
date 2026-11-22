@@ -191,3 +191,74 @@ To disable Pi GPS and use only mobile GPS:
 ```typescript
 gpsService.setUsePiGPS(false);
 ```
+
+---
+
+# Raspberry Pi SIM900A SMS Queue Processor Setup
+
+The `sms_queue_processor.py` script runs on the Raspberry Pi (or connected host), polls pending SMS messages from Supabase (`sms_queue` table), and sends them via the SIM900A GSM module.
+
+## 1. Hardware Requirements & Power Supply Caution
+
+> [!WARNING]
+> **Power Supply Requirement:**
+> The SIM900A module consumes up to **2.0A peak current** during RF transmission bursts (when sending an SMS). 
+> - **DO NOT** power the SIM900A from the Raspberry Pi's 5V pin or a standard USB-to-UART adapter. It will brown out and abort transmission with `ERROR`.
+> - Use an external 5V/2A or 5V/3A DC power supply.
+> - Ensure a **common ground (GND)** between the external power supply, SIM900A, and Raspberry Pi / USB-to-UART adapter.
+> - Connect the GSM antenna firmly.
+> - Ensure the SIM card is activated, has regular prepaid load (or active unli-text promo), and is registered under the SIM Registration Act.
+
+## 2. Testing & Diagnostics CLI
+
+To verify SIM900A hardware, signal, and network registration:
+
+```bash
+# 1. Run full hardware & network diagnostics
+python3 sms_queue_processor.py --status
+
+# 2. Send a test SMS directly to a phone
+python3 sms_queue_processor.py --test-sms +639991146757 --message "Test SMS from CommuteAI SIM900A"
+```
+
+Expected diagnostic output:
+- `[SIM Card]     Status: READY` (If not ready, check SIM insertion / PIN lock)
+- `[Signal CSQ]   +CSQ: 18,0` (Value should be >= 10, not 0,0 or 99,99)
+- `[Registration] REGISTERED (Home Network)` (`+CREG: 0,1` or `0,5`)
+- `[Operator]     +COPS: ... SMART / GLOBE`
+- `[SMSC]         +CSCA: "+639180000101",145`
+
+## 3. Running as a Systemd Service
+
+To keep the SMS processor running continuously in the background on boot:
+
+1. **Create systemd unit file:**
+```bash
+sudo nano /etc/systemd/system/commutai-sms.service
+```
+
+2. **Add configuration:**
+```ini
+[Unit]
+Description=CommuteAI SMS Queue Processor (SIM900A)
+After=network.target
+
+[Service]
+Type=simple
+User=chichi
+WorkingDirectory=/home/chichi
+ExecStart=/usr/bin/python3 /home/chichi/sms_queue_processor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. **Enable and start the service:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable commutai-sms.service
+sudo systemctl start commutai-sms.service
+sudo systemctl status commutai-sms.service
+```
